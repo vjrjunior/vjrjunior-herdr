@@ -1,0 +1,33 @@
+[bg]
+base = "#101010"
+raised1 = "#161616"
+raised2 = "#1C1C1C"
+selected = "#232323"
+hover = "#282828"
+
+[line]
+subtle = "#171717"
+strong = "#343434"
+
+[text]
+primary = "#FFFFFF"
+terminal = "#DBDBDB"
+muted = "#A0A0A0"
+subtle = "#707070"
+dim = "#505050"
+
+[peach]
+base = "#FFC799"
+light = "#FFCFA8"
+lighter = "#FFDCC0"
+
+[mint]
+base = "#99FFE4"
+light = "#B3FFEC"
+
+[red]
+base = "#FF8080"
+light = "#FF9D9D"
+
+[gray]
+bright = "#C0C0C0"
