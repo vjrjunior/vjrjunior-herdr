@@ -60,3 +60,7 @@ A palette that does not validate installs nothing, and the last good theme stays
 | `HERDR_APP_HOME` | `~/.config/herdr-app` | herdr-app's folder, and which running window `herdr-app` talks to |
 | `XDG_CONFIG_HOME` | `~/.config` | Ghostty's folder |
 | `XDG_STATE_HOME` | `~/.local/state` | backups and the install record |
+
+## License
+
+[MIT](LICENSE)
