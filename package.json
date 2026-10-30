@@ -1,0 +1,13 @@
+{
+  "name": "vjrjunior-herdr",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "bun scripts/build.ts",
+    "install-theme": "bun scripts/install.ts",
+    "uninstall-theme": "bun scripts/install.ts --uninstall",
+    "watch": "bun --watch scripts/watch.ts",
+    "test": "bun test"
+  }
+}
