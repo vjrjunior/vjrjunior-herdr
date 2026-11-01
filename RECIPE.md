@@ -52,6 +52,8 @@ Nothing here is a frozen copy of Herdr. `recipes/` holds small edits, and `scrip
 - The mods in `~/.config/herdr-app/mods/vjr-*` are generated. Edit `recipes/`, not them, then run `bun run apply-layout`.
 - `herdr-app check` loads a mod without props, so `vjr-sync` must cope with `props()` being null.
 - `exec("bun")` fails inside the app: its PATH doesn't reach `~/.bun/bin`. The layout stores the absolute path, and the repo's path too, so moving the repo needs a new `apply-layout`.
+- `exec` has a 30 s limit, and a full rebuild took 3.6 s on 0.1.11. `layout.log` records how long each run takes.
+- `herdr-app status` is only a safety check: if it hangs or its output can't be read, the update goes on without it.
 - A block with `hidden: true` never starts its mod. `vjr-sync` floats and renders an empty `div()`, which shows nothing.
 - The app writes `gpui-kit.d.ts` and `jsconfig.json` into every mod folder. Comparing a generated mod with an installed one must ignore them.
 - `frame: "none"` removes the border with the corners, so a mod that uses it must draw its own. Don't set it on a popup with no copy: the palette opens Herdr's `prompt`, which has no border.

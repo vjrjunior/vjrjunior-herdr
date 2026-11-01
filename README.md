@@ -86,7 +86,7 @@ These stay rounded, because the app draws them or opens them by itself: renaming
 
 When Herdr updates, the invisible `vjr-sync` mod notices the new version and runs the same command, so the copies rebuild themselves within seconds. It only runs while one of these layouts is on screen.
 
-If a recipe no longer fits the new version, nothing changes: the previous copies keep running and a warning says what failed. The shipped `main` layout is never touched, so `cmd-shift-l` always has somewhere to go.
+If a recipe no longer fits the new version, nothing changes in either layout: the previous copies keep running and a warning says what to run. The shipped `main` layout is never touched, so `cmd-shift-l` always has somewhere to go.
 
 - The folders in `~/.config/herdr-app/mods/vjr-*` are generated. To change one, edit `recipes/` and run `bun run apply-layout`.
 - Run it again after changing the shortcut for the palette, Settings, help or search in the `global` section of `keys.json`.

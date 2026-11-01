@@ -18,7 +18,7 @@
 
 ### Confirm the first real Herdr update
 
-**What:** After the next Herdr update, confirm that `built` in `layouts/vjr-desk-square.json` follows the new version, `herdr-app status` shows no errors and `~/.local/state/vjr-herdr/layout.log` records the run.
+**What:** After the next Herdr update, confirm that `built` in `layouts/vjr-desk-square.json` follows the new version, `herdr-app status` shows no errors, `~/.local/state/vjr-herdr/layout.log` records the run and the open window shows the new copies without a restart.
 
 **Why:** The update flow was tested by simulating an old version. Only a real update proves the whole path.
 

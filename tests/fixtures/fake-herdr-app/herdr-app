@@ -20,7 +20,17 @@ case "$1" in
       echo "no Herdr window" >&2
       exit 2
     fi
+    if [ -n "$FAKE_HERDR_STATUS_HANG" ]; then
+      exec sleep 30
+    fi
+    if [ -n "$FAKE_HERDR_STATUS_TEXT" ]; then
+      echo "$FAKE_HERDR_STATUS_TEXT"
+      exit 0
+    fi
     marker="$FAKE_HERDR_LOG.status"
+    if [ -e "$marker" ] && [ -n "$FAKE_HERDR_STATUS_KILL" ]; then
+      kill -9 "$PPID"
+    fi
     errors="[]"
     if [ -n "$FAKE_HERDR_STATUS_ERROR_ALWAYS" ]; then
       errors="[\"$FAKE_HERDR_STATUS_ERROR_ALWAYS\"]"

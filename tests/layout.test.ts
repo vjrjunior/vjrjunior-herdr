@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join, relative } from "node:path";
 import { copyRepo, makeHomes, removeTempDirs, repo, run, tempDir } from "./helpers";
 import { makeHerdrHome } from "./herdr-home";
@@ -365,6 +365,94 @@ describe("failures", () => {
     expect(apply().stderr).toContain("not created by this repo");
 
     expect(readFileSync(join(home, "layouts/vjr-desk.json"), "utf8")).toBe("mine");
+  });
+
+  test("files the app wrote into the repo's mods stay out of the install", () => {
+    const { root, home, apply } = setup();
+    writeFileSync(join(root, "mods/vjr-sync/gpui-kit.d.ts"), "declare const kit: unknown;\n");
+    writeFileSync(join(root, "mods/vjr-sync/jsconfig.json"), "{}\n");
+
+    apply();
+
+    expect(readdirSync(join(home, "mods/vjr-sync")).sort()).toEqual(["main.js", "mod.json"]);
+  });
+
+  test("a status it cannot read does not block the update", () => {
+    const { apply, syncProps } = setup();
+
+    const result = apply([], { FAKE_HERDR_WINDOW: "vjr-desk", FAKE_HERDR_STATUS_TEXT: "not json" });
+
+    expect(result.code).toBe(0);
+    expect(result.stderr).toContain("status");
+    expect(syncProps("vjr-desk").built).toBe("0.1.10");
+  });
+
+  test("a status with unexpected errors does not block the update", () => {
+    const { apply } = setup();
+
+    expect(apply([], { FAKE_HERDR_WINDOW: "vjr-desk", FAKE_HERDR_STATUS_TEXT: '{"errors":"none"}' }).code).toBe(0);
+  });
+
+  test(
+    "a status that hangs does not hold the update",
+    () => {
+      const { apply } = setup();
+
+      expect(apply([], { FAKE_HERDR_WINDOW: "vjr-desk", FAKE_HERDR_STATUS_HANG: "1" }).code).toBe(0);
+    },
+    { timeout: 12000 },
+  );
+
+  test("a run killed after the swap does not refuse its own mods", () => {
+    const { home, apply, syncProps } = setup();
+
+    const killed = apply([], { FAKE_HERDR_WINDOW: "vjr-desk", FAKE_HERDR_STATUS_KILL: "1" });
+
+    expect(killed.code).not.toBe(0);
+    expect(existsSync(join(home, "mods/vjr-sync"))).toBe(true);
+    expect(existsSync(join(home, "layouts/vjr-desk.json"))).toBe(false);
+
+    expect(apply().code).toBe(0);
+    expect(syncProps("vjr-desk").built).toBe("0.1.10");
+  });
+
+  test("a copy moved aside by a killed run comes back", () => {
+    const { home, state, apply, modMeta } = setup();
+    apply();
+    mkdirSync(join(state, "previous-999"));
+    renameSync(join(home, "mods/vjr-tabs"), join(state, "previous-999/vjr-tabs"));
+
+    expect(apply(["--herdr-version", "0.1.11"], { FAKE_HERDR_CHECK_FAIL: "vjr-square-tabs" }).code).toBe(1);
+
+    expect(modMeta("vjr-tabs").cloned_from.version).toBe("0.1.10");
+    expect(existsSync(join(state, "previous-999"))).toBe(false);
+  });
+
+  test("a failed first install leaves no mods and no record", () => {
+    const { home, state, apply } = setup();
+
+    expect(apply([], { FAKE_HERDR_WINDOW: "vjr-desk", FAKE_HERDR_STATUS_ERROR: "boom" }).code).toBe(1);
+
+    expect(readdirSync(join(home, "mods")).filter((name) => name.startsWith("vjr-"))).toEqual([]);
+    expect(existsSync(join(state, "layout.json"))).toBe(false);
+  });
+
+  test("a rollback keeps the record it found", () => {
+    const { apply, record } = setup();
+    apply();
+    const before = record();
+
+    apply(["--herdr-version", "0.1.11"], { FAKE_HERDR_WINDOW: "vjr-desk", FAKE_HERDR_STATUS_ERROR: "boom" });
+
+    expect(record()).toEqual(before);
+  });
+
+  test("the log records how long each run took", () => {
+    const { state, apply } = setup();
+
+    apply();
+
+    expect(readFileSync(join(state, "layout.log"), "utf8")).toMatch(/applied \d+ms/);
   });
 
   test("a running apply makes the second one exit quietly", () => {
