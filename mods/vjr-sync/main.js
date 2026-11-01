@@ -15,7 +15,7 @@ export default class VjrSync extends View {
       const reason = result.stderr.trim().split("\n")[0].replace(/^error: /, "");
       notify({
         title: `VJR layout stayed on ${built}`,
-        body: `${reason}. Run bun run apply-layout in ${repo}.`,
+        body: `Run bun run apply-layout in ${repo}. ${reason}`,
         level: "warning",
         timeout: 15000,
       });

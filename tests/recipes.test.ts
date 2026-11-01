@@ -205,6 +205,15 @@ describe("square", () => {
     expect(palette).toContain('["mod.open", { name: "vjr-square-picker" }, "Tab"');
   });
 
+  test("the context menu opens the copied help", () => {
+    expect(generateSquare().mods["vjr-square-menu"]?.["main.js"]).toContain('if (it[1] === "app.help") run("mod.open", { name: "vjr-square-help" });');
+  });
+
+  test("a context menu that changed still generates", () => {
+    const menu = 'export default class Mod { render() { return v_flex().bg(t.popover).rounded(7); } }';
+    expect(() => generateSquare({ "mods/menu/main.js": menu })).not.toThrow();
+  });
+
   test("opens the copied settings from the sidebar", () => {
     expect(generateSquare().mods["vjr-square-workspace-chrome"]?.["main.js"]).toContain('run("mod.open", { name: "vjr-square-settings" })');
   });

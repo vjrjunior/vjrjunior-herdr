@@ -53,6 +53,7 @@ export const square: Recipe = {
     exact(copy("palette"), '["app.settings", {}, "App", "Settings"', '["mod.open", { name: "settings" }, "App", "Settings"');
     exact(copy("palette"), '["app.help", {}, "App", "Keys"', '["mod.open", { name: "help" }, "App", "Keys"');
     exact(copy("palette"), '  "app.palette", "app.hide",', '  "app.palette", "app.help", "app.hide",');
+    pattern([copy("menu")], /else run\(it\[1\], it\[2\]\);/g, 'else if (it[1] === "app.help") run("mod.open", { name: "help" });\n    else run(it[1], it[2]);');
 
     for (const name of FRAMELESS) copy(name).meta.overlay = { ...(copy(name).meta.overlay as object | undefined), frame: "none" };
     copy("help").meta.overlay = { kind: "dialog", width: 520, height: 0.7, frame: "none" };

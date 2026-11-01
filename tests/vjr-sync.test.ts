@@ -72,7 +72,7 @@ describe("vjr-sync", () => {
     expect(notifications[0]?.level).toBe("warning");
     expect(notifications[0]?.title).toContain("0.1.10");
     expect(notifications[0]?.body).toContain("recipe square: gone");
-    expect(notifications[0]?.body).toContain("bun run apply-layout");
+    expect(notifications[0]?.body).toStartWith("Run bun run apply-layout");
   });
 
   test("warns when bun or the repo cannot be reached", async () => {

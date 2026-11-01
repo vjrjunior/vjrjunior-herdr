@@ -76,6 +76,8 @@ const SOURCES: Record<string, string> = {
   "mods/workspace-status/main.js": script(`    return div().rounded(3).on_click(() => run("app.palette"));`),
   "mods/pane/main.js": script("    return div().rounded(4);"),
   "mods/menu/main.js": script(`    const tree = () => openOverlay({ mod: "worktree", kind: "dialog", width: 440, height: 260, props: {} });
+    if (it[1] === "worktree") tree();
+    else run(it[1], it[2]);
     return v_flex().bg(t.popover).rounded(7);`),
   "mods/new-menu/main.js": script(`    const tree = () => openOverlay({ mod: "worktree", kind: "dialog", width: 460, height: 280, props: {} });
     return v_flex().bg(t.popover).rounded(7);`),
