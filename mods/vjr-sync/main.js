@@ -3,9 +3,9 @@ import { exec, notify, props, updates } from "herdr";
 
 export default class VjrSync extends View {
   init(_props, cx) {
-    const { built, repo, bun } = props();
+    const { built, repo, bun } = props() ?? {};
     const version = updates().app.version;
-    if (version === built) return;
+    if (!built || version === built) return;
     cx.spawn(async () => {
       const result = await exec(bun, ["scripts/layout.ts", "apply", "--herdr-version", version], { cwd: repo }).catch((error) => ({
         code: 1,

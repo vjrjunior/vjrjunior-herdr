@@ -15,7 +15,7 @@ mock.module("herdr", () => ({
     return app.result;
   },
   notify: (notification: Notification) => notifications.push(notification),
-  props: () => ({ built: app.built, repo: "/repo", bun: "/bin/bun" }),
+  props: () => (app.built ? { built: app.built, repo: "/repo", bun: "/bin/bun" } : null),
   updates: () => ({ app: { version: app.version } }),
 }));
 
@@ -41,6 +41,13 @@ beforeEach(() => {
 describe("vjr-sync", () => {
   test("does nothing when the version matches", async () => {
     await start({ version: "0.1.10", built: "0.1.10" });
+
+    expect(execCalls).toEqual([]);
+    expect(notifications).toEqual([]);
+  });
+
+  test("does nothing without props, as in herdr-app check", async () => {
+    await start({ version: "0.1.11", built: "" });
 
     expect(execCalls).toEqual([]);
     expect(notifications).toEqual([]);
