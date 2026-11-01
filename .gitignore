@@ -2,3 +2,5 @@
 !preview.png
 mods/*/gpui-kit.d.ts
 mods/*/jsconfig.json
+docs/
+.superpowers/
