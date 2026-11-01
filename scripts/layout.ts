@@ -1,8 +1,8 @@
-import { appendFileSync, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, closeSync, cpSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync, writeSync } from "node:fs";
 import { join } from "node:path";
 import { LEFT_ROUNDED, VARIANTS } from "../recipes/variants";
 import { type Generated, generateVariant } from "./generate-layout";
-import { deriveSection, type KeyTable, keysText, readKeys, withSections } from "./layout-keys";
+import { deriveSection, type KeyTable, keysText, readKeys, withoutSections, withSections } from "./layout-keys";
 import { herdrAppHome, stateDir } from "./paths";
 
 export type ApplyResult = "applied" | "unchanged" | "busy";
@@ -12,9 +12,45 @@ const root = join(import.meta.dir, "..");
 const REPO_MODS = ["vjr-sync", "git-graph"];
 const APP_WRITTEN = ["gpui-kit.d.ts", "jsconfig.json"];
 const EMPTY_RECORD: LayoutRecord = { version: "", mods: [], kept: [], files: [], sections: [] };
+const RELOAD_MS = 1500;
 
 function recordPath(): string {
   return join(stateDir(), "layout.json");
+}
+
+function lockPath(): string {
+  return join(stateDir(), "layout.lock");
+}
+
+function lockHolderAlive(): boolean {
+  const pid = Number(readFileSync(lockPath(), "utf8"));
+  if (!pid) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === "EPERM";
+  }
+}
+
+function takeLock(): boolean {
+  try {
+    const lock = openSync(lockPath(), "wx");
+    writeSync(lock, String(process.pid));
+    closeSync(lock);
+    return true;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+  }
+  if (lockHolderAlive()) return false;
+  rmSync(lockPath(), { force: true });
+  return takeLock();
+}
+
+function removeLeftovers(): void {
+  for (const name of readdirSync(stateDir())) {
+    if (/^(build|previous)-\d+$/.test(name)) rmSync(join(stateDir(), name), { recursive: true, force: true });
+  }
 }
 
 function readRecord(): LayoutRecord {
@@ -94,6 +130,26 @@ function checkMods(build: string, mods: string[]): void {
   }
 }
 
+function windowErrors(): string[] | null {
+  const result = Bun.spawnSync(["herdr-app", "status"]);
+  if (!result.success) return null;
+  const errors: unknown[] = JSON.parse(result.stdout.toString()).errors ?? [];
+  return errors.map((error) => (typeof error === "string" ? error : JSON.stringify(error)));
+}
+
+function restoreMods(home: string, previous: string, installed: string[]): void {
+  for (const mod of installed) rmSync(join(home, "mods", mod), { recursive: true, force: true });
+  if (!existsSync(previous)) return;
+  for (const mod of readdirSync(previous)) move(join(previous, mod), join(home, "mods", mod));
+}
+
+function refuseNewErrors(before: string[] | null): void {
+  if (before === null) return;
+  Bun.sleepSync(RELOAD_MS);
+  const added = (windowErrors() ?? []).filter((error) => !before.includes(error));
+  if (added.length > 0) throw new Error(`herdr-app reported errors after the swap: ${added.join("; ")}`);
+}
+
 function warnUncovered(home: string): void {
   const path = join(home, "installed.json");
   if (!existsSync(path)) return;
@@ -140,11 +196,22 @@ function applyAll(options: { herdrVersion?: string }): ApplyResult {
 
     checkMods(build, changedMods);
 
+    const before = windowErrors();
     mkdirSync(previous, { recursive: true });
-    for (const mod of [...changedMods, ...staleMods]) {
-      if (existsSync(join(home, "mods", mod))) move(join(home, "mods", mod), join(previous, mod));
+    const installed: string[] = [];
+    try {
+      for (const mod of [...changedMods, ...staleMods]) {
+        if (existsSync(join(home, "mods", mod))) move(join(home, "mods", mod), join(previous, mod));
+      }
+      for (const mod of changedMods) {
+        move(join(build, mod), join(home, "mods", mod));
+        installed.push(mod);
+      }
+      if (changedMods.length > 0) refuseNewErrors(before);
+    } catch (error) {
+      restoreMods(home, previous, installed);
+      throw error;
     }
-    for (const mod of changedMods) move(join(build, mod), join(home, "mods", mod));
 
     if (keysChanged) writeThrough(join(state, "keys.tmp"), keysPath, keys);
     const ordered = [...changedFiles].sort((a, b) => Number(a.endsWith(".json")) - Number(b.endsWith(".json")));
@@ -159,11 +226,45 @@ function applyAll(options: { herdrVersion?: string }): ApplyResult {
   }
 }
 
+function writeLog(line: string): void {
+  appendFileSync(join(stateDir(), "layout.log"), `${new Date().toISOString()} ${line.replace(/\s+/g, " ")}\n`);
+}
+
 export function apply(options: { herdrVersion?: string } = {}): ApplyResult {
   mkdirSync(stateDir(), { recursive: true });
-  const result = applyAll(options);
-  appendFileSync(join(stateDir(), "layout.log"), `${new Date().toISOString()} ${result}\n`);
-  return result;
+  if (!takeLock()) return "busy";
+  try {
+    removeLeftovers();
+    const result = applyAll(options);
+    writeLog(`${options.herdrVersion ?? "cli"} ${result}`);
+    return result;
+  } catch (error) {
+    writeLog(`${options.herdrVersion ?? "cli"} failed: ${(error as Error).message}`);
+    throw error;
+  } finally {
+    rmSync(lockPath(), { force: true });
+  }
+}
+
+function leaveOurLayout(record: LayoutRecord): void {
+  if (!Bun.which("herdr-app")) return;
+  const status = Bun.spawnSync(["herdr-app", "status"]);
+  if (!status.success) return;
+  const shown = JSON.parse(status.stdout.toString()).layout;
+  if (record.files.includes(`layouts/${shown}.json`)) Bun.spawnSync(["herdr-app", "do", "layout.switch", JSON.stringify({ name: "main" })]);
+}
+
+export function uninstall(): void {
+  if (!existsSync(recordPath())) return;
+  const home = herdrAppHome();
+  const keysPath = join(home, "keys.json");
+  const record = readRecord();
+  const table = withoutSections(readKeys(keysPath), record.sections);
+  leaveOurLayout(record);
+  for (const mod of record.mods) rmSync(join(home, "mods", mod), { recursive: true, force: true });
+  for (const file of record.files) rmSync(join(home, file), { force: true });
+  writeFileSync(keysPath, keysText(table));
+  rmSync(recordPath(), { force: true });
 }
 
 function flag(args: string[], name: string): string | undefined {
@@ -175,7 +276,8 @@ if (import.meta.main) {
   try {
     const [command, ...args] = process.argv.slice(2);
     if (command === "apply") console.log(apply({ herdrVersion: flag(args, "--herdr-version") }));
-    else throw new Error("usage: layout.ts apply [--herdr-version X]");
+    else if (command === "uninstall") uninstall();
+    else throw new Error("usage: layout.ts apply [--herdr-version X] | uninstall");
   } catch (error) {
     console.error(`error: ${(error as Error).message}`);
     process.exit(1);

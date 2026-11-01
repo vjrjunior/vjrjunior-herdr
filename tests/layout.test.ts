@@ -282,3 +282,196 @@ describe("apply", () => {
     expect(result.stderr).toContain("install-theme");
   });
 });
+
+describe("failures", () => {
+  const ours = (home: string) => Object.fromEntries(Object.entries(snapshot(home)).filter(([path]) => OURS.test(path)));
+
+  test("a recipe that no longer fits changes nothing", () => {
+    const { home, apply } = setup();
+    apply();
+    const before = ours(home);
+    writeFileSync(join(home, "frame/palette/main.js"), "changed");
+
+    const result = apply(["--herdr-version", "0.1.11"]);
+
+    expect(result.code).toBe(1);
+    expect(result.stderr).toContain("recipe list-vjr-theme:");
+    expect(ours(home)).toEqual(before);
+  });
+
+  test("a failed check changes nothing and names the mod", () => {
+    const { home, apply, syncProps } = setup();
+    apply();
+    const before = ours(home);
+
+    const result = apply(["--herdr-version", "0.1.11"], { FAKE_HERDR_CHECK_FAIL: "vjr-square-tabs" });
+
+    expect(result.code).toBe(1);
+    expect(result.stderr).toContain("vjr-square-tabs");
+    expect(ours(home)).toEqual(before);
+    expect(syncProps("vjr-desk").built).toBe("0.1.10");
+  });
+
+  test("new errors after the swap restore the previous copies", () => {
+    const { home, apply, modMeta, syncProps } = setup();
+    apply();
+    const before = ours(home);
+
+    const result = apply(["--herdr-version", "0.1.11"], { FAKE_HERDR_WINDOW: "vjr-desk", FAKE_HERDR_STATUS_ERROR: "boom" });
+
+    expect(result.code).toBe(1);
+    expect(result.stderr).toContain("boom");
+    expect(modMeta("vjr-square-tabs").cloned_from.version).toBe("0.1.10");
+    expect(syncProps("vjr-desk").built).toBe("0.1.10");
+    expect(ours(home)).toEqual(before);
+  });
+
+  test("errors that were already there do not block", () => {
+    const { apply, syncProps } = setup();
+
+    expect(apply([], { FAKE_HERDR_WINDOW: "vjr-desk", FAKE_HERDR_STATUS_ERROR_ALWAYS: "old" }).code).toBe(0);
+
+    expect(syncProps("vjr-desk").built).toBe("0.1.10");
+  });
+
+  test("invalid keys.json stops before any write", () => {
+    const { home, apply } = setup();
+    writeFileSync(join(home, "keys.json"), "{");
+
+    const result = apply();
+
+    expect(result.code).toBe(1);
+    expect(result.stderr).toContain("keys.json");
+    expect(existsSync(join(home, "mods/vjr-sync"))).toBe(false);
+  });
+
+  test("a folder that is not ours is never overwritten", () => {
+    const { home, apply } = setup();
+    mkdirSync(join(home, "mods/vjr-square-tabs"));
+    writeFileSync(join(home, "mods/vjr-square-tabs/mine.js"), "");
+
+    const result = apply();
+
+    expect(result.code).toBe(1);
+    expect(result.stderr).toContain("not created by this repo");
+    expect(existsSync(join(home, "mods/vjr-square-tabs/mine.js"))).toBe(true);
+    expect(existsSync(join(home, "mods/vjr-sync"))).toBe(false);
+  });
+
+  test("a layout that is not ours is never overwritten", () => {
+    const { home, apply } = setup();
+    writeFileSync(join(home, "layouts/vjr-desk.json"), "mine");
+
+    expect(apply().stderr).toContain("not created by this repo");
+
+    expect(readFileSync(join(home, "layouts/vjr-desk.json"), "utf8")).toBe("mine");
+  });
+
+  test("a running apply makes the second one exit quietly", () => {
+    const { home, state, apply } = setup();
+    mkdirSync(state, { recursive: true });
+    writeFileSync(join(state, "layout.lock"), String(process.pid));
+
+    const result = apply();
+
+    expect(result.code).toBe(0);
+    expect(result.stdout).toContain("busy");
+    expect(existsSync(join(home, "mods/vjr-sync"))).toBe(false);
+    expect(existsSync(join(state, "layout.lock"))).toBe(true);
+  });
+
+  test("a lock left by a dead process does not block", () => {
+    const { home, state, apply } = setup();
+    mkdirSync(state, { recursive: true });
+    writeFileSync(join(state, "layout.lock"), "999999");
+
+    expect(apply().code).toBe(0);
+
+    expect(existsSync(join(home, "mods/vjr-sync"))).toBe(true);
+    expect(existsSync(join(state, "layout.lock"))).toBe(false);
+  });
+
+  test("the lock goes away after a failure", () => {
+    const { state, apply } = setup();
+
+    apply([], { FAKE_HERDR_CHECK_FAIL: "vjr-sync" });
+
+    expect(existsSync(join(state, "layout.lock"))).toBe(false);
+  });
+
+  test("leftovers from a killed run are removed", () => {
+    const { state, apply } = setup();
+    mkdirSync(join(state, "build-999"), { recursive: true });
+    mkdirSync(join(state, "previous-999"), { recursive: true });
+
+    apply();
+
+    expect(readdirSync(state).filter((name) => /^(build|previous)-/.test(name))).toEqual([]);
+  });
+
+  test("failures are logged", () => {
+    const { state, apply } = setup();
+
+    apply([], { FAKE_HERDR_CHECK_FAIL: "vjr-sync" });
+
+    expect(readFileSync(join(state, "layout.log"), "utf8")).toContain("failed");
+  });
+});
+
+describe("uninstall", () => {
+  test("removes everything recorded and keeps the rest", () => {
+    const { home, state, apply, uninstall, keys } = setup();
+    const global = keys().global;
+    apply();
+
+    expect(uninstall().code).toBe(0);
+
+    expect(readdirSync(join(home, "mods")).filter((name) => name.startsWith("vjr-"))).toEqual([]);
+    expect(existsSync(join(home, "mods/git-graph"))).toBe(false);
+    expect(existsSync(join(home, "layouts/vjr-desk.json"))).toBe(false);
+    expect(existsSync(join(home, "layouts/vjr-desk-square.svg"))).toBe(false);
+    expect(keys()["layout:vjr-desk"]).toBeUndefined();
+    expect(keys()["layout:vjr-desk-square"]).toBeUndefined();
+    expect(keys().global).toEqual(global);
+    expect(existsSync(join(home, "themes/vjr.json"))).toBe(true);
+    expect(existsSync(join(home, "mods/tabs/main.js"))).toBe(true);
+    expect(existsSync(join(state, "layout.json"))).toBe(false);
+  });
+
+  test("keeps an adopted git-graph", () => {
+    const { home, apply, uninstall, installGitGraph } = setup();
+    installGitGraph();
+    apply();
+
+    uninstall();
+
+    expect(existsSync(join(home, "mods/git-graph/main.js"))).toBe(true);
+  });
+
+  test("leaves our layout first when the window shows it", () => {
+    const { apply, uninstall, log } = setup();
+    apply();
+
+    uninstall({ FAKE_HERDR_WINDOW: "vjr-desk-square" });
+
+    expect(log()).toContain('do layout.switch {"name":"main"}');
+  });
+
+  test("stays on another layout when the window shows one", () => {
+    const { apply, uninstall, log } = setup();
+    apply();
+
+    uninstall({ FAKE_HERDR_WINDOW: "terminals" });
+
+    expect(log().filter((line) => line.startsWith("do "))).toEqual([]);
+  });
+
+  test("does nothing without a record", () => {
+    const { home, uninstall } = setup();
+    const before = snapshot(home);
+
+    expect(uninstall().code).toBe(0);
+
+    expect(snapshot(home)).toEqual(before);
+  });
+});
