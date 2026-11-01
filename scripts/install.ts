@@ -14,29 +14,28 @@ import {
   symlinkSync,
   writeFileSync,
 } from "node:fs";
-import { homedir } from "node:os";
 import { dirname, join } from "node:path";
+import { configHome, herdrAppHome, stateDir } from "./paths";
 
 type Target = { app: string; home: string; file: string; source: string };
 type Entry = { path: string; mode: "copy"; fingerprint: string; backup: string | null; createdThemes: boolean };
 type InstallRecord = { targets: Record<string, Entry> };
 
 const root = join(import.meta.dir, "..");
-const config = process.env.XDG_CONFIG_HOME || join(homedir(), ".config");
-const state = join(process.env.XDG_STATE_HOME || join(homedir(), ".local/state"), "vjr-herdr");
+const state = stateDir();
 const recordPath = join(state, "install.json");
 const TEMP_PREFIX = ".vjr-herdr.tmp-";
 
 const TARGETS: Target[] = [
   {
     app: "herdr-app",
-    home: process.env.HERDR_APP_HOME || join(config, "herdr-app"),
+    home: herdrAppHome(),
     file: "vjr.json",
     source: join(root, "themes/vjr.json"),
   },
   {
     app: "ghostty",
-    home: join(config, "ghostty"),
+    home: join(configHome(), "ghostty"),
     file: "VJR",
     source: join(root, "targets/ghostty/VJR"),
   },

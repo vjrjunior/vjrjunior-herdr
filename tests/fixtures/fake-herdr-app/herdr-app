@@ -1,0 +1,33 @@
+#!/bin/sh
+echo "$*" >> "$FAKE_HERDR_LOG"
+case "$1" in
+  --version)
+    echo "herdr-app ${FAKE_HERDR_VERSION:-0.1.10}"
+    ;;
+  check)
+    if [ -n "$FAKE_HERDR_CHECK_FAIL" ]; then
+      case "$2" in
+        *"$FAKE_HERDR_CHECK_FAIL")
+          echo "check failed: $2" >&2
+          exit 1
+          ;;
+      esac
+    fi
+    echo "check passed: $2"
+    ;;
+  status)
+    if [ -z "$FAKE_HERDR_WINDOW" ]; then
+      echo "no Herdr window" >&2
+      exit 2
+    fi
+    marker="$FAKE_HERDR_LOG.status"
+    errors="[]"
+    if [ -n "$FAKE_HERDR_STATUS_ERROR_ALWAYS" ]; then
+      errors="[\"$FAKE_HERDR_STATUS_ERROR_ALWAYS\"]"
+    elif [ -e "$marker" ] && [ -n "$FAKE_HERDR_STATUS_ERROR" ]; then
+      errors="[\"$FAKE_HERDR_STATUS_ERROR\"]"
+    fi
+    touch "$marker"
+    echo "{\"layout\":\"$FAKE_HERDR_WINDOW\",\"errors\":$errors}"
+    ;;
+esac

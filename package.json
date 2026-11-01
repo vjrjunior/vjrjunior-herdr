@@ -8,6 +8,8 @@
     "build": "bun scripts/build.ts",
     "install-theme": "bun scripts/install.ts",
     "uninstall-theme": "bun scripts/install.ts --uninstall",
+    "apply-layout": "bun scripts/layout.ts apply",
+    "uninstall-layout": "bun scripts/layout.ts uninstall",
     "watch": "bun --watch scripts/watch.ts",
     "test": "bun test"
   }

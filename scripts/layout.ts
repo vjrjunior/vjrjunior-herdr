@@ -1,0 +1,183 @@
+import { appendFileSync, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { LEFT_ROUNDED, VARIANTS } from "../recipes/variants";
+import { type Generated, generateVariant } from "./generate-layout";
+import { deriveSection, type KeyTable, keysText, readKeys, withSections } from "./layout-keys";
+import { herdrAppHome, stateDir } from "./paths";
+
+export type ApplyResult = "applied" | "unchanged" | "busy";
+export type LayoutRecord = { version: string; mods: string[]; kept: string[]; files: string[]; sections: string[] };
+
+const root = join(import.meta.dir, "..");
+const REPO_MODS = ["vjr-sync", "git-graph"];
+const APP_WRITTEN = ["gpui-kit.d.ts", "jsconfig.json"];
+const EMPTY_RECORD: LayoutRecord = { version: "", mods: [], kept: [], files: [], sections: [] };
+
+function recordPath(): string {
+  return join(stateDir(), "layout.json");
+}
+
+function readRecord(): LayoutRecord {
+  return existsSync(recordPath()) ? { ...EMPTY_RECORD, ...JSON.parse(readFileSync(recordPath(), "utf8")) } : EMPTY_RECORD;
+}
+
+function listFiles(folder: string, ignored: string[], prefix = ""): string[] {
+  return readdirSync(folder, { withFileTypes: true })
+    .filter((entry) => !ignored.includes(entry.name))
+    .flatMap((entry) => (entry.isDirectory() ? listFiles(join(folder, entry.name), ignored, `${prefix}${entry.name}/`) : [`${prefix}${entry.name}`]))
+    .sort();
+}
+
+function sameFolder(a: string, b: string, ignored: string[]): boolean {
+  if (!existsSync(a) || !existsSync(b)) return false;
+  const files = listFiles(a, ignored);
+  if (files.join("\n") !== listFiles(b, ignored).join("\n")) return false;
+  return files.every((file) => readFileSync(join(a, file)).equals(readFileSync(join(b, file))));
+}
+
+function move(from: string, to: string): void {
+  try {
+    renameSync(from, to);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "EXDEV") throw error;
+    cpSync(from, to, { recursive: true });
+    rmSync(from, { recursive: true, force: true });
+  }
+}
+
+function writeThrough(temp: string, path: string, text: string): void {
+  writeFileSync(temp, text);
+  move(temp, path);
+}
+
+function installedVersion(): string {
+  const result = Bun.spawnSync(["herdr-app", "--version"]);
+  const version = result.stdout.toString().trim().split(/\s+/).at(-1);
+  if (!result.success || !version) throw new Error("could not read the version from herdr-app --version");
+  return version;
+}
+
+function writeBuild(build: string, generated: Generated[]): void {
+  for (const variant of generated) {
+    for (const [mod, files] of Object.entries(variant.mods)) {
+      mkdirSync(join(build, mod), { recursive: true });
+      for (const [file, text] of Object.entries(files)) writeFileSync(join(build, mod, file), text);
+    }
+  }
+  for (const mod of REPO_MODS) cpSync(join(root, "mods", mod), join(build, mod), { recursive: true });
+}
+
+function adoptedGitGraph(home: string, record: LayoutRecord, build: string): boolean {
+  const installed = join(home, "mods/git-graph");
+  if (!existsSync(installed) || record.mods.includes("git-graph")) return false;
+  if (sameFolder(installed, join(build, "git-graph"), [...APP_WRITTEN, "LICENSE"])) return true;
+  if (!record.kept.includes("git-graph")) return false;
+  console.warn(`${installed} differs from this repo; leaving it as it is`);
+  return true;
+}
+
+function refuseForeign(paths: string[], recorded: string[], home: string): void {
+  for (const path of paths) {
+    if (existsSync(join(home, path)) && !recorded.includes(path)) throw new Error(`${join(home, path)} already exists and was not created by this repo`);
+  }
+}
+
+function keySections(table: KeyTable, generated: Generated[]): KeyTable {
+  const global = table.global ?? {};
+  return Object.fromEntries(generated.map((variant) => [`layout:${variant.layout}`, deriveSection(global, variant.replacements)]));
+}
+
+function checkMods(build: string, mods: string[]): void {
+  for (const mod of mods) {
+    const result = Bun.spawnSync(["herdr-app", "check", join(build, mod)]);
+    if (!result.success) throw new Error(`${mod} failed herdr-app check: ${`${result.stdout}${result.stderr}`.trim()}`);
+  }
+}
+
+function warnUncovered(home: string): void {
+  const path = join(home, "installed.json");
+  if (!existsSync(path)) return;
+  const covered = VARIANTS.flatMap((variant) => variant.recipes.flatMap((recipe) => recipe.mods.map((mod) => mod.name)));
+  for (const name of Object.keys(JSON.parse(readFileSync(path, "utf8")))) {
+    if (name.startsWith("layout:") || covered.includes(name) || LEFT_ROUNDED.includes(name)) continue;
+    const main = join(home, "mods", name, "main.js");
+    if (existsSync(main) && readFileSync(main, "utf8").includes(".rounded")) console.warn(`mods/${name} has rounded corners that no recipe covers`);
+  }
+}
+
+function applyAll(options: { herdrVersion?: string }): ApplyResult {
+  const home = herdrAppHome();
+  const state = stateDir();
+  if (!existsSync(join(home, "themes/vjr.json"))) throw new Error("the vjr theme is not installed: run bun run install-theme first");
+  const keysPath = join(home, "keys.json");
+  const table = readKeys(keysPath);
+  const version = options.herdrVersion ?? installedVersion();
+  const record = readRecord();
+  const generated = VARIANTS.map((variant) => generateVariant(variant, { home, version, repo: root, bun: process.execPath }));
+  const build = join(state, `build-${process.pid}`);
+  const previous = join(state, `previous-${process.pid}`);
+  mkdirSync(build, { recursive: true });
+
+  try {
+    writeBuild(build, generated);
+    const kept = adoptedGitGraph(home, record, build) ? ["git-graph"] : [];
+    const mods = readdirSync(build).filter((mod) => !kept.includes(mod));
+    const files: Record<string, string> = {};
+    for (const variant of generated) {
+      files[`layouts/${variant.layout}.json`] = variant.layoutText;
+      files[`layouts/${variant.layout}.svg`] = readFileSync(join(root, "layouts", `${variant.layout}.svg`), "utf8");
+    }
+    refuseForeign(mods.map((mod) => `mods/${mod}`), record.mods.map((mod) => `mods/${mod}`), home);
+    refuseForeign(Object.keys(files), record.files, home);
+
+    const sections = keySections(table, generated);
+    const keys = keysText(withSections(table, sections));
+    const changedMods = mods.filter((mod) => !sameFolder(join(build, mod), join(home, "mods", mod), APP_WRITTEN));
+    const staleMods = record.mods.filter((mod) => !mods.includes(mod));
+    const changedFiles = Object.keys(files).filter((path) => !existsSync(join(home, path)) || readFileSync(join(home, path), "utf8") !== files[path]);
+    const keysChanged = !existsSync(keysPath) || readFileSync(keysPath, "utf8") !== keys;
+    if (changedMods.length + staleMods.length + changedFiles.length === 0 && !keysChanged && existsSync(recordPath())) return "unchanged";
+
+    checkMods(build, changedMods);
+
+    mkdirSync(previous, { recursive: true });
+    for (const mod of [...changedMods, ...staleMods]) {
+      if (existsSync(join(home, "mods", mod))) move(join(home, "mods", mod), join(previous, mod));
+    }
+    for (const mod of changedMods) move(join(build, mod), join(home, "mods", mod));
+
+    if (keysChanged) writeThrough(join(state, "keys.tmp"), keysPath, keys);
+    const ordered = [...changedFiles].sort((a, b) => Number(a.endsWith(".json")) - Number(b.endsWith(".json")));
+    for (const path of ordered) writeThrough(join(state, "file.tmp"), join(home, path), files[path] as string);
+    const next: LayoutRecord = { version, mods, kept, files: Object.keys(files), sections: Object.keys(sections) };
+    writeThrough(join(state, "record.tmp"), recordPath(), `${JSON.stringify(next, null, 2)}\n`);
+    warnUncovered(home);
+    return "applied";
+  } finally {
+    rmSync(build, { recursive: true, force: true });
+    rmSync(previous, { recursive: true, force: true });
+  }
+}
+
+export function apply(options: { herdrVersion?: string } = {}): ApplyResult {
+  mkdirSync(stateDir(), { recursive: true });
+  const result = applyAll(options);
+  appendFileSync(join(stateDir(), "layout.log"), `${new Date().toISOString()} ${result}\n`);
+  return result;
+}
+
+function flag(args: string[], name: string): string | undefined {
+  const index = args.indexOf(name);
+  return index < 0 ? undefined : args[index + 1];
+}
+
+if (import.meta.main) {
+  try {
+    const [command, ...args] = process.argv.slice(2);
+    if (command === "apply") console.log(apply({ herdrVersion: flag(args, "--herdr-version") }));
+    else throw new Error("usage: layout.ts apply [--herdr-version X]");
+  } catch (error) {
+    console.error(`error: ${(error as Error).message}`);
+    process.exit(1);
+  }
+}
