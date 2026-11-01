@@ -1,6 +1,6 @@
 # vjrjunior-herdr
 
-My customizations for [Herdr](https://herdr.dev). Today that is the VJR theme, a dark palette of three hues (peach, mint and red) over a gray ladder, generated from one file for herdr-app and Ghostty.
+My customizations for [Herdr](https://herdr.dev): the VJR theme, a dark palette of three hues (peach, mint and red) over a gray ladder, generated from one file for herdr-app and Ghostty, and two herdr-app layouts built on it.
 
 ## Use the theme
 
@@ -16,7 +16,7 @@ Then open **Settings → Look → Dark** and choose `vjr`, or run:
 herdr-app do app.theme '{"name":"vjr"}'
 ```
 
-The command palette will not show it: its `Theme:` list holds only the four built-in themes. The choice applies to the layout on screen, and each layout keeps its own.
+Herdr's own command palette will not show it: its `Theme:` list holds only the four built-in themes. The layouts below add it. The choice applies to the layout on screen, and each layout keeps its own.
 
 For Ghostty, copy `targets/ghostty/VJR` to `~/.config/ghostty/themes/` and set `theme = VJR`.
 
@@ -59,7 +59,47 @@ A palette that does not validate installs nothing, and the last good theme stays
 |---|---|---|
 | `HERDR_APP_HOME` | `~/.config/herdr-app` | herdr-app's folder, and which running window `herdr-app` talks to |
 | `XDG_CONFIG_HOME` | `~/.config` | Ghostty's folder |
-| `XDG_STATE_HOME` | `~/.local/state` | backups and the install record |
+| `XDG_STATE_HOME` | `~/.local/state` | backups, the install records and the layout log |
+
+## Use the layouts
+
+Two layouts for herdr-app, built from the version you have installed:
+
+| Layout | What it is |
+|---|---|
+| `vjr-desk` | Herdr's window with the VJR theme, `vjr` in the command palette and a **Graph** button that opens Git Graph in the side panel. |
+| `vjr-desk-square` | The same window with every corner a layout can reach squared, including menus, popups, the command palette, Settings and Git Graph. |
+
+```sh
+bun run install-theme
+bun run apply-layout
+herdr-app do layout.switch '{"name":"vjr-desk-square"}'
+```
+
+Switch between layouts with `cmd-shift-l`, or with `Layout:` in the command palette. `bun run uninstall-layout` removes everything `apply-layout` created and goes back to `main` if needed. It leaves the theme installed.
+
+These stay rounded, because the app draws them or opens them by itself: renaming, close confirmations, notifications, peek, Welcome, What's new, the feedback window, Add machine's terminal dialog, the spinner and the window's outer corners.
+
+### How they stay current
+
+[`RECIPE.md`](RECIPE.md) describes the layouts. The layouts follow Herdr's format: `themes/`, `mods/` and `layouts/` mirror the app's folder. The difference is that the mods are not stored here, so this repo is not ready for a plain `cp`. Community layouts ship a copy of Herdr's mods from one version, and those stop receiving Herdr's fixes. Here `recipes/` holds small edits, and `bun run apply-layout` applies them to the files of the Herdr you have installed.
+
+When Herdr updates, the invisible `vjr-sync` mod notices the new version and runs the same command, so the copies rebuild themselves within seconds. It only runs while one of these layouts is on screen.
+
+If a recipe no longer fits the new version, nothing changes in either layout: the previous copies keep running and a warning says what to run. The shipped `main` layout is never touched, so `cmd-shift-l` always has somewhere to go.
+
+- The folders in `~/.config/herdr-app/mods/vjr-*` are generated. To change one, edit `recipes/` and run `bun run apply-layout`.
+- Run it again after changing the shortcut for the palette, Settings, help or search in the `global` section of `keys.json`.
+- The layouts store this repo's path. If you move it, run `bun run apply-layout` from the new place.
+- `~/.local/state/vjr-herdr/layout.log` records every run.
+
+### Git Graph
+
+`mods/git-graph/` is [herdr-git-graph](https://github.com/rabeeh-ta/herdr-git-graph) by Rabeeh T A (MIT), unmodified, at commit `1cfcff3`. `apply-layout` installs it, and leaves an identical copy you already have alone.
+
+It runs `git` in the focused repository and reads the folders open in other panes ahead of time, also on other machines. It reaches the network only through git, on Fetch, Push and when deleting a remote branch.
+
+It is third-party code that runs with your permissions, so it never updates by itself. To move to a new version, read the new code, replace `mods/git-graph/` and run `bun run apply-layout`.
 
 ## License
 
