@@ -12,6 +12,21 @@ export type Variant = { layout: string; prefix: string; preview: string; recipes
 
 export class RecipeError extends Error {}
 
+export function findNode(node: LayoutNode, id: string): LayoutNode {
+  const found = search(node, id);
+  if (!found) throw new RecipeError(`layout node ${id} not found`);
+  return found;
+}
+
+function search(node: LayoutNode, id: string): LayoutNode | null {
+  if (node.id === id) return node;
+  for (const child of (node.children as LayoutNode[] | undefined) ?? []) {
+    const found = search(child, id);
+    if (found) return found;
+  }
+  return null;
+}
+
 export function exact(copy: Copy, from: string, to: string, expected = 1): void {
   const found = Object.values(copy.files).reduce((total, text) => total + text.split(from).length - 1, 0);
   if (found !== expected) throw new RecipeError(`${copy.name}: expected ${expected} of ${JSON.stringify(from)}, found ${found}`);
