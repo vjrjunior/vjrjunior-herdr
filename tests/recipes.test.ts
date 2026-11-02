@@ -45,12 +45,12 @@ function modsIn(node: unknown): string[] {
 const graphChild = (generated: ReturnType<typeof generate>) => findNode(JSON.parse(generated.layoutText), "panel-body")?.children.at(-1);
 
 describe("variants", () => {
-  test("vjr-desk copies the palette, the status bar, the tab bar and the spaces tree", () => {
-    expect(Object.keys(generateDesk().mods).sort()).toEqual(["vjr-palette", "vjr-spaces-tree", "vjr-tabs", "vjr-workspace-status"]);
+  test("vjr-desk copies the palette, the status bar, the tab bar, the spaces tree and comeback", () => {
+    expect(Object.keys(generateDesk().mods).sort()).toEqual(["vjr-comeback", "vjr-palette", "vjr-spaces-tree", "vjr-tabs", "vjr-workspace-status"]);
   });
 
-  test("vjr-desk-square copies seventeen mods", () => {
-    expect(Object.keys(generateSquare().mods)).toHaveLength(17);
+  test("vjr-desk-square copies eighteen mods", () => {
+    expect(Object.keys(generateSquare().mods)).toHaveLength(18);
   });
 
   test("vjr-desk keeps the shipped mods elsewhere", () => {
@@ -285,5 +285,19 @@ describe("spaces-tree", () => {
 
   test("the rounded copy keeps its corners", () => {
     expect(generateDesk().mods["vjr-spaces-tree"]?.["main.js"]).toMatch(/\.rounded\(8\)/);
+  });
+});
+
+describe("comeback", () => {
+  test("both layouts float the comeback copy", () => {
+    for (const [generated, copy] of [
+      [generateDesk(), "vjr-comeback"],
+      [generateSquare(), "vjr-square-comeback"],
+    ] as const) {
+      const floating = JSON.parse(generated.layoutText).floating;
+      expect(floating).toContainEqual({ id: "comeback", content: { mod: copy }, edge: "left", align: "end" });
+      expect(floating.at(-1).id).toBe("vjr-sync");
+      expect(generated.mods[copy]?.["logic.js"]).toContain("export function planPass");
+    }
   });
 });
