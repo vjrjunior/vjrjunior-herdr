@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
+  autoCandidate,
   decodeNote,
   encodeNote,
   isShell,
@@ -45,6 +46,7 @@ describe("machine facts", () => {
 describe("parseSession", () => {
   test("reads the conversation and folder of a running Claude", () => {
     expect(parseSession('{"pid":5770,"sessionId":"abc-1","cwd":"/w/app","status":"busy"}')).toEqual({ session: "abc-1", cwd: "/w/app" });
+    expect(parseSession('{"pid":5770,"sessionId":"abc-1","cwd":"/w/app","procStart":"Mon Nov  2 13:36:12 2026"}')?.procStart).toBe("Mon Nov  2 13:36:12 2026");
   });
 
   test("gives nothing for a missing or broken file", () => {
@@ -234,5 +236,22 @@ describe("summary", () => {
       level: "info",
       timeout: 3000,
     });
+  });
+});
+
+describe("the automatic pass", () => {
+  const boot = "1800000000";
+
+  test("only takes a fresh lost shell or a lost terminal busy with something else, once", () => {
+    expect(autoCandidate(term(), boot)).toBe(true);
+    expect(autoCandidate(term({ age: 121 }), boot)).toBe(false);
+    expect(autoCandidate(term({ foreground: { pid: 4000, argv: ["npm", "run", "dev"] }, age: 5000 }), boot)).toBe(true);
+    expect(autoCandidate(term({ note: markTried(note, term(), boot) }), boot)).toBe(false);
+    expect(autoCandidate(term(), note.boot)).toBe(false);
+  });
+
+  test("a lost terminal with something else in front is skipped with a reason", () => {
+    const busy = term({ foreground: { pid: 4000, argv: ["npm", "run", "dev"] } });
+    expect(planPass([busy], { auto: true, boot, folderOk: () => true, transcriptOk: () => true, open: new Set() }).skipped.map((s) => s.reason)).toEqual(["something else is running there"]);
   });
 });

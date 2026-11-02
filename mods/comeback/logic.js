@@ -25,7 +25,7 @@ export function parseSession(text) {
   try {
     const data = JSON.parse(text);
     if (typeof data?.sessionId !== "string" || typeof data.cwd !== "string") return null;
-    return { session: data.sessionId, cwd: data.cwd };
+    return { session: data.sessionId, cwd: data.cwd, procStart: typeof data.procStart === "string" ? data.procStart : undefined };
   } catch {
     return null;
   }
@@ -108,7 +108,7 @@ export function lastLine(screen) {
   return (lines.at(-1) ?? "").trim().slice(0, 120);
 }
 
-const FRESH = 600;
+const FRESH = 120;
 
 export function judge(terminal, boot) {
   const front = terminal.foreground;
@@ -130,8 +130,18 @@ export function markTried(note, terminal, boot, reason) {
   return { ...note, tried: { boot, shell: { pid: terminal.pid, start: terminal.start }, ...(reason ? { reason } : {}) } };
 }
 
-export function planPass(lost, ctx) {
-  const candidates = lost.filter((terminal) => !ctx.auto || (!triedNow(terminal.note, terminal, ctx.boot) && terminal.age <= FRESH));
+export function autoCandidate(terminal, boot) {
+  const verdict = judge(terminal, boot);
+  if ((verdict !== "lost" && verdict !== "busy") || triedNow(terminal.note, terminal, boot)) return false;
+  return verdict === "busy" || terminal.age <= FRESH;
+}
+
+export function planPass(terminals, ctx) {
+  const candidates = terminals.filter((terminal) => {
+    const verdict = judge(terminal, ctx.boot);
+    if (verdict !== "lost" && verdict !== "busy") return false;
+    return !ctx.auto || autoCandidate(terminal, ctx.boot);
+  });
   const ordered = [...candidates].sort((a, b) => b.note.at - a.note.at);
   const todo = [];
   const skipped = [];
@@ -139,7 +149,8 @@ export function planPass(lost, ctx) {
   for (const terminal of ordered) {
     const { cwd, session } = terminal.note;
     let reason = null;
-    if (quote(cwd) === null) reason = "its folder can't be typed";
+    if (judge(terminal, ctx.boot) === "busy") reason = "something else is running there";
+    else if (quote(cwd) === null) reason = "its folder can't be typed";
     else if (!ctx.folderOk(cwd)) reason = "its folder is gone";
     else if (!ctx.transcriptOk(session)) reason = "no saved conversation";
     else if (ctx.open.has(session)) reason = "open in another terminal";

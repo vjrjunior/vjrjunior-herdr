@@ -55,7 +55,7 @@ export function make(): Node {
 
 export const herdr: Record<string, (...args: never[]) => unknown> = {};
 
-const HERDR = ["exec", "notify", "props", "updates", "spaces", "panes", "run", "openOverlay", "theme", "shared", "setShared", "watchFolder", "window", "nextCommand", "layout", "agents", "readTextFile", "home"];
+const HERDR = ["exec", "notify", "props", "updates", "spaces", "panes", "run", "openOverlay", "theme", "shared", "setShared", "watchFolder", "window", "nextCommand", "layout", "agents", "readTextFile", "home", "terminals"];
 
 mock.module("gpui-kit", () => ({ View: class {}, div: make, svg: () => make() }));
 mock.module("gpui-base", () => ({ v_flex: make, h_flex: make }));
