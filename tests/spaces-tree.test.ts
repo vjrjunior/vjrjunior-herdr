@@ -1,5 +1,22 @@
 import { describe, expect, test } from "bun:test";
-import { base, buildTree, checkoutOf, mostUrgent, parseRefs, parseWorktrees, readLook, repoName } from "../mods/spaces-tree/tree.js";
+import {
+  assignColors,
+  base,
+  branchLabel,
+  buildTree,
+  canOpen,
+  checkoutOf,
+  counts,
+  duePlaces,
+  foldedTail,
+  holdsActive,
+  mostUrgent,
+  parseRefs,
+  parseWorktrees,
+  place,
+  readLook,
+  repoName,
+} from "../mods/spaces-tree/tree.js";
 
 const space = (id: string, over = {}) => ({ id, index: 1, name: id, named: false, folder: "", machine: null, branch: null, active: false, status: null, tabs: [], ...over });
 const common = "/r/app/.git";
@@ -213,5 +230,122 @@ describe("buildTree", () => {
     );
     expect(entries.map((e) => e.kind)).toEqual(["plain", "plain", "plain", "plain"]);
     expect(entries[0]?.row).toMatchObject({ name: "a", open: true, status: null });
+  });
+});
+
+describe("duePlaces", () => {
+  const quiet = {
+    places: { s: "/r/app" },
+    lastPlaces: { s: "/r/app" },
+    busy: { p: false },
+    lastBusy: { p: false },
+    paneSpace: { p: "s" },
+    looks: { "/r/app": { top: "/r/app", common } } as Record<string, { top: string; common: string } | null>,
+    unsure: new Set<string>(),
+    checked: { "/r/app": 1000 } as Record<string, number>,
+    time: 2000,
+    active: true,
+    folded: new Set<string>(),
+  };
+
+  test("nothing is due while nothing changes", () => {
+    expect(duePlaces(quiet).size).toBe(0);
+  });
+
+  test("a new place is due", () => {
+    expect([...duePlaces({ ...quiet, places: { s: "/r/app", n: "/new" } })]).toEqual(["/new"]);
+  });
+
+  test("a space that moved to a known place is due", () => {
+    const moved = { ...quiet, places: { s: "/r/other" }, looks: { ...quiet.looks, "/r/other": null }, checked: { "/r/other": 1000 } };
+    expect([...duePlaces(moved)]).toEqual(["/r/other"]);
+  });
+
+  test("a pane that stopped working makes its repo's places due", () => {
+    const twin = {
+      ...quiet,
+      places: { s: "/r/app", t: "/w/app/one" },
+      lastPlaces: { s: "/r/app", t: "/w/app/one" },
+      looks: { ...quiet.looks, "/w/app/one": { top: "/w/app/one", common } },
+      checked: { "/r/app": 1000, "/w/app/one": 1000 },
+      lastBusy: { p: true },
+    };
+    expect([...duePlaces(twin)].sort()).toEqual(["/r/app", "/w/app/one"]);
+  });
+
+  test("the fallback waits sixty seconds and needs the window in front", () => {
+    expect([...duePlaces({ ...quiet, time: 61001 })]).toEqual(["/r/app"]);
+    expect(duePlaces({ ...quiet, time: 61001, active: false }).size).toBe(0);
+    expect(duePlaces({ ...quiet, time: 60999 }).size).toBe(0);
+  });
+
+  test("a folded repo skips the fallback", () => {
+    expect(duePlaces({ ...quiet, time: 61001, folded: new Set([common]) }).size).toBe(0);
+  });
+
+  test("a place git could not answer for comes back at the fallback", () => {
+    const lost = { ...quiet, looks: {}, unsure: new Set(["/r/app"]), time: 61001 };
+    expect([...duePlaces(lost)]).toEqual(["/r/app"]);
+  });
+
+  test("a place outside git is not asked again by the fallback", () => {
+    expect(duePlaces({ ...quiet, looks: { "/r/app": null }, time: 61001 }).size).toBe(0);
+  });
+});
+
+describe("assignColors", () => {
+  test("keeps what is stored and drops dead ids", () => {
+    expect(assignColors([space("a")], { a: "ansi3", dead: "ansi4" })).toEqual({ colors: { a: "ansi3" }, changed: true });
+  });
+
+  test("gives a new space the least used color", () => {
+    expect(assignColors([space("a"), space("b")], { a: "ansi6" }).colors.b).toBe("ansi3");
+  });
+
+  test("leaves the home space without a color", () => {
+    expect(assignColors([space("h", { name: "~" })], {}).colors).toEqual({});
+  });
+
+  test("reports no change when there is none", () => {
+    expect(assignColors([space("a")], { a: "ansi6" }).changed).toBe(false);
+  });
+});
+
+describe("row rules", () => {
+  const [entry] = buildTree([space("m"), space("o", { active: true, status: "blocked" })], { m: look("/r/app"), o: look("/w/app/one") }, repos);
+
+  test("a repo holding the active space says so", () => {
+    expect(holdsActive(entry as never)).toBe(true);
+  });
+
+  test("a folded repo shows its count and most urgent status", () => {
+    expect(foldedTail(entry as never)).toEqual({ count: 3, status: "blocked" });
+  });
+
+  test("a second click on a closed row opens nothing", () => {
+    expect(canOpen({}, "/w", 5000)).toBe(true);
+    expect(canOpen({ "/w": 4000 }, "/w", 5000)).toBe(false);
+    expect(canOpen({ "/w": 1000 }, "/w", 5000)).toBe(true);
+  });
+
+  test("counts and the branch label stay quiet when there is nothing to say", () => {
+    expect(counts({ ahead: 1, behind: 2 } as never)).toBe("↑1 ↓2");
+    expect(counts({ ahead: 0, behind: 0 } as never)).toBe("");
+    expect(branchLabel({ branch: "main" } as never)).toBe("");
+    expect(branchLabel({ branch: "vjr" } as never)).toBe("vjr");
+  });
+});
+
+describe("place", () => {
+  test("follows the first pane with a folder", () => {
+    const panes = [
+      { tab: "t", cwd: null },
+      { tab: "t", cwd: "/live" },
+    ];
+    expect(place(space("s", { folder: "/old", tabs: [{ id: "t" }] }) as never, panes as never)).toBe("/live");
+  });
+
+  test("falls back to the space's folder", () => {
+    expect(place(space("s", { folder: "/old" }) as never, [])).toBe("/old");
   });
 });

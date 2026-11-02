@@ -115,3 +115,74 @@ export function buildTree(spaces, looks, repos) {
   }
   return out;
 }
+
+const PALETTE = ["ansi6", "ansi3", "ansi4", "ansi5", "ansi2", "ansi1"];
+const FALLBACK = 60000;
+const OPENING = 3000;
+
+export function place(space, panes) {
+  const tabs = new Set((space.tabs ?? []).map((tab) => tab.id));
+  return panes.find((pane) => tabs.has(pane.tab) && pane.cwd)?.cwd || space.folder;
+}
+
+export function duePlaces({ places, lastPlaces, busy, lastBusy, paneSpace, looks, unsure, checked, time, active, folded }) {
+  const due = new Set();
+  const known = (path) => path in looks || unsure.has(path);
+  const commonOf = (path) => looks[path]?.common ?? null;
+  const paths = new Set(Object.values(places));
+  for (const path of paths) if (!known(path)) due.add(path);
+  for (const [id, path] of Object.entries(places)) {
+    if (lastPlaces[id] && lastPlaces[id] !== path && known(path)) due.add(path);
+  }
+  for (const [pane, now] of Object.entries(busy)) {
+    const path = places[paneSpace[pane]];
+    if (now || !lastBusy[pane] || !path) continue;
+    due.add(path);
+    const common = commonOf(path);
+    if (common) for (const other of paths) if (commonOf(other) === common) due.add(other);
+  }
+  if (active) {
+    for (const path of paths) {
+      const common = commonOf(path);
+      const asks = Boolean(looks[path]) || unsure.has(path);
+      if (asks && !(common && folded.has(common)) && time - (checked[path] ?? 0) > FALLBACK) due.add(path);
+    }
+  }
+  return due;
+}
+
+export function assignColors(spaces, stored) {
+  const ids = new Set(spaces.map((space) => space.id));
+  const before = stored ?? {};
+  const colors = Object.fromEntries(Object.entries(before).filter(([id]) => ids.has(id)));
+  let changed = Object.keys(colors).length !== Object.keys(before).length;
+  for (const space of spaces) {
+    if (colors[space.id] || space.name === "~") continue;
+    const uses = (color) => Object.values(colors).filter((used) => used === color).length;
+    colors[space.id] = PALETTE.reduce((best, color) => (uses(color) < uses(best) ? color : best));
+    changed = true;
+  }
+  return { colors, changed };
+}
+
+export function canOpen(opening, path, time) {
+  return !(path in opening) || time - opening[path] >= OPENING;
+}
+
+const rowsOf = (entry) => (entry.kind === "repo" ? [entry.main, ...entry.kids] : [entry.row]);
+
+export function holdsActive(entry) {
+  return rowsOf(entry).some((row) => row.space?.active);
+}
+
+export function foldedTail(entry) {
+  return { count: entry.kind === "repo" ? entry.kids.length : 0, status: mostUrgent(rowsOf(entry).map((row) => row.status)) };
+}
+
+export function counts(row) {
+  return [row.ahead ? `↑${row.ahead}` : "", row.behind ? `↓${row.behind}` : ""].filter(Boolean).join(" ");
+}
+
+export function branchLabel(row) {
+  return !row.branch || row.branch === "main" || row.branch === "master" ? "" : row.branch;
+}
