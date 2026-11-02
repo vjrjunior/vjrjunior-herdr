@@ -107,3 +107,59 @@ export function lastLine(screen) {
   lines.pop();
   return (lines.at(-1) ?? "").trim().slice(0, 120);
 }
+
+const FRESH = 600;
+
+export function judge(terminal, boot) {
+  const front = terminal.foreground;
+  const atShell = Boolean(front) && front.pid === terminal.pid && isShell(front.argv?.[0]);
+  if (front && (base(front.argv?.[0] ?? "") === "claude" || (terminal.app === "claude-code" && !atShell))) return "running";
+  const note = terminal.note;
+  if (!note) return "none";
+  const same = note.boot === boot && note.shell.pid === terminal.pid && note.shell.start === terminal.start;
+  if (same) return atShell ? "quit" : "none";
+  return atShell ? "lost" : "busy";
+}
+
+export function triedNow(note, terminal, boot) {
+  const tried = note?.tried;
+  return Boolean(tried) && tried.boot === boot && tried.shell.pid === terminal.pid && tried.shell.start === terminal.start;
+}
+
+export function markTried(note, terminal, boot, reason) {
+  return { ...note, tried: { boot, shell: { pid: terminal.pid, start: terminal.start }, ...(reason ? { reason } : {}) } };
+}
+
+export function planPass(lost, ctx) {
+  const candidates = lost.filter((terminal) => !ctx.auto || (!triedNow(terminal.note, terminal, ctx.boot) && terminal.age <= FRESH));
+  const ordered = [...candidates].sort((a, b) => b.note.at - a.note.at);
+  const todo = [];
+  const skipped = [];
+  const taken = new Set();
+  for (const terminal of ordered) {
+    const { cwd, session } = terminal.note;
+    let reason = null;
+    if (quote(cwd) === null) reason = "its folder can't be typed";
+    else if (!ctx.folderOk(cwd)) reason = "its folder is gone";
+    else if (!ctx.transcriptOk(session)) reason = "no saved conversation";
+    else if (ctx.open.has(session)) reason = "open in another terminal";
+    else if (taken.has(session)) reason = "already resumed in this pass";
+    if (reason) skipped.push({ terminal, reason });
+    else {
+      todo.push(terminal);
+      taken.add(session);
+    }
+  }
+  return { todo, skipped };
+}
+
+const conversations = (count) => `${count} Claude conversation${count === 1 ? "" : "s"}`;
+
+export function summary({ resumed, failed, skipped }, manual) {
+  const missed = [...failed, ...skipped];
+  const total = resumed.length + missed.length;
+  if (total === 0) return manual ? { title: "No Claude conversation to resume", body: "No terminal lost its Claude.", level: "info", timeout: 3000 } : null;
+  if (missed.length === 0) return { title: `Resumed ${conversations(resumed.length)}`, body: resumed.join(", "), level: "success", timeout: 5000 };
+  const title = resumed.length > 0 ? `Resumed ${resumed.length} of ${total} Claude conversations` : `Couldn't resume ${conversations(missed.length)}`;
+  return { title, body: `Not resumed: ${missed.map((item) => `${item.where}: ${item.reason}`).join("; ")}`, level: "warning", timeout: 8000 };
+}

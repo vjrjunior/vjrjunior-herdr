@@ -1,5 +1,20 @@
 import { describe, expect, test } from "bun:test";
-import { decodeNote, encodeNote, isShell, keepArgs, lastLine, parseBoot, parseEtime, parseSession, quote, resumeCommand } from "../mods/comeback/logic.js";
+import {
+  decodeNote,
+  encodeNote,
+  isShell,
+  judge,
+  keepArgs,
+  lastLine,
+  markTried,
+  parseBoot,
+  parseEtime,
+  parseSession,
+  planPass,
+  quote,
+  resumeCommand,
+  summary,
+} from "../mods/comeback/logic.js";
 
 const note = {
   v: 1,
@@ -108,5 +123,116 @@ describe("lastLine", () => {
   test("gives the last line above the prompt", () => {
     expect(lastLine("Error: session not found\n\nvjr@mac app % \n")).toBe("Error: session not found");
     expect(lastLine("vjr@mac app % ")).toBe("");
+  });
+});
+
+const term = (over = {}) => ({
+  address: "t8",
+  where: "app / 1",
+  pid: 2003,
+  start: "Mon Nov  2 10:16:51 2026",
+  age: 30,
+  foreground: { pid: 2003, argv: ["/bin/zsh", "-l"] },
+  app: null,
+  note,
+  ...over,
+});
+
+describe("judge", () => {
+  test("a Claude in front is running, by name or by its report", () => {
+    expect(judge(term({ foreground: { pid: 9, argv: ["/opt/homebrew/bin/claude"] } }), note.boot)).toBe("running");
+    expect(judge(term({ foreground: { pid: 9, argv: ["node", "/x/cli.js"] }, app: "claude-code" }), note.boot)).toBe("running");
+  });
+
+  test("the same shell back in front means the person quit", () => {
+    expect(judge(term(), note.boot)).toBe("quit");
+  });
+
+  test("another boot, another shell or another start means it was lost", () => {
+    expect(judge(term(), "1700000000")).toBe("lost");
+    expect(judge(term({ pid: 3000, foreground: { pid: 3000, argv: ["zsh"] } }), note.boot)).toBe("lost");
+    expect(judge(term({ start: "Tue Nov  3 08:00:00 2026" }), note.boot)).toBe("lost");
+  });
+
+  test("a lost terminal with something else in front is busy", () => {
+    expect(judge(term({ foreground: { pid: 4000, argv: ["vim"] } }), "1700000000")).toBe("busy");
+  });
+
+  test("a terminal without a note is none of these", () => {
+    expect(judge(term({ note: null }), note.boot)).toBe("none");
+  });
+});
+
+describe("planPass", () => {
+  const ctx = { auto: true, boot: "1800000000", folderOk: () => true, transcriptOk: () => true, open: new Set<string>() };
+
+  test("resumes the newest first", () => {
+    const older = term({ address: "t1", note: { ...note, at: 1 } });
+    const newer = term({ address: "t2", note: { ...note, session: "other", at: 2 } });
+    expect(planPass([older, newer], ctx).todo.map((t) => t.address)).toEqual(["t2", "t1"]);
+  });
+
+  test("gives the reason for each one it skips", () => {
+    const lost = [
+      term({ address: "t1", note: { ...note, session: "s1", cwd: "/w/it's" } }),
+      term({ address: "t2", note: { ...note, session: "s2", cwd: "/gone" } }),
+      term({ address: "t3", note: { ...note, session: "s3" } }),
+      term({ address: "t4", note: { ...note, session: "s4" } }),
+      term({ address: "t5", note: { ...note, session: "s4", at: 0 } }),
+    ];
+    const plan = planPass(lost, { ...ctx, folderOk: (cwd: string) => cwd !== "/gone", transcriptOk: (s: string) => s !== "s3", open: new Set() });
+    expect(plan.skipped.map((s) => [s.terminal.address, s.reason])).toEqual([
+      ["t1", "its folder can't be typed"],
+      ["t2", "its folder is gone"],
+      ["t3", "no saved conversation"],
+      ["t5", "already resumed in this pass"],
+    ]);
+    expect(plan.todo.map((t) => t.address)).toEqual(["t4"]);
+  });
+
+  test("a conversation open in another terminal is skipped", () => {
+    expect(planPass([term()], { ...ctx, open: new Set([note.session]) }).skipped[0]?.reason).toBe("open in another terminal");
+  });
+
+  test("the automatic pass leaves tried and old shells alone, silently", () => {
+    const tried = markTried(note, term(), ctx.boot, "its folder is gone");
+    const plan = planPass([term({ note: tried }), term({ address: "t9", age: 601 })], ctx);
+    expect(plan).toEqual({ todo: [], skipped: [] });
+  });
+
+  test("the manual pass tries again", () => {
+    const tried = markTried(note, term(), ctx.boot);
+    expect(planPass([term({ note: tried, age: 5000 })], { ...ctx, auto: false }).todo).toHaveLength(1);
+  });
+});
+
+describe("summary", () => {
+  test("says how many came back", () => {
+    expect(summary({ resumed: ["app / 1", "web / 2"], failed: [], skipped: [] }, false)).toEqual({
+      title: "Resumed 2 Claude conversations",
+      body: "app / 1, web / 2",
+      level: "success",
+      timeout: 5000,
+    });
+  });
+
+  test("lists what didn't, with the reason", () => {
+    expect(summary({ resumed: ["app / 1"], failed: [{ where: "web / 2", reason: "exited right away: Error" }], skipped: [] }, false)).toEqual({
+      title: "Resumed 1 of 2 Claude conversations",
+      body: "Not resumed: web / 2: exited right away: Error",
+      level: "warning",
+      timeout: 8000,
+    });
+    expect(summary({ resumed: [], failed: [], skipped: [{ where: "web / 2", reason: "its folder is gone" }] }, false)?.title).toBe("Couldn't resume 1 Claude conversation");
+  });
+
+  test("stays quiet when the automatic pass had nothing to do", () => {
+    expect(summary({ resumed: [], failed: [], skipped: [] }, false)).toBeNull();
+    expect(summary({ resumed: [], failed: [], skipped: [] }, true)).toEqual({
+      title: "No Claude conversation to resume",
+      body: "No terminal lost its Claude.",
+      level: "info",
+      timeout: 3000,
+    });
   });
 });
