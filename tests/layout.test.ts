@@ -65,7 +65,7 @@ describe("apply", () => {
 
     expect(result.code).toBe(0);
     expect(result.stdout).toContain("applied");
-    expect(readdirSync(join(home, "mods")).filter((name) => name.startsWith("vjr-"))).toHaveLength(21);
+    expect(readdirSync(join(home, "mods")).filter((name) => name.startsWith("vjr-"))).toHaveLength(22);
     expect(existsSync(join(home, "mods/git-graph/LICENSE"))).toBe(true);
     for (const file of ["vjr-desk.json", "vjr-desk-square.json", "vjr-desk.svg", "vjr-desk-square.svg"]) {
       expect(existsSync(join(home, "layouts", file))).toBe(true);
@@ -143,7 +143,7 @@ describe("apply", () => {
 
     apply();
 
-    expect(log().filter((line) => line.startsWith("check "))).toHaveLength(22);
+    expect(log().filter((line) => line.startsWith("check "))).toHaveLength(23);
   });
 
   test("records what it created", () => {
@@ -152,7 +152,7 @@ describe("apply", () => {
     apply();
 
     expect(record().version).toBe("0.1.10");
-    expect(record().mods).toHaveLength(22);
+    expect(record().mods).toHaveLength(23);
     expect(record().kept).toEqual([]);
     expect(record().files.sort()).toEqual(["layouts/vjr-desk-square.json", "layouts/vjr-desk-square.svg", "layouts/vjr-desk.json", "layouts/vjr-desk.svg"]);
     expect(record().sections).toEqual(["layout:vjr-desk", "layout:vjr-desk-square"]);
@@ -185,12 +185,12 @@ describe("apply", () => {
   test("a change in a shipped mod reaches its copy", () => {
     const { home, apply } = setup();
     apply();
-    const path = join(home, "mods/spaces/main.js");
+    const path = join(home, "mods/agents/main.js");
     writeFileSync(path, `${readFileSync(path, "utf8")}\nexport const fixed = true;\n`);
 
     apply();
 
-    expect(readFileSync(join(home, "mods/vjr-square-spaces/main.js"), "utf8")).toContain("fixed = true");
+    expect(readFileSync(join(home, "mods/vjr-square-agents/main.js"), "utf8")).toContain("fixed = true");
   });
 
   test("replaced copies lose the files the old version had", () => {

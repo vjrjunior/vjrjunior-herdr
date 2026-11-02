@@ -45,8 +45,8 @@ function modsIn(node: unknown): string[] {
 const graphChild = (generated: ReturnType<typeof generate>) => findNode(JSON.parse(generated.layoutText), "panel-body")?.children.at(-1);
 
 describe("variants", () => {
-  test("vjr-desk copies only the palette, the status bar and the tab bar", () => {
-    expect(Object.keys(generateDesk().mods).sort()).toEqual(["vjr-palette", "vjr-tabs", "vjr-workspace-status"]);
+  test("vjr-desk copies the palette, the status bar, the tab bar and the spaces tree", () => {
+    expect(Object.keys(generateDesk().mods).sort()).toEqual(["vjr-palette", "vjr-spaces-tree", "vjr-tabs", "vjr-workspace-status"]);
   });
 
   test("vjr-desk-square copies seventeen mods", () => {
@@ -55,7 +55,8 @@ describe("variants", () => {
 
   test("vjr-desk keeps the shipped mods elsewhere", () => {
     const mods = modsIn(JSON.parse(generateDesk().layoutText));
-    expect(mods).toContain("spaces");
+    expect(mods).toContain("vjr-spaces-tree");
+    expect(mods).not.toContain("spaces");
     expect(mods).toContain("agents");
     expect(mods).toContain("vjr-tabs");
   });
@@ -257,9 +258,32 @@ describe("square", () => {
   test("a home without status glyphs still generates", () => {
     expect(() =>
       generateSquare({
-        "mods/spaces/main.js": 'export default class Mod { render() { return div().rounded(8).child("·"); } }',
         "mods/picker/main.js": 'export default class Mod { render() { return v_flex().bg(t.popover).rounded(9).child("·"); } }',
       }),
     ).not.toThrow();
+  });
+});
+
+describe("spaces-tree", () => {
+  test("both layouts show the tree in the spaces block", () => {
+    expect(findNode(JSON.parse(generateDesk().layoutText), "spaces")?.content.mod).toBe("vjr-spaces-tree");
+    expect(findNode(JSON.parse(generateSquare().layoutText), "spaces")?.content.mod).toBe("vjr-square-spaces-tree");
+  });
+
+  test("the copy brings its pure logic along", () => {
+    expect(generateDesk().mods["vjr-spaces-tree"]?.["tree.js"]).toContain("export function buildTree");
+  });
+
+  test("no shipped spaces copy is left in the square layout", () => {
+    expect(generateSquare().mods["vjr-square-spaces"]).toBeUndefined();
+  });
+
+  test("the square copy has no rounded corner left", () => {
+    const main = generateSquare().mods["vjr-square-spaces-tree"]?.["main.js"] ?? "";
+    expect(main).not.toMatch(/\.rounded(_[a-z]+)?\((?!0\))/);
+  });
+
+  test("the rounded copy keeps its corners", () => {
+    expect(generateDesk().mods["vjr-spaces-tree"]?.["main.js"]).toMatch(/\.rounded\(8\)/);
   });
 });

@@ -14,6 +14,7 @@ const POPUP_ROOTS: Record<string, number> = {
   "git-graph": 2,
 };
 const FRAMELESS = ["picker", "machine-add", "menu", "palette"];
+const OWN_MODS = ["git-graph", "spaces-tree"];
 
 function squareCorner(_match: string, side?: string): string {
   return side === "_full" ? ".rounded(0)" : `.rounded${side ?? ""}(0)`;
@@ -22,11 +23,12 @@ function squareCorner(_match: string, side?: string): string {
 export const square: Recipe = {
   name: "square",
   mods: [
-    ...["workspace-chrome", "spaces", "agents", "files", "changes", "pane", "menu", "new-menu", "picker", "worktree", "machine-add", "help"].map(
+    ...["workspace-chrome", "agents", "files", "changes", "pane", "menu", "new-menu", "picker", "worktree", "machine-add", "help"].map(
       (name) => ({ name, from: "mods" as const }),
     ),
     { name: "settings", from: "frame" },
     { name: "git-graph", from: "repo" },
+    { name: "spaces-tree", from: "repo" },
   ],
   apply({ copies, layout, replacements }) {
     const all = Object.values(copies);
@@ -34,12 +36,12 @@ export const square: Recipe = {
     const copy = (name: string) => copies[name] as Copy;
 
     pattern(
-      all.filter((mod) => mod.name !== "git-graph"),
+      all.filter((mod) => !OWN_MODS.includes(mod.name)),
       corners,
       squareCorner,
       1,
     );
-    pattern([copy("git-graph")], corners, squareCorner);
+    pattern(OWN_MODS.map(copy), corners, squareCorner);
     pattern(all, /●/g, "■");
     pattern(all, /○/g, "□");
     pattern(all, /openOverlay\(\{ mod: "([a-z-]+)", kind: "(?:popup|dialog)",/g, (whole, name) =>
