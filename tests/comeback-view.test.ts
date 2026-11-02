@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { decodeNote } from "../mods/comeback/logic.js";
+import { decodeNote, encodeNote } from "../mods/comeback/logic.js";
 import { herdr } from "./app-mocks";
 import { removeTempDirs, tempDir } from "./helpers";
 
@@ -16,6 +16,10 @@ let agentsNow: Record<string, unknown>[] = [];
 let terminal: Record<string, Record<string, any>> = {};
 let calls: string[][] = [];
 let notices: Record<string, unknown>[] = [];
+let stuck: Record<string, string> = {};
+let frontAt: Record<string, { at: number; foreground: Record<string, unknown> }> = {};
+const gets: Record<string, number> = {};
+let folder = "";
 
 function session(pid: number, data: Record<string, unknown>) {
   mkdirSync(join(home, ".claude/sessions"), { recursive: true });
@@ -25,7 +29,11 @@ function session(pid: number, data: Record<string, unknown>) {
 function respond(command: string, args: string[]) {
   const ok = (stdout: string) => ({ code: 0, stdout, stderr: "" });
   if (command === "hc" && args[0] === "get") {
-    const found = terminal[args[1] as string];
+    const address = args[1] as string;
+    gets[address] = (gets[address] ?? 0) + 1;
+    const swap = frontAt[address];
+    if (swap && gets[address] >= swap.at && terminal[address]) terminal[address].foreground = swap.foreground;
+    const found = terminal[address];
     return found ? ok(JSON.stringify({ address: args[1], state: "live", labels: {}, ...found })) : { code: 1, stdout: "", stderr: "no such terminal" };
   }
   if (command === "hc" && args[0] === "ls") return ok(JSON.stringify({ terminals: Object.keys(terminal).map((address) => ({ address, state: "live" })) }));
@@ -41,6 +49,14 @@ function respond(command: string, args: string[]) {
     }
     return ok("{}");
   }
+  if (command === "hc" && args[0] === "send") {
+    const address = args[1] as string;
+    if (!(address in stuck) && terminal[address]) terminal[address].foreground = { pid: 900, argv: ["claude", "--resume", "abc-1"] };
+    return ok("{}");
+  }
+  if (command === "hc" && args[0] === "read") return ok(JSON.stringify({ text: stuck[args[1] as string] ?? "", complete: true }));
+  if (command === "test") return { code: existsSync(args[1] as string) ? 0 : 1, stdout: "", stderr: "" };
+  if (command === "ps" && args[1] === "pid=") return ok(`${(args[3] ?? "").split(",").join("\n")}\n`);
   if (command === "ps") return ok(args[1] === "lstart=" ? `${START}\n` : "00:30\n");
   if (command === "sysctl") return ok(BOOT);
   return ok("");
@@ -52,6 +68,10 @@ beforeEach(() => {
   terminal = {};
   calls = [];
   notices = [];
+  stuck = {};
+  frontAt = {};
+  for (const key of Object.keys(gets)) delete gets[key];
+  folder = tempDir();
   Object.assign(herdr, {
     home: () => home,
     agents: () => agentsNow,
@@ -146,5 +166,81 @@ describe("noting", () => {
     agentsNow = [{ address: "box/t2", app: "claude-code", seq: 1 }];
     await newView().check(cx);
     expect(getCalls()).not.toContain("box/t2");
+  });
+});
+
+const OLD_BOOT = "1700000000";
+
+function lostTerminal(address: string, session = "abc-1") {
+  const note = { v: 1, agent: "claude", session, cwd: folder, args: ["--dangerously-skip-permissions"], boot: OLD_BOOT, shell: { pid: 100, start: START }, at: 1 };
+  terminal[address] = { pid: 300, foreground: { pid: 300, argv: ["/bin/zsh", "-l"] }, status: null, labels: { where: "app / 1", comeback: encodeNote(note) } };
+  mkdirSync(join(home, ".claude/projects/-w-app"), { recursive: true });
+  writeFileSync(join(home, ".claude/projects/-w-app", `${session}.jsonl`), "{}\n");
+}
+
+const sendCalls = () => calls.filter((call) => call[0] === "hc" && call[1] === "send").map((call) => call.slice(1));
+
+describe("resuming", () => {
+  test("types the resume command once into a lost terminal", async () => {
+    lostTerminal("t8");
+    await newView().pass(cx, false);
+    expect(sendCalls()).toEqual([["send", "t8", `cd ${folder} && claude --resume abc-1 --dangerously-skip-permissions`]]);
+    expect(decodeNote(labelOf("t8"))?.tried).toBeDefined();
+  });
+
+  test("a second copy does not type again", async () => {
+    lostTerminal("t8");
+    stuck.t8 = "vjr@mac app % ";
+    await newView().pass(cx, false);
+    await newView().pass(cx, false);
+    expect(sendCalls()).toHaveLength(1);
+  });
+
+  test("never types when the shell is no longer in front", async () => {
+    lostTerminal("t8");
+    frontAt.t8 = { at: 2, foreground: { pid: 900, argv: ["claude"] } };
+    await newView().pass(cx, false);
+    expect(sendCalls()).toEqual([]);
+  });
+
+  test("the manual command tries a tried terminal again", async () => {
+    lostTerminal("t8");
+    stuck.t8 = "vjr@mac app % ";
+    const view = newView();
+    await view.pass(cx, false);
+    await view.pass(cx, true);
+    expect(sendCalls()).toHaveLength(2);
+  });
+
+  test("notifies what came back", async () => {
+    lostTerminal("t8");
+    await newView().pass(cx, false);
+    expect(notices.at(-1)).toMatchObject({ title: "Resumed 1 Claude conversation", body: "app / 1", level: "success" });
+  });
+
+  test("notifies what failed, with the last line", async () => {
+    lostTerminal("t8");
+    stuck.t8 = "Error: no conversation found\nvjr@mac app % ";
+    await newView().pass(cx, false);
+    expect(notices.at(-1)).toMatchObject({ title: "Couldn't resume 1 Claude conversation", level: "warning" });
+    expect(String(notices.at(-1)?.body)).toContain("exited right away: Error: no conversation found");
+  });
+
+  test("a conversation open in another terminal is left alone", async () => {
+    lostTerminal("t8");
+    session(4242, { sessionId: "abc-1", cwd: folder });
+    await newView().pass(cx, true);
+    expect(sendCalls()).toEqual([]);
+    expect(String(notices.at(-1)?.body)).toContain("open in another terminal");
+  });
+
+  test("the manual command says when there is nothing to resume", async () => {
+    await newView().pass(cx, true);
+    expect(notices.at(-1)).toMatchObject({ title: "No Claude conversation to resume", level: "info" });
+  });
+
+  test("the automatic pass stays quiet with nothing to resume", async () => {
+    await newView().pass(cx, false);
+    expect(notices).toEqual([]);
   });
 });
