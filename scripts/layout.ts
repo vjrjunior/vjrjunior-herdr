@@ -238,7 +238,7 @@ function applyAll(options: { herdrVersion?: string }): ApplyResult {
     mkdirSync(previous, { recursive: true });
     const installed: string[] = [];
     try {
-      for (const mod of [...changedMods, ...staleMods]) {
+      for (const mod of changedMods) {
         if (existsSync(join(home, "mods", mod))) move(join(home, "mods", mod), join(previous, mod));
       }
       for (const mod of changedMods) {
@@ -256,6 +256,10 @@ function applyAll(options: { herdrVersion?: string }): ApplyResult {
     if (keysChanged) writeThrough(join(state, "keys.tmp"), keysPath, keys);
     const ordered = [...changedFiles].sort((a, b) => Number(a.endsWith(".json")) - Number(b.endsWith(".json")));
     for (const path of ordered) writeThrough(join(state, "file.tmp"), join(home, path), files[path] as string);
+    if (staleMods.length > 0) {
+      if (before !== null) Bun.sleepSync(RELOAD_MS);
+      for (const mod of staleMods) rmSync(join(home, "mods", mod), { recursive: true, force: true });
+    }
     writeRecord({ version, mods, kept, files: Object.keys(files), sections: Object.keys(sections) });
     warnUncovered(home);
     return "applied";

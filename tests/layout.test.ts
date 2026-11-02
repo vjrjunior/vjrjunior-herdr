@@ -326,6 +326,22 @@ describe("failures", () => {
     expect(ours(home)).toEqual(before);
   });
 
+  test("a copy the shown layout still uses goes only after the new layouts", () => {
+    const { home, apply, record, writeRecord } = setup();
+    apply();
+    cpSync(join(home, "mods/vjr-square-tabs"), join(home, "mods/vjr-square-old"), { recursive: true });
+    writeRecord({ ...record(), mods: [...record().mods, "vjr-square-old"] });
+    const shown = join(home, "layouts/vjr-desk-square.json");
+    writeFileSync(shown, readFileSync(shown, "utf8").replace('"mod": "vjr-square-agents"', '"mod": "vjr-square-old"'));
+    writeFileSync(join(home, "mods/vjr-square-tabs/main.js"), "export default class Old {}\n");
+
+    const result = apply([], { FAKE_HERDR_WINDOW: "vjr-desk-square" });
+
+    expect(result.code).toBe(0);
+    expect(existsSync(join(home, "mods/vjr-square-old"))).toBe(false);
+    expect(record().mods).not.toContain("vjr-square-old");
+  });
+
   test("errors that were already there do not block", () => {
     const { apply, syncProps } = setup();
 

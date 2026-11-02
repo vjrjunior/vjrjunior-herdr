@@ -37,6 +37,12 @@ case "$1" in
     elif [ -e "$marker" ] && [ -n "$FAKE_HERDR_STATUS_ERROR" ]; then
       errors="[\"$FAKE_HERDR_STATUS_ERROR\"]"
     fi
+    shown="$HERDR_APP_HOME/layouts/$FAKE_HERDR_WINDOW.json"
+    if [ -f "$shown" ]; then
+      for mod in $(grep -o '"mod": *"vjr-[a-z-]*"' "$shown" | sed 's/.*"\(vjr-[a-z-]*\)"$/\1/' | sort -u); do
+        [ -d "$HERDR_APP_HOME/mods/$mod" ] || errors="[\"mod $mod: reloading $HERDR_APP_HOME/mods/$mod does not exist\"]"
+      done
+    fi
     touch "$marker"
     echo "{\"layout\":\"$FAKE_HERDR_WINDOW\",\"errors\":$errors}"
     ;;
