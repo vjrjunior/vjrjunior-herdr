@@ -2,18 +2,6 @@
 
 ## Layouts
 
-### Confirm the first real Herdr update
-
-**What:** After the next Herdr update, confirm that `built` in `layouts/vjr-desk-square.json` follows the new version, `herdr-app status` shows no errors, `~/.local/state/vjr-herdr/layout.log` records the run and the open window shows the new copies without a restart.
-
-**Why:** The update flow was tested by simulating an old version. Only a real update proves the whole path.
-
-**Context:** The recipes' strings survived the real 0.1.10 to 0.1.11 update, but `vjr-sync` did not exist yet.
-
-**Effort:** S
-**Priority:** P1
-**Depends on:** The next Herdr release
-
 ### Publish on herdr.dev
 
 **What:** Add a command that writes one build into a package folder in Herdr's format, and publish it with the `herdr-layout` topic.
@@ -27,3 +15,7 @@
 **Depends on:** Nothing
 
 ## Completed
+
+### Confirm the first real Herdr update
+
+**Completed:** 2026-11-02, Herdr 0.1.11 to 0.1.12. `vjr-sync` rebuilt both layouts by itself in 3.4 s (`0.1.12 applied 3420ms` in `layout.log`). `built` and all 21 copies moved to 0.1.12, `herdr-app status` showed no errors, and the open window showed the new copies, Spaces tree included, with no further restart. The update changed `agents`, `files`, `new-menu`, `picker`, `spaces`, `workspace-chrome` and `frame/settings`, and every recipe still fit.
