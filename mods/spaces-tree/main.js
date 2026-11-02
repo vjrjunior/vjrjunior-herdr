@@ -224,7 +224,7 @@ export default class SpacesTree extends View {
     const time = Date.now();
     if (!row.path || !canOpen(this.opening, row.path, time)) return;
     this.opening[row.path] = time;
-    run("space.new", { folder: row.path });
+    run("space.new", { folder: row.path, machine: "" });
   }
 
   menu(space) {

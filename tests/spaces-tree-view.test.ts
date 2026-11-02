@@ -105,11 +105,11 @@ describe("clicks", () => {
     expect(app.shared["spaces.folded"]).toEqual([common]);
   });
 
-  test("a closed worktree opens one space", () => {
+  test("a closed worktree opens one space on this computer", () => {
     const view = setup();
     click(view, "kid-/w/app/one");
     click(view, "kid-/w/app/one");
-    expect(app.runs).toEqual([["space.new", { folder: "/w/app/one" }]]);
+    expect(app.runs).toEqual([["space.new", { folder: "/w/app/one", machine: "" }]]);
   });
 });
 
