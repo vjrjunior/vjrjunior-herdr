@@ -1,4 +1,5 @@
-import { beforeEach, describe, expect, mock, test } from "bun:test";
+import { beforeEach, describe, expect, test } from "bun:test";
+import { herdr, type Node } from "./app-mocks";
 
 type Result = { code: number; stderr: string };
 type Notification = { title: string; body: string; level: string };
@@ -7,17 +8,18 @@ const app = { version: "", built: "", result: { code: 0, stderr: "" } as Result,
 const execCalls: unknown[][] = [];
 const notifications: Notification[] = [];
 
-mock.module("gpui-kit", () => ({ View: class {}, div: () => ({}) }));
-mock.module("herdr", () => ({
-  exec: async (...args: unknown[]) => {
-    execCalls.push(args);
-    if (app.rejects) throw new Error(app.rejects);
-    return app.result;
-  },
-  notify: (notification: Notification) => notifications.push(notification),
-  props: () => (app.built ? { built: app.built, repo: "/repo", bun: "/bin/bun" } : null),
-  updates: () => ({ app: { version: app.version } }),
-}));
+beforeEach(() => {
+  Object.assign(herdr, {
+    exec: async (...args: unknown[]) => {
+      execCalls.push(args);
+      if (app.rejects) throw new Error(app.rejects);
+      return app.result;
+    },
+    notify: (notification: Notification) => notifications.push(notification),
+    props: () => (app.built ? { built: app.built, repo: "/repo", bun: "/bin/bun" } : null),
+    updates: () => ({ app: { version: app.version } }),
+  });
+});
 
 const { default: VjrSync } = await import("../mods/vjr-sync/main.js");
 
@@ -82,6 +84,8 @@ describe("vjr-sync", () => {
   });
 
   test("renders nothing", () => {
-    expect(new VjrSync().render()).toEqual({});
+    const node = new VjrSync().render() as Node;
+    expect(node.kids).toEqual([]);
+    expect(node.texts).toEqual([]);
   });
 });

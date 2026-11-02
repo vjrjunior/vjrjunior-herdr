@@ -186,3 +186,11 @@ export function counts(row) {
 export function branchLabel(row) {
   return !row.branch || row.branch === "main" || row.branch === "master" ? "" : row.branch;
 }
+
+export function isFolded(folded, entry) {
+  return entry.kind === "repo" && entry.kids.length > 0 && folded.has(entry.key);
+}
+
+export function liveFolds(folded, repos) {
+  return new Set([...folded].filter((key) => (repos[key]?.checkouts.length ?? 0) > 1));
+}

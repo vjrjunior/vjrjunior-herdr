@@ -10,6 +10,8 @@ import {
   duePlaces,
   foldedTail,
   holdsActive,
+  isFolded,
+  liveFolds,
   parseRefs,
   parseWorktrees,
   place,
@@ -53,7 +55,6 @@ export default class SpacesTree extends View {
     this.hovered = null;
     this.pressed = null;
     this.over = null;
-    this.onButton = false;
     cx.timer.every(250, (cx) => this.tick(cx));
     cx.spawn(async (cx) => {
       for (;;) {
@@ -117,7 +118,7 @@ export default class SpacesTree extends View {
       checked: this.checked,
       time,
       active: Boolean(window()?.active),
-      folded: this.folded(),
+      folded: liveFolds(this.folded(), this.repos),
     });
     this.lastPlaces = places;
     this.lastBusy = busy;
@@ -134,12 +135,12 @@ export default class SpacesTree extends View {
         while (this.pending.size) {
           const batch = [...this.pending];
           this.pending.clear();
-          const repos = new Map();
+          const repos = new Set();
           for (const path of batch) {
             const look = await this.lookAt(path);
-            if (look) repos.set(look.common, look.top);
+            if (look) repos.add(look.common);
           }
-          for (const [common, top] of repos) await this.readRepo(common, top, cx);
+          for (const common of repos) await this.readRepo(common, cx);
           cx.notify();
         }
         this.forget();
@@ -167,11 +168,11 @@ export default class SpacesTree extends View {
     }
   }
 
-  async readRepo(common, top, cx) {
+  async readRepo(common, cx) {
     try {
-      const list = await git(["worktree", "list", "--porcelain"], top);
+      const list = await git(["worktree", "list", "--porcelain"], common);
       if (list.code !== 0) return;
-      const refs = await git(["for-each-ref", "--format=%(refname:short)%09%(upstream:track)%09%(committerdate:unix)", "refs/heads"], top);
+      const refs = await git(["for-each-ref", "--format=%(refname:short)%09%(upstream:track)%09%(committerdate:unix)", "refs/heads"], common);
       this.repos[common] = { common, name: repoName(common), checkouts: parseWorktrees(list.stdout), refs: refs.code === 0 ? parseRefs(refs.stdout) : {} };
       this.watch(common, cx);
     } catch {}
@@ -283,9 +284,7 @@ export default class SpacesTree extends View {
       .text_color(t.unknown)
       .hover((s) => s.bg(t.hover).text_color(t.foreground))
       .tooltip(tooltip)
-      .on_mouse_down("left", () => {
-        this.onButton = true;
-      })
+      .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
       .on_click((_e, cx) => {
         cx.stop_propagation();
         action();
@@ -307,7 +306,7 @@ export default class SpacesTree extends View {
 
   headRow(entry, row, t, rail, flat = false) {
     const repo = entry.kind === "repo";
-    const folded = repo && this.folded().has(entry.key);
+    const folded = isFolded(this.folded(), entry);
     const selected = Boolean(row.space?.active) || (folded && holdsActive(entry));
     const adding = repo && this.hovered === entry.key;
     const summary = folded ? foldedTail(entry) : null;
@@ -372,11 +371,8 @@ export default class SpacesTree extends View {
       .on_mouse_up("left", (_e, cx) => {
         const from = this.pressed;
         const over = this.over;
-        const button = this.onButton;
         this.pressed = null;
         this.over = null;
-        this.onButton = false;
-        if (button) return cx.notify();
         if (from !== null && over === index && from !== index) run("space.move", { id: spaces()[from].id, index: index + 1 });
         else if (from === index) this.open(row);
         cx.notify();
@@ -436,7 +432,7 @@ export default class SpacesTree extends View {
 
   graphEntry(entry, t) {
     if (entry.kind === "plain") return [this.headRow(entry, entry.row, t, null)];
-    const kids = this.folded().has(entry.key) ? [] : entry.kids;
+    const kids = isFolded(this.folded(), entry) ? [] : entry.kids;
     const rail = faded(this.fill(entry.main.space, t));
     return [this.headRow(entry, entry.main, t, kids.length ? rail : null), ...kids.map((row, index) => this.graphKid(row, t, rail, index === kids.length - 1))];
   }
@@ -463,7 +459,7 @@ export default class SpacesTree extends View {
 
   blockEntry(entry, t) {
     const row = entry.kind === "repo" ? entry.main : entry.row;
-    const kids = entry.kind === "repo" && !this.folded().has(entry.key) ? entry.kids : [];
+    const kids = entry.kind === "repo" && !isFolded(this.folded(), entry) ? entry.kids : [];
     return v_flex()
       .id(`block-${entry.key}`)
       .flex_none()
@@ -534,7 +530,6 @@ export default class SpacesTree extends View {
           .on_mouse_up("left", (_e, cx) => {
             this.pressed = null;
             this.over = null;
-            this.onButton = false;
             cx.notify();
           })
           .children(narrow ? this.compactRows(entries, t) : entries.flatMap((entry) => (blocks ? [this.blockEntry(entry, t)] : this.graphEntry(entry, t)))),

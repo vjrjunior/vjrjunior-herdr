@@ -10,6 +10,8 @@ import {
   duePlaces,
   foldedTail,
   holdsActive,
+  isFolded,
+  liveFolds,
   mostUrgent,
   parseRefs,
   parseWorktrees,
@@ -347,5 +349,19 @@ describe("place", () => {
 
   test("falls back to the space's folder", () => {
     expect(place(space("s", { folder: "/old" }) as never, [])).toBe("/old");
+  });
+});
+
+describe("folds", () => {
+  const solo = { common: "/r/solo/.git", name: "solo", checkouts: [{ path: "/r/solo", branch: "vjr", main: true }], refs: {} };
+
+  test("only a repository with worktrees can be folded", () => {
+    const entries = buildTree([space("m"), space("s")], { m: look("/r/app"), s: { top: "/r/solo", common: solo.common } }, { ...repos, [solo.common]: solo });
+    const folded = new Set([common, solo.common]);
+    expect(entries.map((entry) => isFolded(folded, entry as never))).toEqual([true, false]);
+  });
+
+  test("a fold on a repository without worktrees does not hold back its refresh", () => {
+    expect([...liveFolds(new Set([common, solo.common, "/gone/.git"]), { ...repos, [solo.common]: solo })]).toEqual([common]);
   });
 });
