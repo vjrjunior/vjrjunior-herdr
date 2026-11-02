@@ -10,3 +10,5 @@ export const VARIANTS: Variant[] = [
 ];
 
 export const LEFT_ROUNDED = ["prompt", "confirm", "toast", "peek", "win98", "terminals-bar", "terminals-pane"];
+
+export const REPLACED = ["spaces"];

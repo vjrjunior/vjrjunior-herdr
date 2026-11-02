@@ -1,6 +1,6 @@
 import { appendFileSync, closeSync, cpSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync, writeSync } from "node:fs";
 import { basename, join } from "node:path";
-import { LEFT_ROUNDED, VARIANTS } from "../recipes/variants";
+import { LEFT_ROUNDED, REPLACED, VARIANTS } from "../recipes/variants";
 import { type Generated, generateVariant } from "./generate-layout";
 import { deriveSection, type KeyTable, keysText, readKeys, withoutSections, withSections } from "./layout-keys";
 import { herdrAppHome, stateDir } from "./paths";
@@ -185,7 +185,7 @@ function warnUncovered(home: string): void {
   if (!existsSync(path)) return;
   const covered = VARIANTS.flatMap((variant) => variant.recipes.flatMap((recipe) => recipe.mods.map((mod) => mod.name)));
   for (const name of Object.keys(JSON.parse(readFileSync(path, "utf8")))) {
-    if (name.startsWith("layout:") || covered.includes(name) || LEFT_ROUNDED.includes(name)) continue;
+    if (name.startsWith("layout:") || covered.includes(name) || LEFT_ROUNDED.includes(name) || REPLACED.includes(name)) continue;
     const main = join(home, "mods", name, "main.js");
     if (existsSync(main) && readFileSync(main, "utf8").includes(".rounded")) console.warn(`mods/${name} has rounded corners that no recipe covers`);
   }

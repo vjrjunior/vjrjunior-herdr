@@ -270,6 +270,7 @@ describe("apply", () => {
 
     expect(result.stderr).toContain("brand-new");
     expect(result.stderr).not.toContain("prompt");
+    expect(result.stderr).not.toContain("mods/spaces ");
   });
 
   test("stops when the theme is not installed", () => {
