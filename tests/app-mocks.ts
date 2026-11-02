@@ -1,4 +1,5 @@
 import { mock } from "bun:test";
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmdirSync, unlinkSync, writeFileSync } from "node:fs";
 
 type Handler = (...args: unknown[]) => void;
 
@@ -59,3 +60,15 @@ const HERDR = ["exec", "notify", "props", "updates", "spaces", "panes", "run", "
 mock.module("gpui-kit", () => ({ View: class {}, div: make, svg: () => make() }));
 mock.module("gpui-base", () => ({ v_flex: make, h_flex: make }));
 mock.module("herdr", () => Object.fromEntries(HERDR.map((name) => [name, (...args: never[]) => herdr[name]?.(...args)])));
+mock.module("fs/promises", () => ({
+  readFile: async (path: string, encoding?: unknown) => (encoding ? readFileSync(path, "utf8") : new Uint8Array(readFileSync(path))),
+  writeFile: async (path: string, contents: string | Uint8Array) => writeFileSync(path, contents),
+  readdir: async (path: string, options?: { withFileTypes?: boolean }) =>
+    options?.withFileTypes ? readdirSync(path, { withFileTypes: true }).map((entry) => ({ name: entry.name, isDirectory: () => entry.isDirectory() })) : readdirSync(path),
+  exists: async (path: string) => existsSync(path),
+  unlink: async (path: string) => unlinkSync(path),
+  rmdir: async (path: string) => rmdirSync(path),
+  mkdir: async (path: string, options?: { recursive?: boolean }) => {
+    mkdirSync(path, options);
+  },
+}));

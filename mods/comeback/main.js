@@ -194,10 +194,7 @@ export default class Comeback extends View {
     const root = `${home()}/.claude/projects`;
     try {
       for (const project of await fs.readdir(root)) {
-        try {
-          await fs.stat(`${root}/${project}/${session}.jsonl`);
-          return true;
-        } catch {}
+        if (await fs.exists(`${root}/${project}/${session}.jsonl`)) return true;
       }
     } catch {}
     return false;
