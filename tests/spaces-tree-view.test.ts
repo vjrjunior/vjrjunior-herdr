@@ -130,3 +130,89 @@ describe("folding", () => {
     expect(texts(head)).not.toContain("0");
   });
 });
+
+const BRANCH = "feat/enrollment-delete-charge-waiver";
+const onMain = [{ path: "/r/app", branch: "main", main: true }, { path: "/w/app/one", branch: "one", main: false }];
+const onBranch = [{ path: "/r/app", branch: BRANCH, main: true }, { path: "/w/app/one", branch: "one", main: false }];
+
+function style(node: Node, name: string): unknown[] | undefined {
+  return node.calls.findLast(([called]) => called === name)?.[1];
+}
+
+function find(node: Node, match: (node: Node) => boolean): Node | null {
+  if (match(node)) return node;
+  for (const kid of node.kids) {
+    const found = find(kid, match);
+    if (found) return found;
+  }
+  return null;
+}
+
+function headOf(view: { render(): Node }): Node {
+  return pathTo(view.render(), `head-${common}`)?.at(-1) as Node;
+}
+
+describe("head rows", () => {
+  test("a head row without a branch is 36 px tall", () => {
+    expect(style(headOf(setup(onMain)), "h")).toEqual([36]);
+  });
+
+  test("a head row with a branch is 44 px tall", () => {
+    expect(style(headOf(setup(onBranch)), "h")).toEqual([44]);
+  });
+
+  test("the branch gets its own line under the name and ends with an ellipsis", () => {
+    const row = headOf(setup(onBranch));
+    const sub = find(row, (node) => node.texts.includes(BRANCH));
+    expect(sub?.texts).toEqual([BRANCH]);
+    expect(sub?.calls.map(([name]) => name)).toContain("truncate");
+    expect(row.kids).toContain(sub as Node);
+    expect(style(sub as Node, "pl")).toEqual([26]);
+    expect(style(sub as Node, "line_height")).toEqual(["14px"]);
+  });
+
+  test("the avatar, the status dot and the buttons sit on the name's line", () => {
+    const view = setup(onBranch);
+    app.spaces = [space("m", { status: "working" }), space("x", { active: true })];
+    const row = headOf(view);
+    const name = find(row, (node) => node.texts.includes("app")) as Node;
+    const line = find(row, (node) => node.kids.includes(name)) as Node;
+    expect(line).not.toBe(row);
+    expect(row.kids).toContain(line);
+    expect(line.kids.some((node) => node.texts.includes("A"))).toBe(true);
+    expect(find(line, (node) => style(node, "size")?.[0] === 7)).not.toBeNull();
+    expect(find(line, (node) => node.key === `fold-${common}`)).not.toBeNull();
+  });
+
+  test("ahead and behind stay on the row, outside the branch cut", () => {
+    const view = setup(onBranch);
+    view.repos[common].refs = { [BRANCH]: { ahead: 2, behind: 1 } };
+    const row = headOf(view);
+    expect(find(row, (node) => node.texts.includes(BRANCH))?.texts).toEqual([BRANCH]);
+    expect(texts(row)).toContain("↑2 ↓1");
+  });
+
+  test("the rail under a head row starts at the bottom of its avatar", () => {
+    for (const [checkouts, top, height] of [[onMain, 27, 9], [onBranch, 23.5, 20.5]] as const) {
+      const rail = find(headOf(setup([...checkouts])), (node) => style(node, "w")?.[0] === 1.5) as Node;
+      expect([style(rail, "top"), style(rail, "h")]).toEqual([[top], [height]]);
+    }
+  });
+
+  test("in blocks the status bar is as tall as the row", () => {
+    const view = setup(onBranch);
+    app.spaces = [space("m", { status: "working" }), space("x", { active: true })];
+    app.shared["spaces.style"] = "blocks";
+    const bar = find(headOf(view), (node) => style(node, "w")?.[0] === 3) as Node;
+    expect(style(bar, "h")).toEqual([44]);
+  });
+
+  test("a folded repository shows its count on one 36 px line", () => {
+    const view = setup(onBranch);
+    app.shared["spaces.folded"] = [common];
+    const row = headOf(view);
+    expect(style(row, "h")).toEqual([36]);
+    expect(texts(row)).not.toContain(BRANCH);
+    expect(texts(row)).toContain("1");
+  });
+});

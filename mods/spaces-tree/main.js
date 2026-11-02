@@ -21,6 +21,10 @@ import {
 
 const WAIT = 1500;
 const RAIL = 16.25;
+const HEAD = 36;
+const TALL = 44;
+const AVATAR = 18;
+const SUB = 14;
 const MARK = { ansi6: "#22a99a", ansi3: "#e3814f", ansi4: "#5b8def", ansi5: "#8b7cf6", ansi2: "#3fae6a", ansi1: "#d9649a" };
 const icon = (name) => `mods/workspace-chrome/${name}.svg`;
 const NARROW = 160;
@@ -256,7 +260,7 @@ export default class SpacesTree extends View {
 
   avatar(row, t) {
     return h_flex()
-      .size(18)
+      .size(AVATAR)
       .flex_none()
       .rounded(5)
       .bg(this.fill(row.space, t))
@@ -296,6 +300,18 @@ export default class SpacesTree extends View {
     return div().flex_1().min_w(0).truncate().text_color(row.open ? t.foreground : t.unknown).child(row.name);
   }
 
+  sub(text, t) {
+    return div()
+      .pl(AVATAR + 8)
+      .min_w(0)
+      .h(SUB)
+      .line_height(`${SUB}px`)
+      .truncate()
+      .text_size(11)
+      .text_color(t.unknown)
+      .child(text);
+  }
+
   note(text, t) {
     return div().flex_none().text_size(11).text_color(t.unknown).child(text);
   }
@@ -310,18 +326,30 @@ export default class SpacesTree extends View {
     const selected = Boolean(row.space?.active) || (folded && holdsActive(entry));
     const adding = repo && this.hovered === entry.key;
     const summary = folded ? foldedTail(entry) : null;
-    const text = summary ? String(summary.count) : [branchLabel(row), counts(row)].filter(Boolean).join(" ");
+    const branch = summary ? "" : branchLabel(row);
+    const text = summary ? String(summary.count) : counts(row);
+    const height = branch ? TALL : HEAD;
     const status = summary ? summary.status : row.status;
     const all = spaces();
     const index = row.space ? all.findIndex((space) => space.id === row.space.id) : -1;
-    return h_flex()
-      .id(`head-${entry.key}`)
-      .relative()
-      .h(30)
-      .flex_none()
-      .px(flat ? 10 : 8)
+    const line = h_flex()
       .gap(8)
       .items_center()
+      .child(this.avatar(row, t))
+      .child(this.name(row, t).font_medium())
+      .when(adding, (el) => el.child(this.iconButton(`add-${entry.key}`, "plus", "New worktree", () => this.newWorktree(entry), t)))
+      .when(!adding && Boolean(text), (el) => el.child(this.note(text, t)))
+      .when(Boolean(status) && !flat, (el) => el.child(this.statusDot(status, t)))
+      .when(repo && entry.kids.length > 0, (el) =>
+        el.child(this.iconButton(`fold-${entry.key}`, folded ? "chevron-right" : "chevron-down", folded ? "Unfold" : "Fold", () => this.toggleFold(entry.key), t)),
+      );
+    const bottom = (height - (branch ? AVATAR + 1 + SUB : AVATAR)) / 2 + AVATAR;
+    return (branch ? v_flex().justify_center().gap(1).child(line.h(AVATAR)).child(this.sub(branch, t)) : line)
+      .id(`head-${entry.key}`)
+      .relative()
+      .h(height)
+      .flex_none()
+      .px(flat ? 10 : 8)
       .when(!flat, (el) => el.rounded(8))
       .when(selected, (el) => el.bg(t.selected))
       .when(!selected, (el) => el.hover((s) => s.bg(t.hover)))
@@ -329,16 +357,8 @@ export default class SpacesTree extends View {
       .when(index < 0, (el) => el.on_click(() => this.open(row)))
       .when(index >= 0, (el) => this.draggable(el, row, index, all, t))
       .when(Boolean(row.space), (el) => el.on_mouse_down("right", () => this.menu(row.space)))
-      .when(Boolean(rail), (el) => el.child(div().absolute().left(RAIL).top(24).w(1.5).h(6).bg(rail)))
-      .child(this.avatar(row, t))
-      .child(this.name(row, t).font_medium())
-      .when(adding, (el) => el.child(this.iconButton(`add-${entry.key}`, "plus", "New worktree", () => this.newWorktree(entry), t)))
-      .when(!adding && Boolean(text), (el) => el.child(this.note(text, t)))
-      .when(Boolean(status) && !flat, (el) => el.child(this.statusDot(status, t)))
-      .when(Boolean(status) && flat, (el) => el.child(this.bar(status, t, 30)))
-      .when(repo && entry.kids.length > 0, (el) =>
-        el.child(this.iconButton(`fold-${entry.key}`, folded ? "chevron-right" : "chevron-down", folded ? "Unfold" : "Fold", () => this.toggleFold(entry.key), t)),
-      );
+      .when(Boolean(rail), (el) => el.child(div().absolute().left(RAIL).top(bottom).w(1.5).h(height - bottom).bg(rail)))
+      .when(Boolean(status) && flat, (el) => el.child(this.bar(status, t, height)));
   }
 
   draggable(el, row, index, all, t) {

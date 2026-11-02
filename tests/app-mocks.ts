@@ -8,6 +8,7 @@ export class Node {
   handlers: Record<string, Handler[]> = {};
   kids: Node[] = [];
   texts: string[] = [];
+  calls: [string, unknown[]][] = [];
   id(value: string) {
     this.key = value;
     return this;
@@ -48,7 +49,11 @@ export class Node {
 export function make(): Node {
   return new Proxy(new Node(), {
     get(target, prop, receiver) {
-      return prop in target ? Reflect.get(target, prop, receiver) : () => receiver;
+      if (prop in target) return Reflect.get(target, prop, receiver);
+      return (...args: unknown[]) => {
+        target.calls.push([String(prop), args]);
+        return receiver;
+      };
     },
   });
 }

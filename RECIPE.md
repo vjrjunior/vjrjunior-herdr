@@ -8,7 +8,7 @@ Left to right, at zoom 1, in both versions:
 
 - **Sidebar**, 268px wide (44-480), on `chrome` `#101010`, no system title bar:
   - top 46px: the Herdr brand row with search and fold buttons;
-  - the Spaces tree and the Agents list, sharing the height equally. Spaces draws each repository's main checkout with every worktree under it, open or closed, as a graph (a rail in the space's color, a filled node for an open worktree, a hollow one for a closed worktree) or as blocks (one bordered block per repository, with a 3px status bar on each row);
+  - the Spaces tree and the Agents list, sharing the height equally. Spaces draws each repository's main checkout with every worktree under it, open or closed, as a graph (a rail in the space's color, a filled node for an open worktree, a hollow one for a closed worktree) or as blocks (one bordered block per repository, with a 3px status bar on each row). A space's own row is 36px tall, or 44px when it is on a branch other than main: the avatar, status dot and buttons stay on the name's line, and the branch goes on a smaller second line under the name that ends in an ellipsis;
   - bottom 69px: Settings and Add machine.
 - A 1px `border` divider, `#232323`.
 - **Work column** on `canvas` `#101010`:
