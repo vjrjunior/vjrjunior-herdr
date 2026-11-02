@@ -2,6 +2,30 @@
 
 ## Layouts
 
+### Confirm comeback after a real reboot
+
+**What:** After the next restart of the Mac, open the window and confirm that each Claude Code that was running comes back on its conversation, that the toast lists them, and that `~/.claude/sessions/` matches the resumed sessions.
+
+**Why:** The resume was tested by writing a note from another boot by hand. Only a real restart proves the boot check and the wait for recovered shells.
+
+**Context:** Claudes running before `comeback` was installed have no note and won't come back. Check with `hc get <t> --json` that each running Claude has a `comeback` label before restarting.
+
+**Effort:** S
+**Priority:** P1
+**Depends on:** The next restart
+
+### Publish comeback on herdr.dev
+
+**What:** Publish `mods/comeback/` as a community mod: a public repo or folder in Herdr's format with `mods/comeback/`, its `RECIPE.md` and a `preview.png`, and the `herdr-mod` topic.
+
+**Why:** The other resume mods need hooks or only run on Linux; this one is just a folder.
+
+**Context:** `RECIPE.md` is ready. Missing: `preview.png` (a window with a resumed conversation and the toast, no private data) and the package folder. The install step asks people to add a floating block to a cloned layout.
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** Nothing
+
 ### Publish on herdr.dev
 
 **What:** Add a command that writes one build into a package folder in Herdr's format, and publish it with the `herdr-layout` topic.

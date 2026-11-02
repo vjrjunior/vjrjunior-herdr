@@ -33,6 +33,7 @@ Other colors: `surface` and `popover` `#161616`, `raised` `#1C1C1C`, `hover` `#2
 - **Graph panel:** the commit history of the focused terminal's repository, with branch labels, commit details, and checkout, merge and rebase from right-click menus and double-clicks.
 - **Palette:** `cmd-shift-p`, or the status bar hint, opens a copy of Herdr's palette that also lists `Theme: vjr`.
 - **In the square version,** `cmd-,`, `cmd-p` and `cmd-/`, or whichever keys `global` binds to Settings, search and help, open square copies of those screens.
+- **After a restart,** each terminal that lost its Claude Code gets it back on the same conversation as soon as the window opens, and a toast says what came back (`comeback`).
 - **After a Herdr update,** the layout rebuilds itself within seconds. If it can't, the previous copies keep running and a warning toast says why.
 
 ## Built from
@@ -47,6 +48,8 @@ Nothing here is a frozen copy of Herdr. `recipes/` holds small edits, and `scrip
 - `mods/vjr-sync/`: an invisible floating mod. It compares `updates().app.version` with the version in its props and runs `scripts/layout.ts apply` when they differ, with `exec` and an absolute path to `bun`.
 - `mods/git-graph/`: [herdr-git-graph](https://github.com/rabeeh-ta/herdr-git-graph) by Rabeeh T A, MIT, at commit `1cfcff3`, unmodified. It runs `git` in the focused repository, reads the folders open in other panes ahead of time, also on other machines, and reaches the network only through git on Fetch, Push and when deleting a remote branch.
 - `mods/spaces-tree/`: this repo's own Spaces mod, written against Herdr's public mod API. It reads `git worktree list` and `git for-each-ref` per repository, watches each repository's git folder, keeps `space.colors` for the other mods that draw space avatars, and stores `spaces.style` and `spaces.folded` in shared state.
+- **`comeback`:** copies `mods/comeback/` and adds a floating block, `{ "id": "comeback", "content": { "mod": "comeback" }, "edge": "left", "align": "end" }`, that draws nothing.
+- `mods/comeback/`: this repo's own mod, described in its own [`RECIPE.md`](mods/comeback/RECIPE.md).
 - `themes/vjr.json`: generated from `palette/vjr.toml`.
 - `keys.json`: `layout:vjr-desk` and `layout:vjr-desk-square` sections, derived from the `global` section.
 
