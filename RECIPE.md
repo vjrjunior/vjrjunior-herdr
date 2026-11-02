@@ -1,6 +1,6 @@
 # VJR Desk
 
-Herdr's own window (spaces and agents on the left, tabs as pills, panes as cards, a status bar) in the VJR palette: near-black surfaces, a gray ladder and a peach accent. A **Graph** button opens a git history in the side panel, and the `vjr` theme is listed in the command palette. It comes in two versions: `vjr-desk`, with Herdr's rounded corners, and `vjr-desk-square`, with every corner a layout can reach squared.
+Herdr's own window (spaces and agents on the left, tabs as pills, panes as cards, a status bar) in the VJR palette: near-black surfaces, a gray ladder and a peach accent. A **Graph** button opens a git history in the side panel, Spaces shows every worktree of each repository as a tree, and the `vjr` theme is listed in the command palette. It comes in two versions: `vjr-desk`, with Herdr's rounded corners, and `vjr-desk-square`, with every corner a layout can reach squared.
 
 ## What you see
 
@@ -8,7 +8,7 @@ Left to right, at zoom 1, in both versions:
 
 - **Sidebar**, 268px wide (44-480), on `chrome` `#101010`, no system title bar:
   - top 46px: the Herdr brand row with search and fold buttons;
-  - Spaces and Agents lists, sharing the height equally;
+  - the Spaces tree and the Agents list, sharing the height equally. Spaces draws each repository's main checkout with every worktree under it, open or closed, as a graph (a rail in the space's color, a filled node for an open worktree, a hollow one for a closed worktree) or as blocks (one bordered block per repository, with a 3px status bar on each row);
   - bottom 69px: Settings and Add machine.
 - A 1px `border` divider, `#232323`.
 - **Work column** on `canvas` `#101010`:
@@ -28,6 +28,7 @@ Other colors: `surface` and `popover` `#161616`, `raised` `#1C1C1C`, `hover` `#2
 
 - **Agent status:** working `#FFC799` with a spinner, blocked `#FF8080`, done `#99FFE4`, idle `#505050`.
 - Everything else is Herdr's main layout: click a space or tab to show it, `+` starts a terminal or an agent, panes drag by the top-center grip.
+- **Spaces:** a click shows a space, or opens a space in a closed worktree. Right-click opens Herdr's space menu, `+` on a repository opens the New worktree dialog, the chevron folds a repository (a folded one shows how many worktrees it has and its most urgent status), dragging a repository reorders it, and the button next to `+` in the header switches between graph and blocks for both layouts. `herdr-app do vjr-spaces-tree.style` (or `vjr-square-spaces-tree.style`) switches it too. Below 160px the list shows each open space's number and status.
 - **Graph button:** right after Changes. It selects `graph` in the side panel's stack and shows the panel. Clicking it again while it shows hides the panel, and each space remembers its choice.
 - **Graph panel:** the commit history of the focused terminal's repository, with branch labels, commit details, and checkout, merge and rebase from right-click menus and double-clicks.
 - **Palette:** `cmd-shift-p`, or the status bar hint, opens a copy of Herdr's palette that also lists `Theme: vjr`.
@@ -41,9 +42,11 @@ Nothing here is a frozen copy of Herdr. `recipes/` holds small edits, and `scrip
 - `layouts/vjr-desk.json` and `layouts/vjr-desk-square.json`: Herdr's `main` layout, plus `theme: { light: "paper", dark: "vjr" }`, a `preview` and a floating `vjr-sync` block.
 - **`list-vjr-theme`:** copies `frame/palette` and `workspace-status`, adds `vjr` to the palette's theme list and opens the copy from `keys.json` and the status bar.
 - **`git-graph-panel`:** copies `tabs`, adds the Graph button and `"graph"` to the enabled panels, and adds `{ "id": "graph", "type": "block", "content": { "mod": "git-graph" } }` to the `panel-body` stack.
-- **`square`:** copies 14 more mods, sets every `.rounded*()` to 0, passes `frame: "none"` to the popups that have a copy, adds a border to their roots, sets `pane.radius` to 0 and sets `terminal_menu`.
+- **`spaces-tree`:** points the `spaces` block at `mods/spaces-tree/`, which every layout copies.
+- **`square`:** copies 13 more mods, sets every `.rounded*()` to 0, passes `frame: "none"` to the popups that have a copy, adds a border to their roots, sets `pane.radius` to 0 and sets `terminal_menu`.
 - `mods/vjr-sync/`: an invisible floating mod. It compares `updates().app.version` with the version in its props and runs `scripts/layout.ts apply` when they differ, with `exec` and an absolute path to `bun`.
 - `mods/git-graph/`: [herdr-git-graph](https://github.com/rabeeh-ta/herdr-git-graph) by Rabeeh T A, MIT, at commit `1cfcff3`, unmodified. It runs `git` in the focused repository, reads the folders open in other panes ahead of time, also on other machines, and reaches the network only through git on Fetch, Push and when deleting a remote branch.
+- `mods/spaces-tree/`: this repo's own Spaces mod, written against Herdr's public mod API. It reads `git worktree list` and `git for-each-ref` per repository, watches each repository's git folder, keeps `space.colors` for the other mods that draw space avatars, and stores `spaces.style` and `spaces.folded` in shared state.
 - `themes/vjr.json`: generated from `palette/vjr.toml`.
 - `keys.json`: `layout:vjr-desk` and `layout:vjr-desk-square` sections, derived from the `global` section.
 
@@ -69,6 +72,7 @@ Nothing here is a frozen copy of Herdr. `recipes/` holds small edits, and `scrip
 - `bun run apply-layout` prints `applied`, and running it again prints `unchanged`.
 - `herdr-app do layout.switch '{"name":"vjr-desk-square"}'` shows the layout and `herdr-app status` lists no errors.
 - `herdr-app check` passes on every `mods/vjr-*` folder and on `mods/git-graph`.
+- The `spaces` block shows `vjr-spaces-tree` or `vjr-square-spaces-tree`, with a repository's worktrees under it.
 - The focused pane's border reads `#FFC799`, and its corners are square in `vjr-desk-square` and rounded in `vjr-desk`.
 - `herdr-app do layout.select '{"stack":"panel-body","child":"graph"}'` followed by `herdr-app do layout.show '{"id":"panel"}'` shows the focused repository's history.
 - Changing `built` in the layout's `vjr-sync` props to an older version brings it back to the installed version within seconds.
