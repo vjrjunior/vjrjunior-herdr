@@ -32,7 +32,7 @@
 
 **Why:** Plans and specs use Mermaid for flows, and the pane shows them as code.
 
-**Context:** [herdr-files-plus](https://github.com/jjongkwann/herdr-files-plus) (MIT, `b43c4e3`) draws them natively with a bundled 1.5 MB renderer and caches the SVGs under `data/files-plus/`. Read its renderer before deciding to adopt it or to build ours.
+**Context:** `TextView.markdown` shows a ` ```mermaid ` block as code. Drawing it needs a renderer in the mod that turns the diagram into an SVG under `data/<copy>/`, the only place `image()` loads from, cached by the block's text.
 
 **Effort:** M
 **Priority:** P3

@@ -125,7 +125,7 @@ The next step is one click. It types the right skill into the task's own Claude,
 herdr-app do pane.split --direction right --mod vjr-markdown --props '{"file":"/path/to/VJR-TASK.md"}'
 ```
 
-In the square layout the mod is `vjr-square-markdown`. The pane reads the file again when it changes and hides front matter. A link to another `.md` opens in the same pane, with `← Back` to return; web links open in the browser and other files in their own app. `Zed ↗` opens the file in Zed. It reads only the file it shows and the files it links to, runs `open` and `zed`, and never reaches the network. The idea of a reading pane given a file in its props comes from [herdr-markdown-browser](https://github.com/ohneda/herdr-markdown-browser) by ohneda (MIT, commit `bb1f3c7`); no code was copied.
+In the square layout the mod is `vjr-square-markdown`. The pane reads the file again when it changes and hides front matter. A link to another `.md` opens in the same pane, with `← Back` to return; web links open in the browser and other files in their own app. `Zed ↗` opens the file in Zed. It reads only the file it shows and the files it links to, runs `open` and `zed`, and never reaches the network.
 
 ## License
 
