@@ -472,8 +472,18 @@ const RELEASE = {
   ],
 };
 
-function column(lanes: Record<string, unknown>[] = [BASE_LANE]) {
-  app.shared["command-center.state"] = { lanes };
+const REPOS = [{ name: "app", main: "/r/app", trees: ["/r/app", "/w/cup-1234", "/w/cup-9", "/w/bare"] }];
+const MERGED_PR = { number: 42, url: "https://github.com/acme/app/pull/42", state: "MERGED", isDraft: false, reviewDecision: "", statusCheckRollup: [] };
+const SHIPPED = {
+  ...BASE_LANE,
+  release: RELEASE,
+  pr: MERGED_PR,
+  steps: ["done", "done", "done", "done", "done", "done", "next"],
+  next: { label: "Run /pp-clear", kind: "tab", target: "new tab in app", text: "/pp-clear 42", space: "sp-main", folder: "/r/app" },
+};
+
+function column(lanes: Record<string, unknown>[] = [BASE_LANE], repos: Record<string, unknown>[] = REPOS) {
+  app.shared["command-center.state"] = { lanes, repos };
   propsNow = {};
   const view = new CommandCenter();
   view.init({}, cx);
@@ -519,41 +529,113 @@ describe("column", () => {
     expect(app.runs).toContainEqual(["space.new", { folder: "/w/cup-1234", argv: ["claude"], task: "/vjr-ac", machine: "" }]);
   });
 
-  test("the task tab follows the focused terminal's folder and stays on the last task", () => {
+  test("the column follows the focused checkout and never keeps the last task", () => {
     const second = { ...BASE_LANE, key: "/w/cup-9", path: "/w/cup-9", task: { ...BASE_LANE.task, id: "CUP-9", title: "Another task" } };
     const view = column([BASE_LANE, second]);
     focusedCwd = "/w/cup-9/src";
     expect(texts(view.render())).toContain("Another task");
     focusedCwd = "/x/not-a-task";
-    expect(texts(view.render())).toContain("Another task");
+    expect(texts(view.render())).not.toContain("Another task");
+    expect(texts(view.render())).toContain("Not in a repository");
   });
 
   test("a task published after the focus moved into it is still picked", () => {
-    const view = column([]);
+    const view = column([], []);
     focusedCwd = "/w/cup-1234/src";
-    expect(texts(view.render())).toContain("No task here");
-    app.shared["command-center.state"] = { lanes: [BASE_LANE] };
-    const shown = texts(view.render());
-    expect(shown).not.toContain("No task here");
-    expect(shown).toContain("Next step".toUpperCase());
+    expect(texts(view.render())).toContain("Not in a repository");
+    app.shared["command-center.state"] = { lanes: [BASE_LANE], repos: REPOS };
+    expect(texts(view.render())).toContain("A saved draft disappears");
   });
 
-  test("with no task yet the tab says so", () => {
+  test("outside a repo the column says so", () => {
     focusedCwd = "/x/not-a-task";
-    expect(texts(column().render())).toContain("No task here");
+    expect(texts(column().render())).toContain("Not in a repository");
   });
 
-  test("a toast's focus wins over the focused folder", () => {
-    const second = { ...BASE_LANE, key: "/w/cup-9", path: "/w/cup-9", task: { ...BASE_LANE.task, id: "CUP-9", title: "Another task" } };
-    const view = column([BASE_LANE, second]);
+  test("the header names the checkout and the repo's profile", () => {
     focusedCwd = "/w/cup-1234";
-    app.shared["command-center.focus"] = "/w/cup-9";
-    expect(texts(view.render())).toContain("Another task");
+    const shown = texts(column().render());
+    expect(shown).toContain("app");
+    expect(shown).toContain("cup-1234");
+    expect(shown).toContain("Partner Programmer ▾");
+  });
+
+  test("the timeline names every step with what it did or will do", () => {
+    focusedCwd = "/w/cup-1234";
+    const shown = texts(column().render());
+    for (const label of ["Task ▸", "AC", "Ship", "Evidence", "PR", "Merge", "Clear"]) expect(shown).toContain(label);
+    for (const note of ["1 done item", "next: /vjr-ac", "/pp-ship in a new tab", "no PR yet", "/pp-clear from main"]) expect(shown).toContain(note);
+  });
+
+  test("a done Task opens its done items and closes again", () => {
+    focusedCwd = "/w/cup-1234";
+    const view = column();
+    expect(texts(view.render())).not.toContain("D01  The draft stays");
+    press(view, "step-Task");
+    expect(texts(view.render())).toContain("D01  The draft stays");
+    expect(texts(view.render())).toContain("Task ▾");
+    press(view, "step-Task");
+    expect(texts(view.render())).not.toContain("D01  The draft stays");
+  });
+
+  test("VJR-TASK.md opens in the markdown pane", () => {
+    focusedCwd = "/w/cup-1234";
+    press(column(), "link-file");
+    expect(app.runs).toContainEqual(["pane.split", { direction: "right", mod: "markdown", props: { file: "/w/cup-1234/VJR-TASK.md" } }]);
+    expect(app.execs.filter((call) => call.command === "open")).toEqual([]);
+  });
+
+  test("pp-ship's new tab is named for the task", () => {
+    focusedCwd = "/w/cup-1234";
+    const shipping = { ...BASE_LANE, steps: ["done", "done", "next", "todo", "todo", "todo", "todo"], next: { label: "Run /pp-ship in a new tab", kind: "tab", space: "sp-1234", folder: "/w/cup-1234", text: "/pp-ship --base main", name: "ship · CUP-1234", target: "new tab in this worktree" } };
+    press(column([shipping]), "next");
+    expect(app.runs).toContainEqual(["tab.new", { space: "sp-1234", folder: "/w/cup-1234", name: "ship · CUP-1234", argv: ["claude"], task: "/pp-ship --base main" }]);
+  });
+
+  test("the profile button opens a popup for this repo", () => {
+    focusedCwd = "/w/cup-1234";
+    press(column(), "profile");
+    expect(app.overlays[0]).toMatchObject({ mod: "command-center", kind: "popup", at: "pointer", props: { role: "profile", repo: "/r/app", name: "app" } });
+  });
+
+  test("a repo switched off says so and turns back on", () => {
+    focusedCwd = "/w/cup-1234";
+    app.shared["command-center.profiles"] = { "/r/app": "off" };
+    const view = column();
+    expect(texts(view.render())).toContain("Command Center is off in app");
+    expect(texts(view.render())).toContain("Off ▾");
+    expect(texts(view.render())).not.toContain("A saved draft disappears");
+    press(view, "profile-on");
+    expect(app.shared["command-center.profiles"]).toEqual({});
+  });
+
+  test("a worktree without a task says so", () => {
+    focusedCwd = "/w/bare";
+    expect(texts(column().render())).toContain("No task in this worktree");
+  });
+
+  test("the main checkout lists the repo's tasks and starts a new one", () => {
+    focusedCwd = "/r/app";
+    const view = column([BASE_LANE, { ...SHIPPED, key: "/w/cup-9", path: "/w/cup-9", task: { ...BASE_LANE.task, id: "CUP-9", title: "Shipped task" } }]);
+    const shown = texts(view.render());
+    expect(shown).toContain("TASKS IN APP");
+    expect(shown).toContain("A saved draft disappears");
+    expect(shown).toContain("merged · clean up");
+    press(view, "start-task");
+    expect(app.runs).toContainEqual(["tab.new", { space: "sp-1234", folder: "/r/app", name: "task", argv: ["claude"], task: "/vjr-task" }]);
+  });
+
+  test("a row's own action runs without picking the row", () => {
+    focusedCwd = "/r/app";
+    const shipped = { ...SHIPPED, key: "/w/cup-9", path: "/w/cup-9", space: "sp-9", task: { ...BASE_LANE.task, id: "CUP-9", title: "Shipped task" } };
+    press(column([shipped]), "lane-act-/w/cup-9");
+    expect(app.runs).toContainEqual(["tab.new", { space: "sp-main", folder: "/r/app", argv: ["claude"], task: "/pp-clear 42" }]);
+    expect(app.runs.filter(([name]) => name === "space.select")).toEqual([]);
   });
 
   test("Copy message uses pp-stack-rich-copy on message.txt", async () => {
     focusedCwd = "/w/cup-1234";
-    const view = column([{ ...BASE_LANE, release: RELEASE }]);
+    const view = column([SHIPPED]);
     expect(texts(pathTo(view.render(), "copy")?.at(-1) as Node)).toEqual(["Copy message"]);
     press(view, "copy");
     await flush();
@@ -564,24 +646,23 @@ describe("column", () => {
 
   test("a merged task with local links offers to regenerate", () => {
     focusedCwd = "/w/cup-1234";
-    const merged = { ...BASE_LANE, release: RELEASE, pr: { number: 42, url: "https://github.com/acme/app/pull/42", state: "MERGED", isDraft: false, reviewDecision: "", statusCheckRollup: [] } };
-    const shown = texts(column([merged]).render());
+    const shown = texts(column([SHIPPED]).render());
     expect(shown).toContain("Links still point to local.");
     expect(shown).toContain("Regenerate with production links");
   });
 
-  test("a screenshot opens the shot window", () => {
+  test("a screenshot opens the shot window from the opened Evidence step", () => {
     focusedCwd = "/w/cup-1234";
-    press(column([{ ...BASE_LANE, release: RELEASE }]), "shot-0");
+    const view = column([{ ...BASE_LANE, release: RELEASE, steps: ["done", "done", "done", "done", "run", "todo", "todo"] }]);
+    expect(pathTo(view.render(), "shot-0")).toBeNull();
+    press(view, "step-Evidence");
+    press(view, "shot-0");
     expect(app.overlays[0]).toMatchObject({ kind: "window", key: "command-center-shot", mod: "command-center", props: { role: "shot", lane: "/w/cup-1234", index: 0 } });
   });
 
-  test("the Lanes tab lists every task and picking one selects its space", () => {
-    focusedCwd = "/x/not-a-task";
-    const view = column();
-    press(view, "tab-lanes");
-    expect(texts(view.render())).toContain("A saved draft disappears");
-    press(view, "lane-/w/cup-1234");
+  test("picking a task in the main checkout selects its space", () => {
+    focusedCwd = "/r/app";
+    press(column(), "lane-/w/cup-1234");
     expect(app.runs).toContainEqual(["space.select", { id: "sp-1234" }]);
   });
 });
@@ -599,7 +680,7 @@ describe("review fixes in the column", () => {
 
   test("copying runs in a task and never touches the click after it returns", async () => {
     focusedCwd = "/w/cup-1234";
-    const view = column([{ ...BASE_LANE, release: RELEASE }]);
+    const view = column([SHIPPED]);
     press(view, "copy");
     await flush();
     expect(clicks.stale).toBe(0);
@@ -612,18 +693,19 @@ describe("review fixes in the column", () => {
     expect(app.runs).toContainEqual(["tab.new", { space: "sp-main", folder: "/w/cup-1234", argv: ["claude"], task: "/vjr-ac" }]);
   });
 
-  test("switching tabs and picking a task redraw at once", () => {
-    focusedCwd = "/x/not-a-task";
+  test("opening a step and picking a task redraw at once", () => {
+    focusedCwd = "/w/cup-1234";
     const view = column();
-    press(view, "tab-lanes");
+    press(view, "step-Task");
     expect(clicks.notified).toBe(1);
+    focusedCwd = "/r/app";
     press(view, "lane-/w/cup-1234");
     expect(clicks.notified).toBe(2);
   });
 
   test("regenerate never types into a claude that needs you", () => {
     focusedCwd = "/w/cup-1234";
-    const merged = { ...BASE_LANE, claude: { terminal: "t12", status: "blocked", count: 1, ambiguous: false }, release: RELEASE, pr: { number: 42, url: "u", state: "MERGED", isDraft: false, reviewDecision: "", statusCheckRollup: [] } };
+    const merged = { ...SHIPPED, claude: { terminal: "t12", status: "blocked", count: 1, ambiguous: false } };
     press(column([merged]), "regenerate");
     expect(sends()).toEqual([]);
     expect(app.runs).toEqual([]);
@@ -631,7 +713,7 @@ describe("review fixes in the column", () => {
 
   test("a gh failure after a PR was seen still says GitHub unavailable", () => {
     focusedCwd = "/w/cup-1234";
-    const seen = { ...BASE_LANE, pr: { number: 42, url: "u", state: "OPEN", isDraft: false, reviewDecision: "", statusCheckRollup: [] }, prError: "GitHub unavailable · gh: auth required" };
+    const seen = { ...BASE_LANE, steps: ["done", "done", "done", "done", "run", "todo", "todo"], pr: { number: 42, url: "u", state: "OPEN", isDraft: false, reviewDecision: "", statusCheckRollup: [] }, prError: "GitHub unavailable · gh: auth required" };
     expect(texts(column([seen]).render())).toContain("GitHub unavailable · gh: auth required");
   });
 });
@@ -706,10 +788,43 @@ describe("manual checks in the column", () => {
     expect(texts(view.render())).toContain("claude is working");
   });
 
+  test("checks asked in the task's session link to its claude and answer there", async () => {
+    focusedCwd = "/w/cup-1234";
+    const view = column([{ ...AC_LANE, claude: { terminal: null, status: null, count: 0, ambiguous: false }, session: { terminal: "t30", status: "idle", count: 1, ambiguous: false }, skill: { ...AC_LANE.skill, from: "session" } }]);
+    expect(texts(view.render())).toContain("claude · t30 ↗");
+    press(view, "check-pass-D02");
+    await flush();
+    expect(sends().map((call) => call.args)).toEqual([["send", "--if", "idle", "t30", "D02 passed"]]);
+    press(view, "go-claude");
+    expect(app.runs).toContainEqual(["pane.focus", { terminal: "t30" }]);
+  });
+
   test("the checks leave once AC is done", () => {
     focusedCwd = "/w/cup-1234";
     const view = column([{ ...AC_LANE, skill: null, steps: ["done", "done", "next", "todo", "todo", "todo", "todo"] }]);
     expect(texts(view.render())).not.toContain("Watch the label.");
+  });
+});
+
+describe("profile popup", () => {
+  test("it marks the repo's profile and switches it off and on", () => {
+    const closed: unknown[] = [];
+    herdr.closeOverlay = (id: never) => {
+      closed.push(id);
+      return null;
+    };
+    propsNow = { role: "profile", repo: "/r/app", name: "app", overlay: "o7" };
+    const view = new CommandCenter();
+    view.init({}, cx);
+    const shown = texts(view.render());
+    expect(shown).toContain("PROFILE · APP");
+    expect(shown).toContain("Partner Programmer");
+    expect(shown).toContain("Off");
+    press(view, "profile-off");
+    expect(app.shared["command-center.profiles"]).toEqual({ "/r/app": "off" });
+    press(view, "profile-pp");
+    expect(app.shared["command-center.profiles"]).toEqual({});
+    expect(closed).toEqual(["o7", "o7"]);
   });
 });
 

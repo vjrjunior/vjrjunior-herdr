@@ -16,7 +16,7 @@
 
 ### Command Center Inbox
 
-**What:** An Inbox tab with the open ClickUp tasks and a Start button that opens `/vjr-task CUP-xxxx` in the repo's main checkout.
+**What:** An Inbox in the main checkout's view, under `Start a task`, with the open ClickUp tasks and a Start button that opens `/vjr-task CUP-xxxx` in a new tab of the main checkout.
 
 **Why:** Starting a task still means typing its id.
 
@@ -25,6 +25,18 @@
 **Effort:** M
 **Priority:** P2
 **Depends on:** A fresh ClickUp source
+
+### A personal profile for the Command Center
+
+**What:** A second profile for personal repos, with its own steps and skills, picked from the profile button next to Partner Programmer and Off.
+
+**Why:** The Command Center follows the company flow (`/vjr-task`, `/vjr-ac`, `/pp-ship`, PR evidence); personal repos need a flow of their own.
+
+**Context:** `PROFILES` in `mods/command-center/logic.js` holds only Partner Programmer, and the steps, notes and next-step rules are that flow's. A new profile needs its own versions of `stepsOf`, `stepNotes` and `nextStep`, chosen by the repo's profile.
+
+**Effort:** M
+**Priority:** P3
+**Depends on:** Deciding the personal flow
 
 ### Draw Mermaid diagrams in the Markdown viewer
 

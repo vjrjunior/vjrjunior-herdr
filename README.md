@@ -109,13 +109,25 @@ Each loss gets one automatic try. `herdr-app do vjr-square-comeback.resume` (or 
 
 ### Command Center
 
-The `Command Center` button, right after `+` in the top bar, opens a column that follows the task in the focused space. Like the side panel, each space remembers whether its column was open. A task is any worktree, other than the main checkout, with a `VJR-TASK.md` from `/vjr-task`. The column shows the task's track (Task, AC, Ship, Evidence, PR, Merge, Clear), the next step, the PR's checks, preview and review, and the release card with the screenshots and `Copy message`. `Lanes` lists every task. The number on the button counts the tasks that wait on you, red when one failed, and each worktree in the Spaces tree gets a chip with its step.
+The `Command Center` button, right after `+` in the top bar, opens a column for the checkout of the focused terminal. Like the side panel, each space remembers whether its column was open.
 
-While `/vjr-ac` asks its manual checks, the AC step shows them as cards, read from the `## Manual checks` table it writes to `VJR-TASK.md`: the check being asked has `Passed` and `Failed…` (type what you saw, Enter sends, Esc cancels), which answer in the task's Claude.
+- **In a task's worktree** (a worktree other than the main checkout, with a `VJR-TASK.md` from `/vjr-task`), the column shows the task and its track as a timeline: Task, AC, Ship, Evidence, PR, Merge, Clear. Each step says what happened or what comes next. The current step opens with what it needs: the manual checks while `/vjr-ac` asks them, the PR's checks, preview and review, or the next step's button. Task and Evidence open with a click, on the done items and on the receipts with the release card (the screenshots and `Copy message`); Evidence opens by itself once the PR merges. `VJR-TASK.md` opens in the Markdown viewer next to the terminal.
+- **In the main checkout,** it lists the repo's tasks, each with its step, why it waits and what to do, and `Start a task` opens `/vjr-task` in a new tab.
+- **Profiles:** the button in the header picks the repo's flow. `Partner Programmer` is every repo's default, and `Off` stops the panel from reading that repo at all.
 
-The next step is one click. It types the right skill into the task's own Claude, with the base and the scope `/pp-ship` needs, or opens a new tab with it. It never types into another worktree, into a working Claude, into one waiting on a prompt, or into a session whose skill is still running, and a send to an idle Claude uses `hc send --if idle`, so it fails rather than typing into a Claude that just started working, and it never merges, pushes, posts to Slack or changes ClickUp. `/pp-clear` always runs in a new tab of the main checkout.
+The number on the button counts the tasks that wait on you, red when one failed, and each worktree in the Spaces tree gets a chip with its step.
 
-`mods/command-center/` reads `VJR-TASK.md`, `git`, `gh`, the pp-stack scripts in `~/.claude/skills/pp-stack/bin/` and `~/.pp-stack/session/`. It asks GitHub at most once a minute per open PR, and alerts only when a PR becomes ready, needs attention or merges. It writes nothing but copies of the screenshots under `data/<copy>/shots/`, removed when the task is gone. Clicking an alert runs `vjr-command-center.show` (`vjr-square-command-center.show` in the square layout).
+While `/vjr-ac` asks its manual checks, the AC step shows them as cards, read from the `## Manual checks` table it writes to `VJR-TASK.md`: the check being asked has `Passed` and `Failed…` (type what you saw, Enter sends, Esc cancels), which answer in the Claude running `/vjr-ac`.
+
+The next step is one click:
+- `/vjr-ac` goes to the Claude session that ran `/vjr-task`, named by the `**Session:**` line `/vjr-task` writes to `VJR-TASK.md`, even when it runs in the main checkout. Without that line it goes to the worktree's Claude, else to a new tab.
+- `/pp-ship` opens in a new tab of the worktree, named `ship · <id>`, with the base and the scope it needs.
+- The push for a task based on another branch, `/pp-pr-ready` and the release message go to the worktree's Claude.
+- `/pp-clear` always runs in a new tab of the main checkout.
+
+It never types into another worktree, into a working Claude, into one waiting on a prompt, or into a session whose skill is still running. A send to an idle Claude uses `hc send --if idle`, so it fails rather than typing into a Claude that just started working. It never merges, pushes, posts to Slack or changes ClickUp.
+
+`mods/command-center/` reads `VJR-TASK.md`, `git`, `gh`, the pp-stack scripts in `~/.claude/skills/pp-stack/bin/` and `~/.pp-stack/session/`. It asks GitHub at most once a minute per open PR, and alerts only when a PR becomes ready, needs attention or merges. It writes nothing but copies of the screenshots under `data/<copy>/shots/`, removed when the task is gone, and the repos switched off, in `command-center.profiles` in shared state. Clicking an alert runs `vjr-command-center.show` (`vjr-square-command-center.show` in the square layout), which selects the task's space and opens the column.
 
 ### Markdown viewer
 

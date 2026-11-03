@@ -12,6 +12,7 @@ const POPUP_ROOTS: Record<string, number> = {
   palette: 1,
   agents: 1,
   "git-graph": 2,
+  "command-center": 1,
 };
 const FRAMELESS = ["picker", "machine-add", "menu", "palette"];
 const OWN_MODS = ["git-graph", "spaces-tree", "comeback", "command-center", "markdown"];

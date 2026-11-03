@@ -336,6 +336,20 @@ describe("command center", () => {
     }
   });
 
+  test("the column opens VJR-TASK.md in each layout's own markdown viewer", () => {
+    expect(generateDesk().mods["vjr-command-center"]?.["main.js"]).toContain('mod: "vjr-markdown", props: { file:');
+    expect(generateSquare().mods["vjr-square-command-center"]?.["main.js"]).toContain('mod: "vjr-square-markdown", props: { file:');
+  });
+
+  test("the profile popup keeps Herdr's frame in vjr-desk and draws a square one in vjr-desk-square", () => {
+    const desk = generateDesk().mods["vjr-command-center"] ?? {};
+    const square = generateSquare().mods["vjr-square-command-center"] ?? {};
+    expect(desk["main.js"]).toContain('openOverlay({ mod: "vjr-command-center", kind: "popup", at: "pointer"');
+    expect(desk["column.js"]).not.toContain(".bg(t.popover).border_1()");
+    expect(square["main.js"]).toContain('openOverlay({ mod: "vjr-square-command-center", kind: "popup", frame: "none", at: "pointer"');
+    expect(square["column.js"]).toContain(".bg(t.popover).border_1().border_color(t.border)");
+  });
+
   test("the tab bar toggles the column right after the + button", () => {
     for (const [generated, tabs] of [
       [generateDesk(), "vjr-tabs"],

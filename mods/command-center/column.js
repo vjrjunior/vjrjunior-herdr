@@ -1,114 +1,141 @@
 import { div, image } from "gpui-kit";
 import { Input, TextView, h_flex, v_flex } from "gpui-base";
-import { answerStep, rollup } from "./logic.js";
+import { answerStep, laneSummary, PROFILES, profileOf, rollup, stepNotes, viewFor } from "./logic.js";
 
 const STEPS = ["Task", "AC", "Ship", "Evidence", "PR", "Merge", "Clear"];
-const MARK = { done: "✓", run: "●", next: "○", bad: "!", todo: "" };
 const FILES = ["ship.json", "screenshots.md", "message.txt", "meta.json"];
+const CHECK_MARK = { passed: "✓", failed: "!", asking: "●", pending: "○" };
+const OPTIONS = [...Object.entries(PROFILES).map(([id, profile]) => [id, profile.label]), ["off", "Off"]];
 
-const toneColor = (tone, t) => ({ done: t.done, work: t.working, bad: t.blocked }[tone] ?? t.unknown);
+const toneColor = (tone, t) => ({ blocked: t.blocked, working: t.working, done: t.done }[tone] ?? t.unknown);
 const stateColor = (state, t) => ({ done: t.done, ok: t.done, current: t.done, run: t.working, next: t.accent, bad: t.blocked, stale: t.blocked }[state] ?? t.unknown);
 const linkColor = (t) => t.ansi12 ?? t.accent;
 const merged = (lane) => lane.pr && !lane.pr.error && lane.pr.state === "MERGED";
+const hasPr = (lane) => Boolean(lane.pr && !lane.pr.error && lane.pr.number);
+const currentOf = (steps) => {
+  const index = steps.findIndex((step) => step !== "done");
+  return index < 0 ? 6 : index;
+};
 
-function heading(text, t) {
-  return div().text_size(10.5).text_color(t.dim).child(text.toUpperCase());
+function heading(text, t, right) {
+  return h_flex()
+    .justify_between()
+    .text_size(10.5)
+    .text_color(t.unknown)
+    .child(div().child(text.toUpperCase()))
+    .when(right != null, (el) => el.child(div().text_color(t.dim).child(String(right))));
 }
 
 function pill(text, t) {
-  return h_flex().flex_none().h(18).px(6).items_center().rounded(4).text_size(11).font_bold().bg(t.accent).text_color(t.accent_foreground ?? t.chrome).child(text);
+  return h_flex().flex_none().h(18).px(6).items_center().rounded(4).text_size(10.5).font_bold().bg(t.accent).text_color(t.accent_foreground ?? t.chrome).child(text);
 }
 
 function link(id, text, t, action) {
-  return div().id(id).flex_none().text_size(11.5).text_color(linkColor(t)).hover((s) => s.text_color(t.foreground)).on_click((_e, cx) => action(cx)).child(text);
+  return div().id(id).flex_none().text_size(11).text_color(linkColor(t)).hover((s) => s.text_color(t.foreground)).on_click((_e, cx) => action(cx)).child(text);
 }
 
-function row(mark, color, name, detail, t) {
+function button(id, label, color, t, action) {
   return h_flex()
-    .h(26)
+    .id(id)
     .flex_none()
-    .px(8)
+    .h(24)
+    .px(9)
+    .items_center()
+    .rounded(5)
+    .border_1()
+    .border_color(color)
+    .text_size(11)
+    .text_color(color)
+    .hover((s) => s.bg(t.hover))
+    .on_click((_e, cx) => action(cx))
+    .child(label);
+}
+
+function line(name, detail, color, t) {
+  return h_flex()
+    .h(24)
+    .gap(10)
+    .items_center()
+    .border_t_1()
+    .border_color(t.border)
+    .text_size(11.5)
+    .child(div().flex_1().min_w(0).truncate().text_color(t.foreground).child(name))
+    .child(div().flex_none().text_size(11).text_color(color).child(detail));
+}
+
+function card(t) {
+  return v_flex().gap(8).p(10).rounded(6).bg(t.surface).border_1().border_color(t.border);
+}
+
+function topBar(view, left, repo, profiles, t) {
+  const profile = repo ? profileOf(profiles, repo.main) : null;
+  return h_flex()
+    .h(34)
+    .flex_none()
+    .pl(12)
+    .pr(10)
     .gap(8)
     .items_center()
-    .rounded(6)
-    .bg(t.surface)
-    .border_1()
+    .border_b_1()
     .border_color(t.border)
-    .child(div().flex_none().w(10).text_color(color).child(mark))
-    .child(div().flex_1().min_w(0).truncate().child(name))
-    .when(Boolean(detail), (el) => el.child(div().flex_none().text_size(11).text_color(t.unknown).child(detail)));
+    .child(h_flex().flex_1().min_w(0).gap(6).items_center().text_size(11.5).text_color(t.muted).children(left))
+    .when(Boolean(repo), (el) =>
+      el.child(
+        h_flex()
+          .id("profile")
+          .flex_none()
+          .h(22)
+          .px(8)
+          .gap(5)
+          .items_center()
+          .rounded(5)
+          .border_1()
+          .border_color(t.input)
+          .text_size(11)
+          .text_color(t.foreground)
+          .hover((s) => s.bg(t.hover))
+          .on_click((_e, cx) => view.chooseProfile(repo, cx))
+          .child(div().size(6).rounded(3).bg(profile === "off" ? t.dim : t.accent))
+          .child(`${profile === "off" ? "Off" : PROFILES[profile].label} ▾`),
+      ),
+    );
 }
 
-function header(view, lane, t) {
+function identity(view, lane, t) {
   const task = lane.task;
-  const pr = lane.pr && !lane.pr.error ? lane.pr : null;
   return v_flex()
-    .gap(4)
-    .child(h_flex().gap(8).items_center().child(pill(task.id ?? "TASK", t)).child(div().text_size(11.5).text_color(t.unknown).child(lane.repo.name)))
-    .child(div().text_size(13.5).font_semibold().text_color(t.foreground).child(task.title))
-    .child(div().text_size(11.5).text_color(t.unknown).truncate().child(`${lane.branch ?? "detached"} → ${task.base}`))
+    .gap(3)
+    .child(h_flex().gap(8).items_center().child(pill(task.id ?? "TASK", t)).child(div().text_size(11).text_color(t.unknown).child(task.kind ?? "task")))
+    .child(div().pt(3).text_size(13.5).font_semibold().text_color(t.foreground).child(task.title))
+    .child(div().text_size(11).text_color(t.unknown).truncate().child(`${lane.branch ?? "detached"} → ${task.base}`))
     .child(
       h_flex()
+        .pt(3)
         .gap(12)
         .flex_wrap()
         .when(Boolean(task.url), (el) => el.child(link("link-task", "ClickUp ↗", t, () => view.open(task.url))))
-        .when(Boolean(pr), (el) => el.child(link("link-pr", `PR #${pr.number} ↗`, t, () => view.open(pr.url))))
-        .child(link("link-file", "VJR-TASK.md", t, () => view.open(`${lane.path}/VJR-TASK.md`)))
+        .when(hasPr(lane), (el) => el.child(link("link-pr", `PR #${lane.pr.number} ↗`, t, () => view.open(lane.pr.url))))
+        .child(link("link-file", "VJR-TASK.md ▸", t, () => view.readTaskFile(lane)))
         .child(link("link-zed", "Zed ↗", t, () => view.zed(lane.path))),
-    );
+    )
+    .when(Boolean(lane.sessionShared), (el) => el.child(div().pt(4).text_size(11).text_color(t.working).child("Two tasks name this session; neither follows it")));
 }
 
-function stepper(lane, t) {
-  return h_flex()
-    .gap(2)
-    .children(
-      STEPS.map((name, index) => {
-        const state = lane.steps[index] ?? "todo";
-        const color = stateColor(state, t);
-        return v_flex()
-          .flex_1()
-          .min_w(0)
-          .items_center()
-          .gap(4)
-          .child(
-            h_flex()
-              .w_full()
-              .h(22)
-              .items_center()
-              .justify_center()
-              .rounded(4)
-              .text_size(11)
-              .bg(state === "done" ? t.raised : t.surface)
-              .border_1()
-              .border_color(state === "todo" ? t.border : color)
-              .text_color(color)
-              .child(MARK[state] ?? ""),
-          )
-          .child(div().whitespace_nowrap().text_size(10).text_color(state === "todo" ? t.dim : state === "done" ? t.muted : t.foreground).child(name));
-      }),
-    );
-}
-
-function nextCard(view, lane, t) {
+function nextAction(view, lane, t) {
   const next = lane.next ?? {};
   const offerTab = Boolean(next.text) && (next.kind === "send" || next.kind === "wait");
   return v_flex()
-    .gap(8)
-    .p(12)
-    .rounded(8)
-    .bg(t.surface)
-    .border_1()
-    .border_color(t.border)
-    .child(heading("Next step", t))
+    .gap(6)
     .child(
       h_flex()
         .id("next")
-        .h(34)
+        .h(32)
         .w_full()
         .items_center()
         .justify_center()
-        .rounded(6)
+        .rounded(5)
         .font_bold()
+        .text_size(12)
         .bg(next.disabled ? t.raised : t.accent)
         .text_color(next.disabled ? t.unknown : (t.accent_foreground ?? t.chrome))
         .when(!next.disabled, (el) => el.hover((s) => s.opacity(0.9)))
@@ -118,77 +145,58 @@ function nextCard(view, lane, t) {
     .child(
       h_flex()
         .gap(8)
-        .justify_between()
         .text_size(11)
         .text_color(t.unknown)
         .child(div().flex_1().min_w(0).child(`→ ${next.target ?? ""}`))
         .when(offerTab, (el) => el.child(link("new-tab", "New tab instead", t, () => view.newTab(lane)))),
     )
-    .when(Boolean(lane.note), (el) => el.child(div().text_size(11.5).text_color(t.working).child(lane.note)));
+    .when(Boolean(lane.note), (el) => el.child(div().text_size(11).text_color(t.working).child(lane.note)));
 }
 
-function button(id, label, color, t, action) {
-  return h_flex()
-    .id(id)
-    .h(24)
-    .px(9)
-    .items_center()
-    .rounded(6)
-    .border_1()
-    .border_color(color)
-    .text_size(11.5)
-    .text_color(color)
-    .hover((s) => s.bg(t.hover))
-    .on_click((_e, cx) => action(cx))
-    .child(label);
-}
-
-const CHECK_MARK = { passed: "✓", failed: "!", asking: "●", pending: "○" };
-
-function manualCard(view, lane, check, t) {
+function checkRow(view, lane, check, t) {
   const asking = check.state === "asking";
   const sent = view.sent?.[`${lane.key}:${check.id}`] === check.state;
   const failing = view.failing?.lane === lane.key && view.failing?.id === check.id;
   const refused = asking && !sent ? answerStep(lane, check.id, "passed").refused : null;
   const color = { passed: t.done, failed: t.blocked, asking: t.working }[check.state] ?? t.unknown;
   return v_flex()
-    .gap(6)
+    .gap(4)
     .p(8)
-    .rounded(6)
-    .bg(t.surface)
-    .border_1()
-    .border_color(asking ? t.accent : t.border)
+    .rounded(5)
+    .when(asking, (el) => el.bg(t.selection ?? t.raised).border_1().border_color(t.accent))
     .child(
       h_flex()
         .items_start()
         .gap(8)
-        .child(div().flex_none().w(30).text_color(t.unknown).child(check.id))
-        .child(div().flex_1().min_w(0).child(check.steps))
-        .child(div().flex_none().text_size(11).text_color(sent ? t.working : color).child(sent ? "Sent" : `${CHECK_MARK[check.state] ?? "○"} ${check.state}`)),
+        .child(div().flex_none().w(28).text_size(11).text_color(t.unknown).child(check.id))
+        .child(div().flex_1().min_w(0).text_size(11.5).text_color(t.foreground).child(check.steps))
+        .child(div().flex_none().text_size(10.5).text_color(sent ? t.working : color).child(sent ? "Sent" : `${CHECK_MARK[check.state] ?? "○"} ${check.state}`)),
     )
-    .child(div().pl(38).text_size(11.5).text_color(t.unknown).child(`→ ${check.expected}`))
-    .when(check.state === "failed" && Boolean(check.note), (el) => el.child(div().pl(38).text_size(11.5).text_color(t.blocked).child(`Saw: ${check.note}`)))
-    .when(Boolean(check.url) || (asking && !sent), (el) =>
+    .child(div().pl(36).text_size(11).text_color(t.muted).child(`→ ${check.expected}`))
+    .when(check.state === "failed" && Boolean(check.note), (el) => el.child(div().pl(36).text_size(11).text_color(t.blocked).child(`Saw: ${check.note}`)))
+    .when(asking && (Boolean(check.url) || !sent), (el) =>
       el.child(
         h_flex()
-          .pl(38)
+          .pl(36)
+          .pt(4)
           .gap(6)
           .items_center()
           .flex_wrap()
           .when(Boolean(check.url), (row) => row.child(link(`check-open-${check.id}`, "Open ↗", t, () => view.open(check.url))))
-          .when(asking && !sent && !refused && !failing, (row) =>
+          .when(!sent && !refused && !failing, (row) =>
             row
               .child(button(`check-pass-${check.id}`, "Passed", t.done, t, (cx) => view.answer(lane, check.id, "passed", null, cx)))
               .child(button(`check-fail-${check.id}`, "Failed…", t.blocked, t, (cx) => view.startFailure(lane, check.id, cx))),
           )
-          .when(asking && !sent && Boolean(refused), (row) => row.child(div().text_size(11).text_color(t.unknown).child(refused))),
+          .when(!sent && Boolean(refused), (row) => row.child(div().text_size(11).text_color(t.unknown).child(refused))),
       ),
     )
+    .when(!asking && Boolean(check.url), (el) => el.child(div().pl(36).child(link(`check-open-${check.id}`, "Open ↗", t, () => view.open(check.url)))))
     .when(failing, (el) =>
       el.child(
         v_flex()
           .id("check-note")
-          .pl(38)
+          .pl(36)
           .gap(4)
           .on_key_down((event, cx) => view.noteKey(event.key, cx))
           .child(Input.new(view.failInput))
@@ -197,84 +205,73 @@ function manualCard(view, lane, check, t) {
     );
 }
 
-function manualBlock(view, lane, t) {
+function skillClaude(lane) {
+  return (lane.skill?.from === "session" ? lane.session : lane.claude) ?? {};
+}
+
+function checksBody(view, lane, t) {
   const checks = lane.task.manual ?? [];
-  if (checks.length === 0 || lane.steps[1] === "done") return null;
+  const claude = skillClaude(lane);
+  const running = lane.skill?.family === "ac" && lane.skill.active;
   return v_flex()
-    .gap(6)
-    .child(heading("Manual checks · vjr-ac", t))
-    .children(checks.map((check) => manualCard(view, lane, check, t)));
-}
-
-function doneBlock(lane, t) {
-  const rows = new Map((lane.task.verification?.rows ?? []).map((item) => [item.id, item]));
-  return v_flex()
-    .gap(6)
-    .child(heading("Done when · VJR-TASK.md", t))
-    .children(
-      lane.task.done.map((item) => {
-        const verified = rows.get(item.id);
-        return h_flex()
-          .items_start()
-          .gap(8)
-          .p(8)
-          .rounded(6)
-          .bg(t.surface)
-          .border_1()
-          .border_color(t.border)
-          .child(div().flex_none().w(30).text_color(t.unknown).child(item.id))
-          .child(
-            v_flex()
-              .flex_1()
-              .min_w(0)
-              .child(div().child(item.item))
-              .when(Boolean(verified?.where), (el) => el.child(div().text_size(11).text_color(t.unknown).child(verified.where))),
-          )
-          .child(div().flex_none().text_size(11).text_color(verified ? t.done : t.unknown).child(verified ? `✓ ${verified.verdict.toLowerCase()}` : "to verify"));
-      }),
+    .gap(2)
+    .child(
+      h_flex()
+        .pb(4)
+        .gap(8)
+        .items_center()
+        .text_size(11.5)
+        .child(div().flex_1().min_w(0).text_color(t.foreground).child(running ? `${lane.skill.skill} is asking you` : "Manual checks"))
+        .when(Boolean(claude.terminal), (el) => el.child(link("go-claude", `claude · ${claude.terminal} ↗`, t, () => view.focusClaude(claude.terminal)))),
     )
-    .when(lane.task.done.length === 0, (el) => el.child(div().text_size(11.5).text_color(t.unknown).child("No done items in VJR-TASK.md")));
+    .children(checks.map((check) => checkRow(view, lane, check, t)));
 }
 
-function gatesBlock(lane, t) {
-  const verification = lane.task.verification;
-  if (!verification) return null;
-  return v_flex()
-    .gap(6)
-    .child(heading(`Verification · ${verification.sha}`, t))
-    .when(Boolean(verification.gates), (el) => el.child(row("✓", t.done, verification.gates, null, t)))
-    .when(Boolean(verification.review), (el) => el.child(row("✓", t.done, verification.review, null, t)));
-}
-
-function evidenceBlock(lane, t) {
-  const evidence = lane.evidence;
-  if (!evidence) return null;
-  const block = v_flex().gap(6).child(heading("Evidence · pp-pr-evidence", t));
-  if (evidence.error) return block.child(div().text_size(11.5).text_color(t.unknown).child(evidence.error));
-  return block.children(
-    FILES.map((file) => {
-      const state = evidence.files?.[file] ?? "missing";
-      return row(state === "current" ? "✓" : state === "stale" ? "!" : "○", stateColor(state, t), file, state, t);
-    }),
-  );
-}
-
-function prBlock(lane, t) {
+function prBody(lane, t) {
   const pr = lane.pr;
-  if (!pr) return null;
-  if (pr.error) return v_flex().gap(6).child(heading("Pull request", t)).child(div().text_size(11.5).text_color(t.unknown).child(pr.error));
+  if (!pr || pr.error) return div().text_size(11.5).text_color(t.unknown).child(pr?.error ?? "No PR yet");
   const checks = rollup(pr.statusCheckRollup);
-  const status = pr.state === "MERGED" ? "merged" : pr.isDraft ? "draft" : pr.reviewDecision === "APPROVED" ? "ready, approved" : "ready for review";
   const marks = { ok: "✓", run: "●", bad: "!", idle: "○" };
-  const block = v_flex().gap(6).child(heading(`PR #${pr.number} · ${status}`, t));
-  if (lane.prError) block.child(div().text_size(11.5).text_color(t.working).child(lane.prError));
-  for (const item of checks.items) block.child(row(marks[item.state], stateColor(item.state, t), item.name, item.detail, t));
-  if (lane.preview?.link) block.child(row("✓", t.done, "Preview", lane.preview.state?.toLowerCase?.() ?? "", t));
-  if (pr.reviewDecision) block.child(row(pr.reviewDecision === "APPROVED" ? "✓" : "●", pr.reviewDecision === "CHANGES_REQUESTED" ? t.blocked : pr.reviewDecision === "APPROVED" ? t.done : t.working, "Review", pr.reviewDecision.toLowerCase().replaceAll("_", " "), t));
-  return block;
+  const body = v_flex().child(div().pb(4).text_size(11.5).text_color(t.foreground).child(`PR #${pr.number} · ${pr.isDraft ? "draft" : pr.state === "MERGED" ? "merged" : "ready for review"}`));
+  if (lane.prError) body.child(div().pb(4).text_size(11).text_color(t.working).child(lane.prError));
+  for (const item of checks.items) body.child(line(item.name, `${marks[item.state]} ${item.detail}`, stateColor(item.state, t), t));
+  if (lane.preview?.link) body.child(line("Preview", `✓ ${lane.preview.state?.toLowerCase?.() ?? "ready"}`, t.done, t));
+  if (pr.reviewDecision) {
+    const color = pr.reviewDecision === "CHANGES_REQUESTED" ? t.blocked : pr.reviewDecision === "APPROVED" ? t.done : t.working;
+    body.child(line("Review", pr.reviewDecision.toLowerCase().replaceAll("_", " "), color, t));
+  }
+  return body;
 }
 
-function releaseBlock(view, lane, t) {
+function doneBody(lane, t) {
+  const rows = new Map((lane.task.verification?.rows ?? []).map((item) => [item.id, item]));
+  const verification = lane.task.verification;
+  const body = v_flex();
+  for (const item of lane.task.done) {
+    const verified = rows.get(item.id);
+    body.child(line(`${item.id}  ${item.item}`, verified ? `✓ ${verified.verdict.toLowerCase()}` : "to verify", verified ? t.done : t.unknown, t));
+  }
+  if (lane.task.done.length === 0) body.child(div().text_size(11.5).text_color(t.unknown).child("No done items in VJR-TASK.md"));
+  if (verification?.gates) body.child(line(verification.gates, "✓ gates", t.done, t));
+  if (verification?.review) body.child(line(verification.review, "✓ review", t.done, t));
+  return body;
+}
+
+function evidenceBody(view, lane, t) {
+  const evidence = lane.evidence;
+  const body = v_flex();
+  if (evidence?.error) body.child(div().text_size(11.5).text_color(t.unknown).child(evidence.error));
+  else if (evidence) {
+    for (const file of FILES) {
+      const state = evidence.files?.[file] ?? "missing";
+      body.child(line(file, `${state === "current" ? "✓" : state === "stale" ? "!" : "○"} ${state}`, stateColor(state, t), t));
+    }
+  }
+  const release = releaseCard(view, lane, t);
+  return release ? body.child(div().pt(10).child(release)) : body;
+}
+
+function releaseCard(view, lane, t) {
   const release = lane.release;
   if (!release) return null;
   const done = merged(lane);
@@ -284,18 +281,16 @@ function releaseBlock(view, lane, t) {
   const warn = done && release.links && release.links !== "production";
   return v_flex()
     .gap(8)
-    .p(12)
-    .rounded(8)
-    .bg(t.surface)
-    .border_1()
-    .border_color(t.border)
-    .child(heading("Release update", t))
-    .child(div().text_size(11).text_color(t.unknown).child([release.release ? `Release ${release.release}` : null, release.channel ? `#${release.channel}` : null].filter(Boolean).join(" · ")))
+    .child(heading([release.release ? `Release ${release.release}` : "Release", release.channel ? `#${release.channel}` : null].filter(Boolean).join(" · "), t))
     .child(div().font_bold().text_color(t.foreground).child(release.title))
     .when(release.items.length > 0, (el) =>
       el.child(
         div()
-          .text_size(12)
+          .pl(8)
+          .border_l(2)
+          .border_color(t.accent)
+          .text_size(11.5)
+          .text_color(t.muted)
           .child(TextView.markdown("release-items", release.items.map((item) => `- ${item.parts.map((part) => (part.url ? `[${part.text}](${part.url})` : part.text)).join("")}`).join("\n"))),
       ),
     )
@@ -312,7 +307,7 @@ function releaseBlock(view, lane, t) {
                 .min_w(0)
                 .gap(3)
                 .on_click(() => view.openShot(lane, index))
-                .child(image(shot.image).w_full().h(96).rounded(4))
+                .child(image(shot.image).w_full().h(84).rounded(4))
                 .child(div().text_size(10.5).text_color(t.unknown).child(shot.caption)),
             ),
           ),
@@ -323,10 +318,10 @@ function releaseBlock(view, lane, t) {
         v_flex()
           .gap(4)
           .p(8)
-          .rounded(6)
+          .rounded(5)
           .border_1()
           .border_color(t.working)
-          .text_size(11.5)
+          .text_size(11)
           .text_color(t.working)
           .child(div().child(`Links still point to ${release.links}.`))
           .child(link("regenerate", "Regenerate with production links", t, (cx) => view.regenerate(lane, cx))),
@@ -336,12 +331,13 @@ function releaseBlock(view, lane, t) {
       el.child(
         h_flex()
           .id("copy")
-          .h(30)
+          .h(28)
           .w_full()
           .items_center()
           .justify_center()
-          .rounded(6)
+          .rounded(5)
           .font_bold()
+          .text_size(11.5)
           .bg(done ? t.accent : t.raised)
           .text_color(done ? (t.accent_foreground ?? t.chrome) : t.foreground)
           .border_1()
@@ -352,82 +348,212 @@ function releaseBlock(view, lane, t) {
     );
 }
 
-function taskView(view, lane, t) {
-  const blocks = [header(view, lane, t), stepper(lane, t), nextCard(view, lane, t), manualBlock(view, lane, t)];
-  if (lane.pr) blocks.push(prBlock(lane, t), releaseBlock(view, lane, t), doneBlock(lane, t));
-  else if (lane.evidence && (lane.evidence.error || !lane.evidence.ready || lane.steps[2] !== "next")) blocks.push(evidenceBlock(lane, t), releaseBlock(view, lane, t), doneBlock(lane, t), gatesBlock(lane, t));
-  else blocks.push(doneBlock(lane, t), gatesBlock(lane, t), releaseBlock(view, lane, t));
-  return blocks.filter(Boolean);
+function stepBody(view, lane, index, now, t) {
+  if (index === 0) return doneBody(lane, t);
+  const asking = index === 1 && (lane.task.manual ?? []).some((check) => check.state === "asking") && lane.skill?.family === "ac" && lane.skill.active;
+  const parts = [];
+  if (index === 1 && (lane.task.manual ?? []).length) parts.push(checksBody(view, lane, t));
+  if (index === 3) parts.push(evidenceBody(view, lane, t));
+  if (index === 4) parts.push(prBody(lane, t));
+  if (now && !asking) parts.push(nextAction(view, lane, t));
+  return v_flex().gap(10).children(parts.filter(Boolean));
 }
 
-function laneCard(view, lane, current, t) {
-  const tone = toneColor(lane.chip?.tone, t);
-  return v_flex()
-    .id(`lane-${lane.key}`)
-    .gap(6)
-    .p(10)
-    .rounded(8)
-    .bg(t.surface)
-    .border_1()
-    .border_color(current ? t.accent : t.border)
-    .hover((s) => s.bg(t.hover))
-    .on_click((_e, cx) => view.pick(lane, cx))
-    .child(h_flex().gap(8).items_center().child(pill(lane.task.id ?? "TASK", t)).child(div().flex_1().text_size(11.5).text_color(t.unknown).child(lane.chip?.chip ?? "")))
-    .child(div().truncate().text_color(t.foreground).child(lane.task.title))
-    .child(h_flex().gap(2).children(lane.steps.map((state) => div().flex_1().h(4).bg(state === "todo" ? t.input : stateColor(state, t)))))
-    .child(div().text_size(11.5).text_color(tone).child(lane.next?.label ?? ""));
-}
-
-function lanesView(view, lanes, current, t) {
-  if (lanes.length === 0) return [div().text_size(12).text_color(t.unknown).child("No task in progress. A task is a worktree with a VJR-TASK.md.")];
-  const groups = new Map();
-  for (const lane of lanes) groups.set(lane.repo.name, [...(groups.get(lane.repo.name) ?? []), lane]);
-  const out = [];
-  for (const [name, list] of groups) {
-    out.push(div().text_size(11).text_color(t.dim).child(name));
-    for (const lane of list) out.push(laneCard(view, lane, lane.key === current?.key, t));
-  }
-  return out;
-}
-
-function tabButton(view, id, label, count, on, t) {
-  return h_flex()
-    .id(`tab-${id}`)
-    .h(30)
-    .px(10)
-    .gap(4)
+function stepRow(view, lane, index, current, notes, t) {
+  const name = STEPS[index];
+  const state = lane.steps[index] ?? "todo";
+  const now = index === current;
+  const done = state === "done";
+  const expandable = done && (index === 0 || index === 3);
+  const open = now || (expandable && view.isOpen(lane, name, current));
+  const ring = now ? (state === "bad" ? t.blocked : t.accent) : done ? t.done : t.dim;
+  const node = h_flex()
+    .flex_none()
+    .size(17)
     .items_center()
-    .text_size(12)
-    .text_color(on ? t.foreground : t.unknown)
-    .border_b(2)
-    .border_color(on ? t.accent : t.chrome)
-    .on_click((_e, cx) => view.switchTab(id, cx))
+    .justify_center()
+    .rounded(9)
+    .border_1()
+    .border_color(ring)
+    .bg(done ? t.done : t.chrome)
+    .text_size(10)
+    .font_bold()
+    .text_color(done ? (t.accent_foreground ?? t.chrome) : ring)
+    .child(done ? "✓" : now && state === "bad" ? "!" : now ? "●" : "");
+  const label = div()
+    .flex_none()
+    .text_size(12.5)
+    .text_color(now ? t.foreground : done ? t.muted : t.dim)
+    .when(now, (el) => el.font_bold())
+    .child(expandable ? `${name} ${open ? "▾" : "▸"}` : name);
+  const note = div()
+    .min_w(0)
+    .truncate()
+    .text_size(11)
+    .text_color(now ? (state === "bad" ? t.blocked : t.accent) : done ? t.done : t.dim)
+    .when(done && !now, (el) => el.opacity(0.75))
+    .child(notes[index]);
+  const head = h_flex()
+    .id(`step-${name}`)
+    .h(20)
+    .gap(10)
+    .items_center()
     .child(label)
-    .when(count != null, (el) => el.child(div().text_color(t.dim).child(String(count))));
+    .child(h_flex().flex_1().min_w(0).justify_end().child(note))
+    .when(expandable, (el) => el.on_click((_e, cx) => view.toggle(lane, name, current, cx)));
+  const rail = h_flex()
+    .flex_1()
+    .justify_center()
+    .items_stretch()
+    .when(index < STEPS.length - 1, (el) => el.child(div().w(1.5).bg(done ? t.done : t.border).when(done, (line) => line.opacity(0.35))));
+  return h_flex()
+    .items_stretch()
+    .gap(10)
+    .child(v_flex().flex_none().w(17).child(h_flex().h(20).items_center().child(node)).child(rail))
+    .child(
+      v_flex()
+        .flex_1()
+        .min_w(0)
+        .pb(open ? 14 : 12)
+        .child(head)
+        .when(open, (el) => el.child(div().pt(8).child(card(t).child(stepBody(view, lane, index, now, t))))),
+    );
 }
 
-export function columnView(view, lanes, current, t) {
-  const body = view.tab === "lanes" ? lanesView(view, lanes, current, t) : current ? taskView(view, current, t) : [div().text_size(12.5).text_color(t.muted).child("No task here"), ...lanesView(view, lanes, null, t)];
+function taskView(view, lane, t) {
+  const current = currentOf(lane.steps);
+  const notes = stepNotes(lane, lane.steps);
+  const rows = STEPS.map((_, index) => stepRow(view, lane, index, current, notes, t));
+  const hint = current === 1 && (lane.task.manual ?? []).length > 0;
+  return [
+    identity(view, lane, t),
+    v_flex().pt(4).children(rows),
+    hint ? div().text_size(11).text_color(t.unknown).child("When every check is answered, /pp-ship opens in a new tab of this worktree.") : null,
+  ].filter(Boolean);
+}
+
+function laneRow(view, lane, t) {
+  const summary = laneSummary(lane);
+  const tone = toneColor(summary.tone, t);
+  const dots = STEPS.map((_, index) => {
+    const color = index < summary.stage ? t.done : index === summary.stage ? tone : t.dim;
+    return div().text_size(8).text_color(color).when(index < summary.stage, (el) => el.opacity(0.6)).child(index <= summary.stage ? "●" : "○");
+  });
+  return h_flex()
+    .gap(8)
+    .px(4)
+    .py(8)
+    .items_center()
+    .border_b_1()
+    .border_color(t.border)
+    .child(div().flex_none().w(3).h(32).rounded(2).bg(tone))
+    .child(
+      v_flex()
+        .id(`lane-${lane.key}`)
+        .flex_1()
+        .min_w(0)
+        .gap(3)
+        .hover((s) => s.opacity(0.85))
+        .on_click((_e, cx) => view.goTo(lane, cx))
+        .child(h_flex().gap(6).text_size(11.5).child(div().flex_none().text_color(t.unknown).child(lane.task.id ?? "TASK")).child(div().flex_1().min_w(0).truncate().text_color(t.foreground).child(lane.task.title)))
+        .child(
+          h_flex()
+            .gap(8)
+            .items_center()
+            .text_size(11)
+            .child(h_flex().flex_none().gap(1).children(dots))
+            .child(div().flex_none().text_color(tone).child(STEPS[summary.stage]))
+            .child(div().flex_1().min_w(0).truncate().text_color(t.muted).child(summary.why ?? "")),
+        ),
+    )
+    .when(Boolean(summary.action), (el) => el.child(button(`lane-act-${lane.key}`, summary.action, t.muted, t, (cx) => view.laneAction(lane, summary.action, cx))));
+}
+
+function repoView(view, repo, lanes, t) {
+  const start = h_flex()
+    .id("start-task")
+    .h(32)
+    .w_full()
+    .gap(8)
+    .items_center()
+    .justify_center()
+    .rounded(5)
+    .border_1()
+    .border_dashed()
+    .border_color(t.input)
+    .text_size(12)
+    .text_color(t.foreground)
+    .hover((s) => s.bg(t.hover))
+    .on_click((_e, cx) => view.startTask(repo, cx))
+    .child("+ Start a task")
+    .child(div().text_size(11).text_color(t.unknown).child("/vjr-task in a new tab"));
+  const list = lanes.length ? v_flex().children(lanes.map((lane) => laneRow(view, lane, t))) : div().text_size(11.5).text_color(t.unknown).child("No tasks in progress.");
+  return [start, v_flex().gap(6).child(heading(`Tasks in ${repo.name}`, t, lanes.length)).child(list)];
+}
+
+function message(title, detail, t) {
+  return v_flex()
+    .pt(24)
+    .gap(6)
+    .items_center()
+    .child(div().text_size(12.5).text_color(t.foreground).child(title))
+    .when(Boolean(detail), (el) => el.child(div().text_size(11).text_color(t.unknown).child(detail)));
+}
+
+export function columnView(view, state, cwd, profiles, t) {
+  const shown = viewFor(cwd, state, profiles);
+  const repo = shown.repo ?? null;
+  const name = (path) => path.split("/").pop();
+  let left = [div().child("Command Center")];
+  let body = [message("Not in a repository", "Focus a terminal in a repo or one of its worktrees.", t)];
+  if (shown.kind === "task") {
+    left = [div().font_semibold().text_color(t.foreground).child(repo.name), div().text_color(t.dim).child("/"), div().min_w(0).truncate().child(name(shown.lane.path))];
+    body = taskView(view, shown.lane, t);
+  } else if (shown.kind === "repo") {
+    left = [div().font_semibold().text_color(t.foreground).child(repo.name), div().text_color(t.unknown).child("· main")];
+    body = repoView(view, repo, shown.lanes, t);
+  } else if (shown.kind === "bare") {
+    left = [div().font_semibold().text_color(t.foreground).child(repo.name), div().text_color(t.dim).child("/"), div().min_w(0).truncate().child(name(cwd))];
+    body = [message("No task in this worktree", "A task is a worktree with a VJR-TASK.md from /vjr-task.", t)];
+  } else if (shown.kind === "off") {
+    left = [div().font_semibold().text_color(t.foreground).child(repo.name)];
+    body = [message(`Command Center is off in ${repo.name}`, "Nothing is read here until a profile is on.", t), h_flex().justify_center().child(button("profile-on", `Use ${PROFILES.pp.label}`, t.muted, t, () => view.setProfile(repo.main, "pp")))];
+  }
   return v_flex()
     .size_full()
     .min_h(0)
     .bg(t.chrome)
     .text_size(12.5)
     .text_color(t.foreground)
-    .child(
-      h_flex()
-        .h(36)
-        .flex_none()
-        .px(8)
-        .gap(2)
-        .items_end()
-        .border_b(1)
-        .border_color(t.border)
-        .child(tabButton(view, "task", "Task", null, view.tab === "task", t))
-        .child(tabButton(view, "lanes", "Lanes", lanes.length, view.tab === "lanes", t)),
-    )
-    .child(v_flex().flex_1().min_h(0).p(14).gap(14).overflow_y_scrollbar().children(body))
-    .when(Boolean(view.flashText), (el) => el.child(div().flex_none().px(14).py(8).border_t(1).border_color(t.border).text_size(11.5).text_color(t.done).child(view.flashText)));
+    .child(topBar(view, left, repo, profiles, t))
+    .child(v_flex().flex_1().min_h(0).p(12).gap(14).overflow_y_scrollbar().children(body))
+    .when(Boolean(view.flashText), (el) => el.child(div().flex_none().px(12).py(8).border_t_1().border_color(t.border).text_size(11.5).text_color(t.done).child(view.flashText)));
+}
+
+export function profileView(view, profiles, t) {
+  const chosen = profileOf(profiles, view.profileRepo);
+  return v_flex()
+    .size_full()
+    .p(4)
+    .gap(2)
+    .bg(t.popover)
+    .text_size(12)
+    .child(div().px(8).py(4).text_size(10.5).text_color(t.unknown).child(`PROFILE · ${(view.profileName ?? "").toUpperCase()}`))
+    .children(
+      OPTIONS.map(([id, label]) =>
+        h_flex()
+          .id(`profile-${id}`)
+          .h(28)
+          .px(8)
+          .gap(8)
+          .items_center()
+          .rounded(4)
+          .hover((s) => s.bg(t.hover))
+          .on_click(() => view.setProfile(view.profileRepo, id))
+          .child(div().w(12).text_color(t.accent).child(id === chosen ? "✓" : ""))
+          .child(div().text_color(t.foreground).child(label)),
+      ),
+    );
 }
 
 export function shotView(view, lane, t) {

@@ -1,7 +1,7 @@
 import { View, div } from "gpui-kit";
 import { InputState } from "gpui-base";
 import * as fs from "fs/promises";
-import { columnView, shotView } from "./column.js";
+import { columnView, profileView, shotView } from "./column.js";
 import {
   agents,
   appHome,
@@ -92,13 +92,19 @@ export default class CommandCenter extends View {
     this.role = own.role ?? props()?.role ?? null;
     if (this.role === "watch") this.startWatch(cx);
     else if (this.role === "shot") this.startShot(own, cx);
+    else if (this.role === "profile") this.startProfile(own);
     else this.startColumn();
   }
 
+  startProfile(own) {
+    const given = { ...(props() ?? {}), ...own };
+    this.profileRepo = given.repo ?? null;
+    this.profileName = given.name ?? "";
+    this.overlay = given.overlay ?? null;
+  }
+
   startColumn() {
-    this.tab = "task";
-    this.lastLane = null;
-    this.pinnedCwd = undefined;
+    this.expanded = {};
     this.flashText = null;
     this.failing = null;
     this.sent = {};
@@ -118,25 +124,6 @@ export default class CommandCenter extends View {
   stateLanes() {
     const state = shared("command-center.state");
     return Array.isArray(state?.lanes) ? state.lanes : [];
-  }
-
-  currentLane(lanes) {
-    const cwd = focused()?.cwd ?? null;
-    const focus = shared("command-center.focus");
-    if (focus) {
-      if (lanes.some((lane) => lane.key === focus)) {
-        this.lastLane = focus;
-        this.tab = "task";
-        this.pinnedCwd = cwd;
-      }
-      setShared("command-center.focus", null);
-    }
-    if (cwd !== this.pinnedCwd) {
-      this.pinnedCwd = undefined;
-      const hit = lanes.find((lane) => inside(cwd, lane.path));
-      if (hit) this.lastLane = hit.key;
-    }
-    return lanes.find((lane) => lane.key === this.lastLane) ?? null;
   }
 
   later(cx, work) {
@@ -162,9 +149,59 @@ export default class CommandCenter extends View {
     exec("zed", [path]).catch(() => {});
   }
 
-  newClaude(space, folder, text) {
-    if (space) run("tab.new", { space, folder, argv: ["claude"], task: text });
-    else run("space.new", { folder, argv: ["claude"], task: text, machine: "" });
+  newClaude(space, folder, text, name) {
+    const label = name ? { [space ? "name" : "tab"]: name } : {};
+    if (space) run("tab.new", { space, folder, ...label, argv: ["claude"], task: text });
+    else run("space.new", { folder, ...label, argv: ["claude"], task: text, machine: "" });
+  }
+
+  readTaskFile(lane) {
+    run("pane.split", { direction: "right", mod: "markdown", props: { file: `${lane.path}/VJR-TASK.md` } });
+  }
+
+  focusClaude(terminal) {
+    run("pane.focus", { terminal });
+  }
+
+  chooseProfile(repo) {
+    openOverlay({ mod: "command-center", kind: "popup", at: "pointer", width: 240, height: 104, props: { role: "profile", repo: repo.main, name: repo.name } });
+  }
+
+  setProfile(repo, id) {
+    const all = { ...(shared("command-center.profiles") ?? {}) };
+    if (id === "off") all[repo] = "off";
+    else delete all[repo];
+    setShared("command-center.profiles", all);
+    if (this.overlay) closeOverlay(this.overlay);
+  }
+
+  startTask(repo, cx) {
+    const space = focused()?.space ?? null;
+    this.newClaude(space, repo.main, "/vjr-task", "task");
+    cx?.notify?.();
+  }
+
+  isOpen(lane, name, current) {
+    const chosen = this.expanded?.[`${lane.key}:${name}`];
+    if (chosen != null) return chosen;
+    return name === "Evidence" && current >= 5 && Boolean(lane.release);
+  }
+
+  toggle(lane, name, current, cx) {
+    this.expanded[`${lane.key}:${name}`] = !this.isOpen(lane, name, current);
+    cx?.notify?.();
+  }
+
+  goTo(lane, cx) {
+    if (lane.space) run("space.select", { id: lane.space });
+    if (lane.next?.kind === "focus") run("pane.focus", { terminal: lane.next.terminal });
+    cx?.notify?.();
+  }
+
+  laneAction(lane, action, cx) {
+    if (action === "Go to task") this.goTo(lane, cx);
+    else if (action === "Open PR" && lane.pr?.url) this.open(lane.pr.url);
+    else if (action === "Run /pp-clear") this.act(lane, cx);
   }
 
   send(claude, text, cx) {
@@ -184,7 +221,8 @@ export default class CommandCenter extends View {
       return false;
     }
     this.sent[`${lane.key}:${id}`] = lane.task.manual.find((check) => check.id === id)?.state ?? null;
-    this.send(lane.claude, step.text, cx);
+    const claude = [lane.session, lane.claude].find((item) => item?.terminal === step.terminal) ?? { terminal: step.terminal, status: null };
+    this.send(claude, step.text, cx);
     return true;
   }
 
@@ -215,7 +253,7 @@ export default class CommandCenter extends View {
     if (!next || next.disabled) return;
     if (next.kind === "send") this.send({ terminal: next.terminal, status: lane.claude?.status ?? null }, next.text, cx);
     else if (next.kind === "focus") run("pane.focus", { terminal: next.terminal });
-    else if (next.kind === "tab" || next.kind === "space") this.newClaude(next.kind === "tab" ? next.space : null, next.folder, next.text);
+    else if (next.kind === "tab" || next.kind === "space") this.newClaude(next.kind === "tab" ? next.space : null, next.folder, next.text, next.name);
     else if (next.kind === "open") this.open(next.url);
   }
 
@@ -248,18 +286,6 @@ export default class CommandCenter extends View {
 
   openShot(lane, index) {
     openOverlay({ kind: "window", key: "command-center-shot", mod: "command-center", props: { role: "shot", lane: lane.key, index }, width: 0.7, height: 0.8 });
-  }
-
-  pick(lane, cx) {
-    this.lastLane = lane.key;
-    this.tab = "task";
-    if (lane.space) run("space.select", { id: lane.space });
-    cx?.notify?.();
-  }
-
-  switchTab(id, cx) {
-    this.tab = id;
-    cx?.notify?.();
   }
 
   key(name, cx) {
@@ -670,6 +696,8 @@ export default class CommandCenter extends View {
     const t = theme();
     const lanes = this.stateLanes();
     if (this.role === "shot") return shotView(this, lanes.find((lane) => lane.key === this.shotLane), t);
-    return columnView(this, lanes, this.currentLane(lanes), t);
+    const profiles = shared("command-center.profiles") ?? {};
+    if (this.role === "profile") return profileView(this, profiles, t);
+    return columnView(this, shared("command-center.state") ?? {}, focused()?.cwd ?? null, profiles, t);
   }
 }
