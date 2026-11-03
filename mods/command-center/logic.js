@@ -426,7 +426,7 @@ export function skillRecord(records, lane, shared) {
   const session = lane.task?.session && !shared?.has(lane.task.session) ? lane.task.session : null;
   let best = null;
   for (const record of records ?? []) {
-    const from = session && record.session_id === session ? "session" : inside(record.cwd, lane.path) ? "worktree" : null;
+    const from = session && record.session_id === session && familyOf(record.skill) === "ac" ? "session" : inside(record.cwd, lane.path) ? "worktree" : null;
     if (from && (!best || Date.parse(record.started_at) > Date.parse(best.record.started_at))) best = { record, from };
   }
   return best;

@@ -458,6 +458,13 @@ describe("the task's session", () => {
     expect(skillRecord([record({})], lane())).toBeNull();
   });
 
+  test("only the session's vjr-ac counts for the task; its other skills don't", () => {
+    const l = lane({ task: task({ session: SESSION }) });
+    expect(skillRecord([record({ skill: "review", started_at: "2026-11-03T13:00:00Z" })], l)).toBeNull();
+    const tree = record({ session_id: "ship", skill: "pp-ship", tty: "ttys031", cwd: "/w/cup-1234", started_at: "2026-11-03T12:00:00Z" });
+    expect(skillRecord([record({ skill: "docker-cleanup", started_at: "2026-11-03T13:00:00Z" }), tree], l)).toEqual({ record: tree, from: "worktree" });
+  });
+
   test("a session shared by two tasks counts for neither", () => {
     const l = lane({ task: task({ session: SESSION }) });
     expect(skillRecord([record({ skill: "vjr-ac" })], l, new Set([SESSION]))).toBeNull();

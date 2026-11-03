@@ -322,9 +322,14 @@ describe("watcher per checkout", () => {
       join(root, "home", ".pp-stack", "session", `skill-${SESSION}.json`),
       JSON.stringify({ session_id: SESSION, skill: "vjr-ac", tty: "ttys003", cwd: main, started_at: new Date().toISOString(), ended_at: new Date().toISOString(), ...over }),
     );
-  const mainClaude = () => {
+  const conversation = (pid: number, sessionId: string) => {
+    mkdirSync(join(root, "home", ".claude", "sessions"), { recursive: true });
+    writeFileSync(join(root, "home", ".claude", "sessions", `${pid}.json`), JSON.stringify({ pid, sessionId, cwd: main }));
+  };
+  const mainClaude = (sessionId = SESSION) => {
     agentsNow = [{ address: "t3", app: "claude-code", status: "idle", foreground: { pid: 503, cwd: main, argv: ["claude"] } }];
     ttyOf = { "503": "ttys003" };
+    conversation(503, sessionId);
   };
 
   test("every repo in a space is published with its checkouts", async () => {
@@ -354,6 +359,24 @@ describe("watcher per checkout", () => {
     expect(published.skill).toMatchObject({ family: "ac", skill: "vjr-ac", active: true, from: "session" });
     expect(published.claude.terminal).toBeNull();
     expect(published.next).toMatchObject({ kind: "focus", terminal: "t3" });
+  });
+
+  test("a Claude now running another conversation on the session's tty is not the session", async () => {
+    taskWithSession(lane);
+    mainClaude("someone-else");
+    sessionRecord();
+    const view = watcher();
+    await view.read(cx);
+    expect(state().lanes[0].session).toBeNull();
+    expect(state().lanes[0].next).not.toMatchObject({ terminal: "t3" });
+  });
+
+  test("the session's claude is found by its conversation even with no skill record", async () => {
+    taskWithSession(lane);
+    mainClaude();
+    const view = watcher();
+    await view.read(cx);
+    expect(state().lanes[0].session).toMatchObject({ terminal: "t3" });
   });
 
   test("an old session record still finds the session's claude", async () => {
@@ -797,6 +820,21 @@ describe("manual checks in the column", () => {
     expect(sends().map((call) => call.args)).toEqual([["send", "--if", "idle", "t30", "D02 passed"]]);
     press(view, "go-claude");
     expect(app.runs).toContainEqual(["pane.focus", { terminal: "t30" }]);
+  });
+
+  test("a step sent to the task's session keeps the idle check", async () => {
+    focusedCwd = "/w/cup-1234";
+    const lane = { ...BASE_LANE, claude: { terminal: null, status: null, count: 0, ambiguous: false }, session: { terminal: "t30", status: "idle", count: 1, ambiguous: false }, next: { label: "Run /vjr-ac", kind: "send", terminal: "t30", text: "/vjr-ac", target: "the task's claude · t30" } };
+    press(column([lane]), "next");
+    await flush();
+    expect(sends().map((call) => call.args)).toEqual([["send", "--if", "idle", "t30", "/vjr-ac"]]);
+  });
+
+  test("the column stays on the task while the markdown pane has the focus", () => {
+    focusedCwd = null;
+    herdr.focused = () => ({ space: "sp-1234", tab: "tb-1234", pane: "p-md", terminal: null, shown: null, agent: null, cwd: null }) as never;
+    herdr.panes = () => [{ pane: "p-sh", tab: "tb-1234", terminal: "t1", cwd: "/w/cup-1234" }, { pane: "p-md", tab: "tb-1234", terminal: null, cwd: null }] as never;
+    expect(texts(column().render())).toContain("A saved draft disappears");
   });
 
   test("the checks leave once AC is done", () => {

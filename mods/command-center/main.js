@@ -155,6 +155,14 @@ export default class CommandCenter extends View {
     else run("space.new", { folder, ...label, argv: ["claude"], task: text, machine: "" });
   }
 
+  checkoutCwd() {
+    const now = focused();
+    if (now?.cwd) return now.cwd;
+    const pane = (panes() ?? []).find((item) => item.tab === now?.tab && item.cwd);
+    if (pane) return pane.cwd;
+    return (spaces() ?? []).find((space) => space.id === now?.space)?.folder ?? null;
+  }
+
   readTaskFile(lane) {
     run("pane.split", { direction: "right", mod: "markdown", props: { file: `${lane.path}/VJR-TASK.md` } });
   }
@@ -251,7 +259,7 @@ export default class CommandCenter extends View {
   act(lane, cx) {
     const next = lane.next;
     if (!next || next.disabled) return;
-    if (next.kind === "send") this.send({ terminal: next.terminal, status: lane.claude?.status ?? null }, next.text, cx);
+    if (next.kind === "send") this.send([lane.session, lane.claude].find((item) => item?.terminal === next.terminal) ?? { terminal: next.terminal, status: null }, next.text, cx);
     else if (next.kind === "focus") run("pane.focus", { terminal: next.terminal });
     else if (next.kind === "tab" || next.kind === "space") this.newClaude(next.kind === "tab" ? next.space : null, next.folder, next.text, next.name);
     else if (next.kind === "open") this.open(next.url);
@@ -307,7 +315,6 @@ export default class CommandCenter extends View {
     this.cache = {};
     this.claudes = {};
     this.records = [];
-    this.ttys = {};
     this.repos = [];
     this.sharedSessions = new Set();
     this.skillsAt = 0;
@@ -425,20 +432,17 @@ export default class CommandCenter extends View {
     this.skillsAt = now;
     const folder = `${home()}/.pp-stack/session`;
     const records = [];
-    const ttys = {};
     try {
       for (const name of await fs.readdir(folder)) {
         if (!/^skill-.+\.json$/.test(name)) continue;
         try {
           const record = JSON.parse((await readTextFile(`${folder}/${name}`)) ?? "");
           const started = Date.parse(record.started_at ?? "");
-          if (record?.session_id && record.tty) ttys[record.session_id] = record.tty;
           if (record?.skill && record.cwd && Number.isFinite(started) && now - started < SKILL_AGE) records.push(record);
         } catch {}
       }
     } catch {}
     this.records = records;
-    this.ttys = ttys;
   }
 
   async readClaudes() {
@@ -463,7 +467,13 @@ export default class CommandCenter extends View {
         const value = ps?.code === 0 ? ps.stdout.trim() : "";
         tty = value && value !== "??" ? (value.startsWith("tty") ? value : `tty${value}`) : null;
       }
-      this.claudes[agent.address] = { at: now, terminal: agent.address, status: agent.status, cwd: foreground?.cwd ?? null, tty };
+      let session = null;
+      if (foreground?.pid) {
+        try {
+          session = JSON.parse((await readTextFile(`${home()}/.claude/sessions/${foreground.pid}.json`)) ?? "null")?.sessionId ?? null;
+        } catch {}
+      }
+      this.claudes[agent.address] = { at: now, terminal: agent.address, status: agent.status, cwd: foreground?.cwd ?? null, tty, session };
     }
     for (const address of Object.keys(this.claudes)) if (!seen.has(address)) delete this.claudes[address];
   }
@@ -619,8 +629,7 @@ export default class CommandCenter extends View {
     signals.claude = pickClaude(here, treeRecord);
     const session = cache.task?.session ?? null;
     signals.sessionShared = Boolean(session && this.sharedSessions.has(session));
-    const tty = session && !signals.sessionShared ? this.ttys[session] : null;
-    const mine = tty ? Object.values(this.claudes).find((claude) => claude.tty === tty) : null;
+    const mine = session && !signals.sessionShared ? Object.values(this.claudes).find((claude) => claude.session === session) : null;
     signals.session = mine ? { terminal: mine.terminal, status: mine.status, count: 1, ambiguous: false } : null;
     return signals;
   }
@@ -698,6 +707,6 @@ export default class CommandCenter extends View {
     if (this.role === "shot") return shotView(this, lanes.find((lane) => lane.key === this.shotLane), t);
     const profiles = shared("command-center.profiles") ?? {};
     if (this.role === "profile") return profileView(this, profiles, t);
-    return columnView(this, shared("command-center.state") ?? {}, focused()?.cwd ?? null, profiles, t);
+    return columnView(this, shared("command-center.state") ?? {}, this.checkoutCwd(), profiles, t);
   }
 }
