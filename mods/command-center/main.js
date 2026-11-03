@@ -57,7 +57,7 @@ const inside = (path, root) => Boolean(path && root) && (path === root || path.s
 const basename = (path) => path.replace(/\/+$/, "").split("/").pop() ?? path;
 const firstLine = (text) => String(text ?? "").trim().split("\n")[0] ?? "";
 const bin = (name) => `${home()}/.claude/skills/pp-stack/bin/${name}`;
-const dataDir = () => `${appHome()}/data/${SELF.name}`;
+const cacheDir = () => `${appHome()}/data/${SELF.name}/shots`;
 
 function laneSignals(lane, cache) {
   return {
@@ -91,7 +91,7 @@ export default class CommandCenter extends View {
   startColumn() {
     this.tab = "task";
     this.lastLane = null;
-    this.lastCwd = undefined;
+    this.pinnedCwd = undefined;
     this.flashText = null;
   }
 
@@ -111,18 +111,19 @@ export default class CommandCenter extends View {
 
   currentLane(lanes) {
     const cwd = focused()?.cwd ?? null;
-    if (cwd !== this.lastCwd) {
-      this.lastCwd = cwd;
-      const hit = lanes.find((lane) => inside(cwd, lane.path));
-      if (hit) this.lastLane = hit.key;
-    }
     const focus = shared("command-center.focus");
     if (focus) {
       if (lanes.some((lane) => lane.key === focus)) {
         this.lastLane = focus;
         this.tab = "task";
+        this.pinnedCwd = cwd;
       }
       setShared("command-center.focus", null);
+    }
+    if (cwd !== this.pinnedCwd) {
+      this.pinnedCwd = undefined;
+      const hit = lanes.find((lane) => inside(cwd, lane.path));
+      if (hit) this.lastLane = hit.key;
     }
     return lanes.find((lane) => lane.key === this.lastLane) ?? null;
   }
@@ -257,6 +258,10 @@ export default class CommandCenter extends View {
     return true;
   }
 
+  async close() {
+    if (this.role === "watch" && shared(LEASE_KEY)?.owner === this.id) setShared(LEASE_KEY, null);
+  }
+
   localSpaces() {
     return (spaces() ?? []).filter((space) => space.machine == null);
   }
@@ -294,18 +299,28 @@ export default class CommandCenter extends View {
       const main = list[0];
       if (!main) continue;
       for (const tree of list.slice(1)) {
-        if (!(await fs.exists(`${tree.path}/VJR-TASK.md`))) continue;
+        if ((await readTextFile(`${tree.path}/VJR-TASK.md`)) == null) continue;
         found.push({ key: tree.path, path: tree.path, branch: tree.branch, repo: { name: basename(main.path), main: main.path } });
       }
     }
     const keep = new Set(found.map((lane) => lane.key));
-    for (const key of Object.keys(this.cache)) {
-      if (keep.has(key)) continue;
-      const slug = this.cache[key].release?.slug;
-      if (slug) await this.run("rm", ["-rf", `${dataDir()}/${slug}`]);
-      delete this.cache[key];
-    }
+    for (const key of Object.keys(this.cache)) if (!keep.has(key)) delete this.cache[key];
     this.lanes = found;
+  }
+
+  async sweep() {
+    const now = this.clock();
+    if (now - (this.sweptAt ?? 0) < DISCOVER) return;
+    if (this.lanes.some((lane) => !this.cache[lane.key]?.evidence)) return;
+    this.sweptAt = now;
+    const live = new Set(this.lanes.map((lane) => this.cache[lane.key]?.evidence?.slug).filter(Boolean));
+    let names = [];
+    try {
+      names = await fs.readdir(cacheDir());
+    } catch {
+      return;
+    }
+    for (const name of names) if (!live.has(name)) await this.run("rm", ["-rf", `${cacheDir()}/${name}`]);
   }
 
   async readSkills() {
@@ -450,7 +465,10 @@ export default class CommandCenter extends View {
       return;
     }
     const stamp = `${message}\u0000${metaText}\u0000${gallery}`;
-    if (stamp === cache.releaseStamp) return;
+    const kept = cache.release?.shots ?? [];
+    let missing = false;
+    for (const shot of kept) if (!(await fs.exists(`${cacheDir()}/${evidence.slug}/${shot.file}`))) missing = true;
+    if (stamp === cache.releaseStamp && !missing) return;
     cache.releaseStamp = stamp;
     let meta = {};
     try {
@@ -458,7 +476,7 @@ export default class CommandCenter extends View {
     } catch {}
     const parsed = message ? parseMessage(message) : { release: null, title: "", items: [] };
     const shots = captionsFor(meta, parseScreenshots(gallery ?? "").shots);
-    const target = `${dataDir()}/${evidence.slug}`;
+    const target = `${cacheDir()}/${evidence.slug}`;
     await this.run("mkdir", ["-p", target]);
     for (const shot of shots) await this.run("cp", ["-f", `${dir}/${shot.file}`, `${target}/${shot.file}`]);
     cache.release = {
@@ -470,7 +488,7 @@ export default class CommandCenter extends View {
       items: parsed.items,
       channel: meta.announce ?? null,
       links: meta.links ?? null,
-      shots: shots.map((shot) => ({ ...shot, image: `data/${SELF.name}/${evidence.slug}/${shot.file}` })),
+      shots: shots.map((shot) => ({ ...shot, image: `data/${SELF.name}/shots/${evidence.slug}/${shot.file}` })),
     };
   }
 
@@ -513,6 +531,7 @@ export default class CommandCenter extends View {
       const signals = [];
       for (const lane of this.lanes) signals.push(await this.readLane(lane, places));
       this.publish(signals);
+      await this.sweep();
     } finally {
       this.reading = false;
     }

@@ -206,6 +206,39 @@ describe("watcher", () => {
     expect(app.execs.length).toBe(before);
   });
 
+  test("closing the watcher frees the lease for the next one at once", async () => {
+    const first = watcher();
+    await first.read(cx);
+    await first.close();
+    const before = app.execs.length;
+    await watcher().read(cx);
+    expect(app.execs.length).toBeGreaterThan(before);
+  });
+
+  test("image folders of tasks that are gone are swept, live ones stay", async () => {
+    const data = join(root, "app-home", "data", "command-center", "shots");
+    mkdirSync(join(data, "fix-cup-1234-draft-reload"), { recursive: true });
+    mkdirSync(join(data, "fix-old-task"), { recursive: true });
+    await watcher().read(cx);
+    const removed = app.execs.filter((call) => call.command === "rm").map((call) => call.args.at(-1));
+    expect(removed).toEqual([join(data, "fix-old-task")]);
+  });
+
+  test("a screenshot copy that went missing is copied again", async () => {
+    const dir = join(lane, ".pp-stack/updates/fix-cup-1234-draft-reload");
+    mkdirSync(dir, { recursive: true });
+    for (const name of ["message.txt", "meta.json", "screenshots.md"]) copyFileSync(join(FIXTURES, name), join(dir, name));
+    evidence = { ready: false, slug: "fix-cup-1234-draft-reload", dir, files: [] };
+    const view = watcher();
+    await view.read(cx);
+    const copies = () => app.execs.filter((call) => call.command === "cp").length;
+    const first = copies();
+    expect(first).toBe(3);
+    view.cache[lane].taskAt = 0;
+    await view.read(cx);
+    expect(copies()).toBe(first + 3);
+  });
+
   test("gh runs at most once a minute for an open PR", async () => {
     ghReturns(ghPr());
     const view = watcher();
@@ -367,6 +400,16 @@ describe("column", () => {
     expect(texts(view.render())).toContain("Another task");
     focusedCwd = "/x/not-a-task";
     expect(texts(view.render())).toContain("Another task");
+  });
+
+  test("a task published after the focus moved into it is still picked", () => {
+    const view = column([]);
+    focusedCwd = "/w/cup-1234/src";
+    expect(texts(view.render())).toContain("No task here");
+    app.shared["command-center.state"] = { lanes: [BASE_LANE] };
+    const shown = texts(view.render());
+    expect(shown).not.toContain("No task here");
+    expect(shown).toContain("Next step".toUpperCase());
   });
 
   test("with no task yet the tab says so", () => {

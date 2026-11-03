@@ -1,5 +1,5 @@
 import { div, image } from "gpui-kit";
-import { h_flex, v_flex } from "gpui-base";
+import { TextView, h_flex, v_flex } from "gpui-base";
 import { rollup } from "./logic.js";
 
 const STEPS = ["Task", "AC", "Ship", "Evidence", "PR", "Merge", "Clear"];
@@ -16,7 +16,7 @@ function heading(text, t) {
 }
 
 function pill(text, t) {
-  return h_flex().flex_none().h(18).px(6).items_center().text_size(11).font_bold().bg(t.accent).text_color(t.accent_foreground ?? t.chrome).child(text);
+  return h_flex().flex_none().h(18).px(6).items_center().rounded(4).text_size(11).font_bold().bg(t.accent).text_color(t.accent_foreground ?? t.chrome).child(text);
 }
 
 function link(id, text, t, action) {
@@ -30,6 +30,7 @@ function row(mark, color, name, detail, t) {
     .px(8)
     .gap(8)
     .items_center()
+    .rounded(6)
     .bg(t.surface)
     .border_1()
     .border_color(t.border)
@@ -75,6 +76,7 @@ function stepper(lane, t) {
               .h(22)
               .items_center()
               .justify_center()
+              .rounded(4)
               .text_size(11)
               .bg(state === "done" ? t.raised : t.surface)
               .border_1()
@@ -82,7 +84,7 @@ function stepper(lane, t) {
               .text_color(color)
               .child(MARK[state] ?? ""),
           )
-          .child(div().text_size(10.5).text_color(state === "todo" ? t.dim : state === "done" ? t.muted : t.foreground).child(name));
+          .child(div().whitespace_nowrap().text_size(10).text_color(state === "todo" ? t.dim : state === "done" ? t.muted : t.foreground).child(name));
       }),
     );
 }
@@ -93,6 +95,7 @@ function nextCard(view, lane, t) {
   return v_flex()
     .gap(8)
     .p(12)
+    .rounded(8)
     .bg(t.surface)
     .border_1()
     .border_color(t.border)
@@ -104,6 +107,7 @@ function nextCard(view, lane, t) {
         .w_full()
         .items_center()
         .justify_center()
+        .rounded(6)
         .font_bold()
         .bg(next.disabled ? t.raised : t.accent)
         .text_color(next.disabled ? t.unknown : (t.accent_foreground ?? t.chrome))
@@ -135,6 +139,7 @@ function doneBlock(lane, t) {
           .items_start()
           .gap(8)
           .p(8)
+          .rounded(6)
           .bg(t.surface)
           .border_1()
           .border_color(t.border)
@@ -200,20 +205,18 @@ function releaseBlock(view, lane, t) {
   return v_flex()
     .gap(8)
     .p(12)
+    .rounded(8)
     .bg(t.surface)
     .border_1()
     .border_color(t.border)
     .child(heading("Release update", t))
     .child(div().text_size(11).text_color(t.unknown).child([release.release ? `Release ${release.release}` : null, release.channel ? `#${release.channel}` : null].filter(Boolean).join(" · ")))
     .child(div().font_bold().text_color(t.foreground).child(release.title))
-    .children(
-      release.items.map((item, index) =>
-        h_flex()
-          .gap(0)
-          .flex_wrap()
+    .when(release.items.length > 0, (el) =>
+      el.child(
+        div()
           .text_size(12)
-          .child(div().flex_none().text_color(t.unknown).child("• "))
-          .children(item.parts.map((part, at) => (part.url ? link(`item-${index}-${at}`, part.text, t, () => view.open(part.url)) : div().child(part.text)))),
+          .child(TextView.markdown("release-items", release.items.map((item) => `- ${item.parts.map((part) => (part.url ? `[${part.text}](${part.url})` : part.text)).join("")}`).join("\n"))),
       ),
     )
     .children(
@@ -229,7 +232,7 @@ function releaseBlock(view, lane, t) {
                 .min_w(0)
                 .gap(3)
                 .on_click(() => view.openShot(lane, index))
-                .child(image(shot.image).w_full().h(96))
+                .child(image(shot.image).w_full().h(96).rounded(4))
                 .child(div().text_size(10.5).text_color(t.unknown).child(shot.caption)),
             ),
           ),
@@ -240,6 +243,7 @@ function releaseBlock(view, lane, t) {
         v_flex()
           .gap(4)
           .p(8)
+          .rounded(6)
           .border_1()
           .border_color(t.working)
           .text_size(11.5)
@@ -256,6 +260,7 @@ function releaseBlock(view, lane, t) {
           .w_full()
           .items_center()
           .justify_center()
+          .rounded(6)
           .font_bold()
           .bg(done ? t.accent : t.raised)
           .text_color(done ? (t.accent_foreground ?? t.chrome) : t.foreground)
@@ -281,6 +286,7 @@ function laneCard(view, lane, current, t) {
     .id(`lane-${lane.key}`)
     .gap(6)
     .p(10)
+    .rounded(8)
     .bg(t.surface)
     .border_1()
     .border_color(current ? t.accent : t.border)
