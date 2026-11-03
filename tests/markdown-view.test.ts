@@ -164,6 +164,47 @@ describe("watching", () => {
   });
 });
 
+describe("watching, after review", () => {
+  test("a failed watch starts again on reload", async () => {
+    let fail = true;
+    herdr.watchFolder = ((dir: string) => {
+      if (fail) {
+        fail = false;
+        return Promise.reject(new Error("too many folders"));
+      }
+      return new Promise((resolve) => watches.push({ dir, resolve }));
+    }) as never;
+    const { view, cx } = await open();
+    expect(watches).toEqual([]);
+    click(view, "md-reload", cx);
+    await flush();
+    expect(watches.map((watch) => watch.dir)).toEqual([DIR]);
+  });
+
+  test("going back to a folder keeps a single watcher on it", async () => {
+    files["/Users/me/w/app/docs/plan.md"] = "# The plan";
+    const { view, cx } = await open();
+    linkHandler(view)("../docs/plan.md", cx);
+    await flush();
+    click(view, "md-back", cx);
+    await flush();
+    const before = reads.length;
+    files[FILE] = "# Changed";
+    for (const watch of watches.filter((item) => item.dir === DIR)) watch.resolve([FILE]);
+    await flush();
+    expect(reads.length - before).toBe(1);
+  });
+
+  test("a change that leaves the text the same does not redraw", async () => {
+    const { cx } = await open();
+    const before = cx.notified;
+    watches.at(-1)?.resolve([DIR]);
+    await flush();
+    expect(reads).toEqual([FILE, FILE]);
+    expect(cx.notified).toBe(before);
+  });
+});
+
 describe("links and buttons", () => {
   test("a web link opens in the browser", async () => {
     const { view, cx } = await open();

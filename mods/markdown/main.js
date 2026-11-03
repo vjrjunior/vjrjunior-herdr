@@ -27,6 +27,7 @@ export default class Markdown extends View {
     const file = (given ?? props() ?? {}).file;
     this.history = [];
     this.reads = 0;
+    this.watches = 0;
     this.dir = null;
     this.file = null;
     if (typeof file === "string" && file) this.show(file, cx);
@@ -35,6 +36,7 @@ export default class Markdown extends View {
   show(file, cx) {
     this.file = file;
     this.text = null;
+    this.raw = undefined;
     this.missing = false;
     this.reload(cx);
     this.watch(folderOf(file), cx);
@@ -50,7 +52,8 @@ export default class Markdown extends View {
       try {
         text = await readTextFile(file);
       } catch {}
-      if (ticket !== this.reads) return;
+      if (ticket !== this.reads || text === this.raw) return;
+      this.raw = text;
       this.missing = text == null;
       this.text = text == null ? null : stripFrontMatter(text);
       cx.notify();
@@ -60,15 +63,17 @@ export default class Markdown extends View {
   watch(dir, cx) {
     if (this.dir === dir) return;
     this.dir = dir;
+    const mine = ++this.watches;
     cx.spawn(async (cx) => {
       for (;;) {
         let changed;
         try {
           changed = await watchFolder(dir);
         } catch {
+          if (this.watches === mine) this.dir = null;
           return;
         }
-        if (this.dir !== dir) return;
+        if (this.watches !== mine) return;
         const name = nameOf(this.file);
         if ((changed ?? []).some((path) => path === this.file || path === dir || nameOf(path) === name)) this.reload(cx);
       }
@@ -108,7 +113,12 @@ export default class Markdown extends View {
       .child(div().flex_none().text_size(12).font_semibold().text_color(t.foreground).child(file ? nameOf(file) : "Markdown"))
       .child(div().flex_1().min_w(0).overflow_hidden().whitespace_nowrap().text_ellipsis_start().text_size(11).text_color(t.dim).child(file ? shortFolder(folderOf(file), home()) : ""))
       .when(Boolean(file), (el) =>
-        el.child(button("md-zed", "Zed ↗", t, () => exec("zed", [file]).catch(() => {}))).child(button("md-reload", "↻", t, (cx) => this.reload(cx))),
+        el.child(button("md-zed", "Zed ↗", t, () => exec("zed", [file]).catch(() => {}))).child(
+          button("md-reload", "↻", t, (cx) => {
+            this.reload(cx);
+            this.watch(folderOf(file), cx);
+          }),
+        ),
       );
     let body;
     if (!file) body = message("No file to show", t);
