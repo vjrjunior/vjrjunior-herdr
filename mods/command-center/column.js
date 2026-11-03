@@ -267,7 +267,7 @@ function releaseBlock(view, lane, t) {
           .border_1()
           .border_color(done ? t.accent : t.input)
           .on_click((_e, cx) => view.copy(release, cx))
-          .child("Copy for Slack"),
+          .child("Copy message"),
       ),
     );
 }

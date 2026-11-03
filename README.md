@@ -109,7 +109,7 @@ Each loss gets one automatic try. `herdr-app do vjr-square-comeback.resume` (or 
 
 ### Command Center
 
-The `Command Center` button, right after `+` in the top bar, opens a column that follows the task in the focused space. A task is any worktree, other than the main checkout, with a `VJR-TASK.md` from `/vjr-task`. The column shows the task's track (Task, AC, Ship, Evidence, PR, Merge, Clear), the next step, the PR's checks, preview and review, and the release card with the screenshots and `Copy for Slack`. `Lanes` lists every task. The number on the button counts the tasks that wait on you, red when one failed, and each worktree in the Spaces tree gets a chip with its step.
+The `Command Center` button, right after `+` in the top bar, opens a column that follows the task in the focused space. A task is any worktree, other than the main checkout, with a `VJR-TASK.md` from `/vjr-task`. The column shows the task's track (Task, AC, Ship, Evidence, PR, Merge, Clear), the next step, the PR's checks, preview and review, and the release card with the screenshots and `Copy message`. `Lanes` lists every task. The number on the button counts the tasks that wait on you, red when one failed, and each worktree in the Spaces tree gets a chip with its step.
 
 The next step is one click. It types the right skill into the task's own Claude, with the base and the scope `/pp-ship` needs, or opens a new tab with it. It never types into another worktree, into a working Claude, or into a session whose skill is still running, and it never merges, pushes, posts to Slack or changes ClickUp. `/pp-clear` always runs in a new tab of the main checkout.
 

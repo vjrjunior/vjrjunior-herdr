@@ -425,9 +425,11 @@ describe("column", () => {
     expect(texts(view.render())).toContain("Another task");
   });
 
-  test("Copy for Slack uses pp-stack-rich-copy on message.txt", async () => {
+  test("Copy message uses pp-stack-rich-copy on message.txt", async () => {
     focusedCwd = "/w/cup-1234";
-    press(column([{ ...BASE_LANE, release: RELEASE }]), "copy");
+    const view = column([{ ...BASE_LANE, release: RELEASE }]);
+    expect(texts(pathTo(view.render(), "copy")?.at(-1) as Node)).toEqual(["Copy message"]);
+    press(view, "copy");
     await flush();
     const copy = app.execs.find((call) => call.command.endsWith("/pp-stack-rich-copy"));
     expect(copy?.args).toEqual([RELEASE.messagePath]);
