@@ -276,6 +276,26 @@ describe("watcher", () => {
     expect(state().lanes[0].claude).toEqual({ terminal: "t2", status: "idle", count: 2, ambiguous: false });
   });
 
+  test("a gh failure after a PR was seen keeps the PR and adds the error", async () => {
+    const view = watcher();
+    let now = 1_000_000;
+    view.clock = () => now;
+    ghReturns(ghPr());
+    await view.read(cx);
+    gh = { code: 1, stdout: "", stderr: "gh: auth required" };
+    now += 61_000;
+    await view.read(cx);
+    expect(state().lanes[0].pr).toMatchObject({ number: 42 });
+    expect(state().lanes[0].prError).toBe("GitHub unavailable · gh: auth required");
+  });
+
+  test("a space opened on the task beats one whose shell only wandered into it", async () => {
+    herdr.panes = () => [{ pane: "p1", tab: "tb-main", terminal: "t1", cwd: lane }];
+    const view = watcher();
+    await view.read(cx);
+    expect(state().lanes[0]).toMatchObject({ space: "sp-1234", mainSpace: "sp-main" });
+  });
+
   test("show focuses the last alerted task and opens the column", async () => {
     const view = watcher();
     let now = 1_000_000;
@@ -308,11 +328,27 @@ function texts(node: Node): string[] {
   return [...node.texts, ...node.kids.flatMap(texts)];
 }
 
+const clicks = { notified: 0, spawned: 0, stale: 0 };
+
 function press(view: { render(): Node }, key: string) {
   const path = pathTo(view.render(), key);
   if (!path) throw new Error(`no element ${key}`);
-  const context = { stop_propagation() {}, notify() {} };
+  let done = false;
+  const guard = (use: () => unknown) => {
+    if (done) clicks.stale += 1;
+    else return use();
+  };
+  const task = { notify() {}, sleep: () => new Promise(() => {}) };
+  const context = {
+    stop_propagation() {},
+    notify: () => guard(() => (clicks.notified += 1)),
+    spawn: (run: (cx: typeof task) => unknown) => guard(() => {
+      clicks.spawned += 1;
+      return run(task);
+    }),
+  };
   for (const node of [...path].reverse()) for (const handler of node.handlers.click ?? []) handler({}, context);
+  done = true;
 }
 
 const BASE_LANE = {
@@ -362,6 +398,12 @@ function column(lanes: Record<string, unknown>[] = [BASE_LANE]) {
 
 const sends = () => app.execs.filter((call) => call.command === "hc" && call.args[0] === "send");
 
+beforeEach(() => {
+  clicks.notified = 0;
+  clicks.spawned = 0;
+  clicks.stale = 0;
+});
+
 describe("column", () => {
   test("the next step types only into the task's claude", async () => {
     focusedCwd = "/w/cup-1234";
@@ -384,7 +426,7 @@ describe("column", () => {
   test("New tab instead opens claude with the step as its first message", () => {
     focusedCwd = "/w/cup-1234";
     press(column(), "new-tab");
-    expect(app.runs).toContainEqual(["tab.new", { space: "sp-1234", argv: ["claude"], task: "/vjr-ac" }]);
+    expect(app.runs).toContainEqual(["tab.new", { space: "sp-1234", folder: "/w/cup-1234", argv: ["claude"], task: "/vjr-ac" }]);
   });
 
   test("a task without a space opens a new space in its folder", () => {
@@ -460,6 +502,56 @@ describe("column", () => {
   });
 });
 
+describe("review fixes in the column", () => {
+  test("sending runs in a task and never touches the click after it returns", async () => {
+    focusedCwd = "/w/cup-1234";
+    const view = column();
+    press(view, "next");
+    await flush();
+    expect(clicks.spawned).toBeGreaterThan(0);
+    expect(clicks.stale).toBe(0);
+    expect(texts(view.render())).toContain("Sent to claude · t12");
+  });
+
+  test("copying runs in a task and never touches the click after it returns", async () => {
+    focusedCwd = "/w/cup-1234";
+    const view = column([{ ...BASE_LANE, release: RELEASE }]);
+    press(view, "copy");
+    await flush();
+    expect(clicks.stale).toBe(0);
+    expect(texts(view.render())).toContain("Copied the message");
+  });
+
+  test("a new tab always starts in the task's own folder", () => {
+    focusedCwd = "/w/cup-1234";
+    press(column([{ ...BASE_LANE, next: { label: "Run /vjr-ac in a new tab", kind: "tab", space: "sp-main", folder: "/w/cup-1234", text: "/vjr-ac", target: "new tab in app" } }]), "next");
+    expect(app.runs).toContainEqual(["tab.new", { space: "sp-main", folder: "/w/cup-1234", argv: ["claude"], task: "/vjr-ac" }]);
+  });
+
+  test("switching tabs and picking a task redraw at once", () => {
+    focusedCwd = "/x/not-a-task";
+    const view = column();
+    press(view, "tab-lanes");
+    expect(clicks.notified).toBe(1);
+    press(view, "lane-/w/cup-1234");
+    expect(clicks.notified).toBe(2);
+  });
+
+  test("regenerate never types into a claude that needs you", () => {
+    focusedCwd = "/w/cup-1234";
+    const merged = { ...BASE_LANE, claude: { terminal: "t12", status: "blocked", count: 1, ambiguous: false }, release: RELEASE, pr: { number: 42, url: "u", state: "MERGED", isDraft: false, reviewDecision: "", statusCheckRollup: [] } };
+    press(column([merged]), "regenerate");
+    expect(sends()).toEqual([]);
+    expect(app.runs).toEqual([]);
+  });
+
+  test("a gh failure after a PR was seen still says GitHub unavailable", () => {
+    focusedCwd = "/w/cup-1234";
+    const seen = { ...BASE_LANE, pr: { number: 42, url: "u", state: "OPEN", isDraft: false, reviewDecision: "", statusCheckRollup: [] }, prError: "GitHub unavailable · gh: auth required" };
+    expect(texts(column([seen]).render())).toContain("GitHub unavailable · gh: auth required");
+  });
+});
+
 describe("shot window", () => {
   test("it shows the picked screenshot with its caption and moves with the arrows", () => {
     app.shared["command-center.state"] = { lanes: [{ ...BASE_LANE, release: RELEASE }] };
@@ -467,7 +559,9 @@ describe("shot window", () => {
     const view = new CommandCenter();
     view.init(propsNow, cx);
     expect(texts(view.render())).toContain("The reply is still there");
-    view.key("right");
+    let notified = 0;
+    view.key("right", { notify: () => (notified += 1) });
+    expect(notified).toBe(1);
     expect(texts(view.render())).toContain("Saving");
     view.key("escape");
   });

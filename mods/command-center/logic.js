@@ -119,7 +119,7 @@ export function parseScreenshots(md) {
   for (const line of lines) {
     if (line.startsWith("### ")) title = line.slice(4).trim();
     const image = /^!\[([^\]]*)\]\(([^)]+)\)/.exec(line.trim());
-    if (image) shots.push({ title: title ?? "", alt: image[1], file: image[2] });
+    if (image && BARE_FILE.test(image[2])) shots.push({ title: title ?? "", alt: image[1], file: image[2] });
   }
   return { covers, shots };
 }
@@ -153,6 +153,7 @@ const FAMILIES = {
 const PASSED = new Set(["SUCCESS", "SKIPPED", "NEUTRAL"]);
 const FAILED = new Set(["FAILURE", "ERROR", "CANCELLED", "TIMED_OUT", "ACTION_REQUIRED", "STARTUP_FAILURE"]);
 const PLAIN_WORD = /^[A-Za-z0-9_./@%+=:,-]+$/;
+const BARE_FILE = /^[A-Za-z0-9_-][A-Za-z0-9._-]*$/;
 
 const hasPr = (pr) => Boolean(pr && !pr.error && pr.number);
 const merged = (lane) => hasPr(lane.pr) && lane.pr.state === "MERGED";
@@ -208,7 +209,7 @@ export function prStep(pr) {
   if (pr.state === "CLOSED") return "bad";
   const checks = rollup(pr.statusCheckRollup);
   if (checks.failed.length || pr.reviewDecision === "CHANGES_REQUESTED") return "bad";
-  if (pr.isDraft || checks.pending || pr.reviewDecision === "REVIEW_REQUIRED") return "run";
+  if (pr.isDraft || checks.pending || checks.items.length === 0 || pr.reviewDecision === "REVIEW_REQUIRED") return "run";
   return "done";
 }
 
@@ -216,6 +217,7 @@ export function stepsOf(lane) {
   const skill = lane.skill?.active ? lane.skill : null;
   const ship = fileState(lane, "ship.json");
   const files = lane.evidence && !lane.evidence.error ? Object.values(lane.evidence.files ?? {}) : [];
+  if (merged(lane)) return ["done", "done", "done", "done", "done", "done", "next"];
   const steps = ["done", "todo", "todo", "todo", "todo", "todo", "todo"];
   if (skill?.family === "ac") steps[1] = "run";
   else if (verifiedNow(lane) || shipped(lane)) steps[1] = "done";
@@ -314,6 +316,13 @@ export function nextStep(lane) {
   if (pr && steps[5] === "next") return { label: `Open PR #${pr.number} to merge`, kind: "open", url: pr.url, target: "you merge on GitHub" };
   if (pr) return { label: `Open PR #${pr.number}`, kind: "open", url: pr.url, target: "github.com" };
   return { label: "Waiting for the PR", kind: "wait", disabled: true, target: "nothing to run yet" };
+}
+
+export function regenerateStep(lane) {
+  const label = "Regenerate with production links";
+  const claude = lane.claude ?? {};
+  if ((claude.terminal && claude.status === "blocked") || lane.skill?.active) return { label, kind: "wait", disabled: true, target: "claude needs you first" };
+  return sendTo(lane, label, "/pp-client-slack-update");
 }
 
 export function alertState(lane) {

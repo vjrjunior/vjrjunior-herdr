@@ -16,6 +16,7 @@ import {
   pickClaude,
   prStep,
   pushLine,
+  regenerateStep,
   rollup,
   scopeLine,
   skillState,
@@ -293,7 +294,7 @@ describe("alerts and badge", () => {
 
   test("the badge counts what waits on you and turns red on a failure", () => {
     expect(badge([lane()])).toEqual({ count: 0, level: null });
-    expect(badge([lane({ evidence: current(), pr: pr({ reviewDecision: "APPROVED" }) })])).toEqual({ count: 1, level: "wait" });
+    expect(badge([lane({ evidence: current(), pr: pr({ reviewDecision: "APPROVED", statusCheckRollup: [check("test", "SUCCESS")] }) })])).toEqual({ count: 1, level: "wait" });
     expect(badge([lane({ evidence: current(), pr: pr({ statusCheckRollup: [check("test", "FAILURE")] }) }), lane()])).toEqual({ count: 1, level: "bad" });
     expect(badge([lane({ evidence: current(), pr: pr({ state: "MERGED" }) })]).count).toBe(1);
   });
@@ -309,7 +310,7 @@ describe("chips", () => {
     expect(chip(lane({ verified: "58197b4", skill: { family: "ship", skill: "ship", waiting: false, active: true } }))).toEqual({ chip: "Ship", tone: "work" });
     expect(chip(lane({ evidence: current(), pr: pr({ statusCheckRollup: [check("test", null, "IN_PROGRESS")] }) }))).toEqual({ chip: "PR ●", tone: "work" });
     expect(chip(lane({ evidence: current(), pr: pr({ reviewDecision: "CHANGES_REQUESTED" }) }))).toEqual({ chip: "PR ✕", tone: "bad" });
-    expect(chip(lane({ evidence: current(), pr: pr({ reviewDecision: "APPROVED" }) }))).toEqual({ chip: "Ready", tone: "done" });
+    expect(chip(lane({ evidence: current(), pr: pr({ reviewDecision: "APPROVED", statusCheckRollup: [check("test", "SUCCESS")] }) }))).toEqual({ chip: "Ready", tone: "done" });
     expect(chip(lane({ evidence: current(), pr: pr({ state: "MERGED" }) }))).toEqual({ chip: "Merged", tone: "done" });
   });
 });
@@ -344,5 +345,33 @@ describe("sessions", () => {
   test("other skills never block the lane", () => {
     expect(skillState({ skill: "investigate", started_at: "2026-11-02T20:00:00Z", ended_at: null }, lane())).toEqual({ family: null, skill: "investigate", waiting: false, active: false });
     expect(skillState(null, lane())).toBeNull();
+  });
+});
+
+describe("review fixes", () => {
+  test("a merged PR finishes AC, Ship and Evidence and goes straight to pp-clear", () => {
+    const merged = lane({ verified: "aaaaaaa", lastCode: "bbbbbbb", evidence: evidence({ "ship.json": "stale", "screenshots.md": "stale" }), pr: pr({ state: "MERGED" }) });
+    expect(stepsOf(merged)).toEqual(["done", "done", "done", "done", "done", "done", "next"]);
+    expect(chipOf(merged, stepsOf(merged))).toEqual({ chip: "Merged", tone: "done" });
+    expect(nextStep(merged).text).toBe("/pp-clear 42");
+  });
+
+  test("an open PR with no checks yet is still running", () => {
+    expect(prStep(pr())).toBe("run");
+    expect(prStep(pr({ reviewDecision: "APPROVED" }))).toBe("run");
+    expect(prStep(pr({ statusCheckRollup: [check("test", "SUCCESS")] }))).toBe("done");
+  });
+
+  test("regenerating the links follows the next-step rules", () => {
+    expect(regenerateStep(lane())).toMatchObject({ kind: "send", terminal: "t12", text: "/pp-client-slack-update" });
+    expect(regenerateStep(lane({ claude: { terminal: "t12", status: "blocked", count: 1, ambiguous: false } }))).toMatchObject({ disabled: true, target: "claude needs you first" });
+    expect(regenerateStep(lane({ skill: waitingAc }))).toMatchObject({ disabled: true });
+    expect(regenerateStep(lane({ skill: { family: "ship", skill: "review", waiting: false, active: true } }))).toMatchObject({ disabled: true });
+    expect(regenerateStep(lane({ claude: { terminal: null, status: null, count: 0, ambiguous: false } }))).toMatchObject({ kind: "tab", space: "sp-1234", folder: "/w/cup-1234" });
+  });
+
+  test("a screenshot name that leaves its folder is dropped", () => {
+    const md = "### A\n![a](../../../../.zshrc)\n### B\n![b](sub/x.png)\n### C\n![c](.hidden.png)\n### D\n![d](04-ok_shot.png)";
+    expect(parseScreenshots(md).shots.map((shot) => shot.file)).toEqual(["04-ok_shot.png"]);
   });
 });

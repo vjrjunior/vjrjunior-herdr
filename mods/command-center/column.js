@@ -20,7 +20,7 @@ function pill(text, t) {
 }
 
 function link(id, text, t, action) {
-  return div().id(id).flex_none().text_size(11.5).text_color(linkColor(t)).hover((s) => s.text_color(t.foreground)).on_click(() => action()).child(text);
+  return div().id(id).flex_none().text_size(11.5).text_color(linkColor(t)).hover((s) => s.text_color(t.foreground)).on_click((_e, cx) => action(cx)).child(text);
 }
 
 function row(mark, color, name, detail, t) {
@@ -188,6 +188,7 @@ function prBlock(lane, t) {
   const status = pr.state === "MERGED" ? "merged" : pr.isDraft ? "draft" : pr.reviewDecision === "APPROVED" ? "ready, approved" : "ready for review";
   const marks = { ok: "✓", run: "●", bad: "!", idle: "○" };
   const block = v_flex().gap(6).child(heading(`PR #${pr.number} · ${status}`, t));
+  if (lane.prError) block.child(div().text_size(11.5).text_color(t.working).child(lane.prError));
   for (const item of checks.items) block.child(row(marks[item.state], stateColor(item.state, t), item.name, item.detail, t));
   if (lane.preview?.link) block.child(row("✓", t.done, "Preview", lane.preview.state?.toLowerCase?.() ?? "", t));
   if (pr.reviewDecision) block.child(row(pr.reviewDecision === "APPROVED" ? "✓" : "●", pr.reviewDecision === "CHANGES_REQUESTED" ? t.blocked : pr.reviewDecision === "APPROVED" ? t.done : t.working, "Review", pr.reviewDecision.toLowerCase().replaceAll("_", " "), t));
@@ -249,7 +250,7 @@ function releaseBlock(view, lane, t) {
           .text_size(11.5)
           .text_color(t.working)
           .child(div().child(`Links still point to ${release.links}.`))
-          .child(link("regenerate", "Regenerate with production links", t, () => view.regenerate(lane))),
+          .child(link("regenerate", "Regenerate with production links", t, (cx) => view.regenerate(lane, cx))),
       ),
     )
     .when(Boolean(release.messagePath), (el) =>
@@ -291,7 +292,7 @@ function laneCard(view, lane, current, t) {
     .border_1()
     .border_color(current ? t.accent : t.border)
     .hover((s) => s.bg(t.hover))
-    .on_click(() => view.pick(lane))
+    .on_click((_e, cx) => view.pick(lane, cx))
     .child(h_flex().gap(8).items_center().child(pill(lane.task.id ?? "TASK", t)).child(div().flex_1().text_size(11.5).text_color(t.unknown).child(lane.chip?.chip ?? "")))
     .child(div().truncate().text_color(t.foreground).child(lane.task.title))
     .child(h_flex().gap(2).children(lane.steps.map((state) => div().flex_1().h(4).bg(state === "todo" ? t.input : stateColor(state, t)))))
@@ -321,7 +322,7 @@ function tabButton(view, id, label, count, on, t) {
     .text_color(on ? t.foreground : t.unknown)
     .border_b(2)
     .border_color(on ? t.accent : t.chrome)
-    .on_click(() => view.switchTab(id))
+    .on_click((_e, cx) => view.switchTab(id, cx))
     .child(label)
     .when(count != null, (el) => el.child(div().text_color(t.dim).child(String(count))));
 }
@@ -359,7 +360,7 @@ export function shotView(view, lane, t) {
     .min_h(0)
     .bg(t.chrome)
     .when(Boolean(view.handle), (el) => el.track_focus(view.handle))
-    .on_key_down((event) => view.key(event.key))
+    .on_key_down((event, cx) => view.key(event.key, cx))
     .child(
       h_flex()
         .h(32)

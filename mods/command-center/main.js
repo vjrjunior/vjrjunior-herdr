@@ -33,6 +33,7 @@ import {
   parseTask,
   parseWorktrees,
   pickClaude,
+  regenerateStep,
   skillState,
   stepsOf,
   transitions,
@@ -75,6 +76,7 @@ function laneSignals(lane, cache) {
     evidence: cache.evidence ?? null,
     preview: cache.preview ?? null,
     pr: cache.pr ?? (cache.prError ? { error: cache.prError } : null),
+    prError: cache.pr && cache.prError ? cache.prError : null,
     release: cache.release ?? null,
   };
 }
@@ -128,14 +130,19 @@ export default class CommandCenter extends View {
     return lanes.find((lane) => lane.key === this.lastLane) ?? null;
   }
 
-  flash(text, cx) {
+  later(cx, work) {
+    if (cx?.spawn) cx.spawn(async (cx) => work(cx));
+    else work(null);
+  }
+
+  async flash(text, cx) {
     this.flashText = text;
     cx?.notify?.();
-    cx?.spawn?.(async (cx) => {
-      await cx.sleep(2000);
-      if (this.flashText === text) this.flashText = null;
-      cx.notify();
-    });
+    if (!cx?.sleep) return;
+    await cx.sleep(2000);
+    if (this.flashText !== text) return;
+    this.flashText = null;
+    cx.notify();
   }
 
   open(target) {
@@ -146,15 +153,19 @@ export default class CommandCenter extends View {
     exec("zed", [path]).catch(() => {});
   }
 
-  newClaude(lane, text) {
-    if (lane.space) run("tab.new", { space: lane.space, argv: ["claude"], task: text });
-    else run("space.new", { folder: lane.path, argv: ["claude"], task: text, machine: "" });
+  newClaude(space, folder, text) {
+    if (space) run("tab.new", { space, folder, argv: ["claude"], task: text });
+    else run("space.new", { folder, argv: ["claude"], task: text, machine: "" });
   }
 
   send(terminal, text, cx) {
-    exec("hc", ["send", terminal, text])
-      .then((result) => this.flash(result?.code === 0 ? `Sent to claude · ${terminal}` : `Could not reach claude · ${terminal}`, cx))
-      .catch(() => this.flash(`Could not reach claude · ${terminal}`, cx));
+    this.later(cx, async (cx) => {
+      let sent = false;
+      try {
+        sent = (await exec("hc", ["send", terminal, text]))?.code === 0;
+      } catch {}
+      await this.flash(sent ? `Sent to claude · ${terminal}` : `Could not reach claude · ${terminal}`, cx);
+    });
   }
 
   act(lane, cx) {
@@ -162,45 +173,54 @@ export default class CommandCenter extends View {
     if (!next || next.disabled) return;
     if (next.kind === "send") this.send(next.terminal, next.text, cx);
     else if (next.kind === "focus") run("pane.focus", { terminal: next.terminal });
-    else if (next.kind === "tab") run("tab.new", { space: next.space, argv: ["claude"], task: next.text });
-    else if (next.kind === "space") run("space.new", { folder: next.folder, argv: ["claude"], task: next.text, machine: "" });
+    else if (next.kind === "tab" || next.kind === "space") this.newClaude(next.kind === "tab" ? next.space : null, next.folder, next.text);
     else if (next.kind === "open") this.open(next.url);
   }
 
   newTab(lane) {
-    if (lane.next?.text) this.newClaude(lane, lane.next.text);
+    if (lane.next?.text) this.newClaude(lane.space, lane.path, lane.next.text);
   }
 
   regenerate(lane, cx) {
-    const claude = lane.claude ?? {};
-    const text = "/pp-client-slack-update";
-    if (claude.terminal && !claude.ambiguous && claude.status !== "working") this.send(claude.terminal, text, cx);
-    else this.newClaude(lane, text);
+    const step = regenerateStep(lane);
+    if (step.disabled) {
+      this.later(cx, (cx) => this.flash(step.target, cx));
+      return;
+    }
+    this.act({ ...lane, next: step }, cx);
   }
 
   copy(release, cx) {
-    const done = () => this.flash("Copied the message", cx);
-    const plain = () => exec("sh", ["-c", 'pbcopy < "$1"', "_", release.messagePath]).then(done).catch(() => this.flash("Could not copy the release update", cx));
-    exec(bin("pp-stack-rich-copy"), [release.messagePath])
-      .then((result) => (result?.code === 0 ? done() : plain()))
-      .catch(plain);
+    this.later(cx, async (cx) => {
+      const attempt = async (command, args) => {
+        try {
+          return (await exec(command, args))?.code === 0;
+        } catch {
+          return false;
+        }
+      };
+      const copied = (await attempt(bin("pp-stack-rich-copy"), [release.messagePath])) || (await attempt("sh", ["-c", 'pbcopy < "$1"', "_", release.messagePath]));
+      await this.flash(copied ? "Copied the message" : "Could not copy the message", cx);
+    });
   }
 
   openShot(lane, index) {
     openOverlay({ kind: "window", key: "command-center-shot", mod: "command-center", props: { role: "shot", lane: lane.key, index }, width: 0.7, height: 0.8 });
   }
 
-  pick(lane) {
+  pick(lane, cx) {
     this.lastLane = lane.key;
     this.tab = "task";
     if (lane.space) run("space.select", { id: lane.space });
+    cx?.notify?.();
   }
 
-  switchTab(id) {
+  switchTab(id, cx) {
     this.tab = id;
+    cx?.notify?.();
   }
 
-  key(name) {
+  key(name, cx) {
     const total = this.stateLanes().find((lane) => lane.key === this.shotLane)?.release?.shots?.length ?? 0;
     if (name === "escape") {
       if (this.overlay) closeOverlay(this.overlay);
@@ -209,6 +229,7 @@ export default class CommandCenter extends View {
     if (!total) return;
     if (name === "right") this.index = (this.index + 1) % total;
     if (name === "left") this.index = (this.index + total - 1) % total;
+    cx?.notify?.();
   }
 
   startWatch(cx) {
@@ -505,12 +526,13 @@ export default class CommandCenter extends View {
     cache.wasShipping = shipping;
     await this.readPr(lane, cache, now);
     await this.readRelease(lane, cache);
-    cache.space = null;
-    cache.mainSpace = null;
+    const own = this.localSpaces();
+    cache.space = own.find((space) => inside(space.folder, lane.path))?.id ?? null;
+    cache.mainSpace = own.find((space) => inside(space.folder, lane.repo.main))?.id ?? null;
     for (const [id, paths] of Object.entries(places)) {
       const list = [...paths];
       if (!cache.space && list.some((path) => inside(path, lane.path))) cache.space = id;
-      if (!cache.mainSpace && list.some((path) => inside(path, lane.repo.main))) cache.mainSpace = id;
+      if (!cache.mainSpace && list.some((path) => inside(path, lane.repo.main) && !inside(path, lane.path))) cache.mainSpace = id;
     }
     const signals = laneSignals(lane, cache);
     signals.skill = skillState(record, signals);
