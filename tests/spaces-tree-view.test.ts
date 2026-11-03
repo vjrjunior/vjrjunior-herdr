@@ -216,3 +216,26 @@ describe("head rows", () => {
     expect(texts(row)).toContain("1");
   });
 });
+
+describe("command center chips", () => {
+  test("a worktree row shows its command center chip", () => {
+    const view = setup();
+    app.shared["command-center.lanes"] = { "/w/app/one": { chip: "PR ●", tone: "work" } };
+    const row = pathTo(view.render(), "kid-/w/app/one")?.at(-1) as Node;
+    expect(texts(row)).toContain("PR ●");
+  });
+
+  test("without command center data the row has no chip", () => {
+    const view = setup();
+    const row = pathTo(view.render(), "kid-/w/app/one")?.at(-1) as Node;
+    expect(texts(row)).not.toContain("PR ●");
+  });
+
+  test("the chip shows in the blocks style too", () => {
+    const view = setup();
+    app.shared["spaces.style"] = "blocks";
+    app.shared["command-center.lanes"] = { "/w/app/one": { chip: "Ready", tone: "done" } };
+    const row = pathTo(view.render(), "kid-/w/app/one")?.at(-1) as Node;
+    expect(texts(row)).toContain("Ready");
+  });
+});

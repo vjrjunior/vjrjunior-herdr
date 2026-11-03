@@ -1,0 +1,568 @@
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { herdr, type Node } from "./app-mocks";
+import { removeTempDirs, tempDir } from "./helpers";
+
+const { default: CommandCenter } = await import("../mods/command-center/main.js");
+
+const FIXTURES = join(import.meta.dir, "fixtures/command-center");
+const BRANCH = "fix/cup-1234-draft-reload";
+const HEAD = "58197b4f001122334455";
+const cx = { timer: { every() {} }, spawn() {}, notify() {}, sleep: async () => {} };
+
+let root = "";
+let main = "";
+let lane = "";
+let other = "";
+let app: {
+  shared: Record<string, unknown>;
+  runs: [string, unknown][];
+  execs: { command: string; args: string[]; cwd?: string }[];
+  notes: Record<string, any>[];
+  overlays: Record<string, any>[];
+  setCount: number;
+};
+let gh: { code: number; stdout: string; stderr: string } = { code: 0, stdout: "[]", stderr: "" };
+let binsMissing = false;
+let evidence: Record<string, unknown> = {};
+let agentsNow: Record<string, unknown>[] = [];
+let ttyOf: Record<string, string> = {};
+let focusedCwd: string | null = null;
+let propsNow: Record<string, unknown> = { role: "watch" };
+
+const ghPr = (over: Record<string, unknown> = {}) => ({
+  number: 42,
+  url: "https://github.com/acme/app/pull/42",
+  state: "OPEN",
+  isDraft: false,
+  reviewDecision: "",
+  mergedAt: null,
+  baseRefName: "main",
+  headRefName: BRANCH,
+  statusCheckRollup: [],
+  ...over,
+});
+const ghReturns = (pr: Record<string, unknown> | null) => {
+  gh = { code: 0, stdout: JSON.stringify(pr ? [pr] : []), stderr: "" };
+};
+
+function respond(command: string, args: string[], options: { cwd?: string } = {}) {
+  const ok = (stdout: string, code = 0) => ({ code, stdout, stderr: "" });
+  if (command === "git" && args.includes("--git-common-dir")) return ok(`${join(main, ".git")}\n`);
+  if (command === "git" && args[0] === "worktree") {
+    return ok([main, lane, other].map((path, index) => `worktree ${path}\nHEAD ${HEAD}\nbranch refs/heads/${index === 0 ? "main" : index === 1 ? BRANCH : "chore/other"}\n`).join("\n"));
+  }
+  if (command === "git" && args[0] === "rev-parse") return ok(`${HEAD}\n`);
+  if (command === "git" && args[0] === "rev-list") return ok("0\n");
+  if (command.endsWith("/pp-pr-evidence")) {
+    if (binsMissing) throw new Error("ENOENT");
+    if (args[0] === "last-code-sha") return ok(`${HEAD}\n`);
+    return ok(JSON.stringify(evidence), (evidence as { ready?: boolean }).ready ? 0 : 1);
+  }
+  if (command.endsWith("/pp-pr-preview-check")) {
+    if (binsMissing) throw new Error("ENOENT");
+    return ok(JSON.stringify({ match: "preview", name: "Deploy to Preview", state: "SUCCESS", link: "https://preview.example/42" }));
+  }
+  if (command === "gh") return gh;
+  if (command === "hc" && args[0] === "get") {
+    const found = agentsNow.find((agent) => agent.address === args[1]) as Record<string, any> | undefined;
+    return found ? ok(JSON.stringify({ address: args[1], pid: 100, foreground: found.foreground })) : ok("", 1);
+  }
+  if (command === "ps") return ok(`${ttyOf[args.at(-1) as string] ?? "??"}\n`);
+  return ok("");
+}
+
+beforeEach(() => {
+  root = tempDir();
+  main = join(root, "app");
+  lane = join(root, "app-worktrees", "cup-1234 draft");
+  other = join(root, "app-worktrees", "other");
+  for (const dir of [main, lane, other]) mkdirSync(dir, { recursive: true });
+  copyFileSync(join(FIXTURES, "vjr-task-verified.md"), join(lane, "VJR-TASK.md"));
+  mkdirSync(join(root, "home", ".pp-stack", "session"), { recursive: true });
+  app = { shared: {}, runs: [], execs: [], notes: [], overlays: [], setCount: 0 };
+  ghReturns(null);
+  binsMissing = false;
+  evidence = { ready: false, slug: "fix-cup-1234-draft-reload", dir: join(lane, ".pp-stack/updates/fix-cup-1234-draft-reload"), files: [] };
+  agentsNow = [];
+  ttyOf = {};
+  focusedCwd = null;
+  propsNow = { role: "watch" };
+  Object.assign(herdr, {
+    spaces: () => [
+      { id: "sp-main", name: "app", folder: main, machine: null, active: false, tabs: [{ id: "tb-main" }] },
+      { id: "sp-1234", name: "cup-1234", folder: lane, machine: null, active: true, tabs: [{ id: "tb-1234" }] },
+    ],
+    panes: () => [],
+    agents: () => agentsNow,
+    focused: () => (focusedCwd ? { space: "sp-1234", tab: "tb-1234", pane: null, terminal: null, shown: null, agent: null, cwd: focusedCwd } : null),
+    exec: async (command: string, args: string[], options: { cwd?: string } = {}) => {
+      app.execs.push({ command, args, cwd: options?.cwd });
+      return respond(command, args, options);
+    },
+    readTextFile: async (path: string) => {
+      try {
+        return readFileSync(path, "utf8");
+      } catch {
+        return null;
+      }
+    },
+    home: () => join(root, "home"),
+    appHome: () => join(root, "app-home"),
+    shared: (key: string) => app.shared[key],
+    setShared: (key: string, value: unknown) => {
+      app.shared[key] = value;
+      app.setCount += 1;
+      return null;
+    },
+    notify: (note: Record<string, any>) => {
+      app.notes.push(note);
+      return "n1";
+    },
+    run: (name: string, args: unknown) => {
+      app.runs.push([name, args]);
+      return null;
+    },
+    openOverlay: (spec: Record<string, any>) => {
+      app.overlays.push(spec);
+      return "o1";
+    },
+    closeOverlay: () => null,
+    nextCommand: () => new Promise(() => {}),
+    watchFolder: () => new Promise(() => {}),
+    props: () => propsNow,
+    theme: () => new Proxy({}, { get: (_target, prop) => (typeof prop === "string" ? "#505050" : undefined) }),
+    layout: () => ({ id: "root", children: [] }),
+    window: () => ({ active: true }),
+  });
+});
+
+afterEach(() => removeTempDirs());
+
+function watcher() {
+  const view = new CommandCenter();
+  view.init({ role: "watch" }, cx);
+  return view;
+}
+
+const state = () => app.shared["command-center.state"] as { lanes: Record<string, any>[] };
+const ghCalls = () => app.execs.filter((call) => call.command === "gh").length;
+
+describe("watcher", () => {
+  test("only a non-main worktree with VJR-TASK.md becomes a task", async () => {
+    const view = watcher();
+    await view.discover();
+    expect(view.lanes.map((item: { key: string }) => item.key)).toEqual([lane]);
+    expect(view.lanes[0]).toMatchObject({ branch: BRANCH, repo: { name: "app", main } });
+  });
+
+  test("a read publishes the lane with its task, steps and next step", async () => {
+    const view = watcher();
+    await view.read(cx);
+    const published = state().lanes[0];
+    expect(published).toMatchObject({ key: lane, space: "sp-1234", mainSpace: "sp-main", task: { id: "CUP-1234" }, lastCode: HEAD });
+    expect(published.steps).toHaveLength(7);
+    expect(published.next.label).toBeTruthy();
+    expect(app.shared["command-center.lanes"]).toEqual({ [lane]: published.chip });
+  });
+
+  test("the first full read posts no alert, a later change does", async () => {
+    const view = watcher();
+    let now = 1_000_000;
+    view.clock = () => now;
+    ghReturns(ghPr({ reviewDecision: "APPROVED" }));
+    await view.read(cx);
+    expect(app.notes).toEqual([]);
+    ghReturns(ghPr({ state: "MERGED", mergedAt: "2026-11-02T22:00:00Z" }));
+    now += 61_000;
+    await view.read(cx);
+    expect(app.notes.map((note) => note.title)).toEqual(["PR #42 merged"]);
+    expect(app.notes[0].action).toEqual({ name: "command-center.show" });
+    now += 61_000;
+    await view.read(cx);
+    expect(app.notes).toHaveLength(1);
+  });
+
+  test("a failing gh shows GitHub unavailable and posts nothing", async () => {
+    gh = { code: 1, stdout: "", stderr: "gh: To get started with GitHub CLI, please run: gh auth login\nmore" };
+    const view = watcher();
+    await view.read(cx);
+    expect(state().lanes[0].pr).toEqual({ error: "GitHub unavailable · gh: To get started with GitHub CLI, please run: gh auth login" });
+    expect(app.notes).toEqual([]);
+  });
+
+  test("missing pp-stack scripts leave the evidence block saying so", async () => {
+    binsMissing = true;
+    const view = watcher();
+    await view.read(cx);
+    expect(state().lanes[0].evidence).toEqual({ error: "pp-stack not found" });
+  });
+
+  test("a second watcher stays idle while the first holds the lease", async () => {
+    await watcher().read(cx);
+    const before = app.execs.length;
+    await watcher().read(cx);
+    expect(app.execs.length).toBe(before);
+  });
+
+  test("closing the watcher frees the lease for the next one at once", async () => {
+    const first = watcher();
+    await first.read(cx);
+    await first.close();
+    const before = app.execs.length;
+    await watcher().read(cx);
+    expect(app.execs.length).toBeGreaterThan(before);
+  });
+
+  test("image folders of tasks that are gone are swept, live ones stay", async () => {
+    const data = join(root, "app-home", "data", "command-center", "shots");
+    mkdirSync(join(data, "fix-cup-1234-draft-reload"), { recursive: true });
+    mkdirSync(join(data, "fix-old-task"), { recursive: true });
+    await watcher().read(cx);
+    const removed = app.execs.filter((call) => call.command === "rm").map((call) => call.args.at(-1));
+    expect(removed).toEqual([join(data, "fix-old-task")]);
+  });
+
+  test("a screenshot copy that went missing is copied again", async () => {
+    const dir = join(lane, ".pp-stack/updates/fix-cup-1234-draft-reload");
+    mkdirSync(dir, { recursive: true });
+    for (const name of ["message.txt", "meta.json", "screenshots.md"]) copyFileSync(join(FIXTURES, name), join(dir, name));
+    evidence = { ready: false, slug: "fix-cup-1234-draft-reload", dir, files: [] };
+    const view = watcher();
+    await view.read(cx);
+    const copies = () => app.execs.filter((call) => call.command === "cp").length;
+    const first = copies();
+    expect(first).toBe(3);
+    view.cache[lane].taskAt = 0;
+    await view.read(cx);
+    expect(copies()).toBe(first + 3);
+  });
+
+  test("gh runs at most once a minute for an open PR", async () => {
+    ghReturns(ghPr());
+    const view = watcher();
+    let now = 1_000_000;
+    view.clock = () => now;
+    await view.read(cx);
+    await view.read(cx);
+    expect(ghCalls()).toBe(1);
+    now += 61_000;
+    await view.read(cx);
+    expect(ghCalls()).toBe(2);
+  });
+
+  test("an unchanged read does not touch shared state again", async () => {
+    const view = watcher();
+    await view.read(cx);
+    const count = app.setCount;
+    await view.read(cx);
+    expect(app.setCount).toBe(count);
+  });
+
+  test("the task's claude is the one whose tty ran the latest skill here", async () => {
+    agentsNow = [
+      { address: "t1", app: "claude-code", status: "idle", foreground: { pid: 501, cwd: lane, argv: ["claude"] } },
+      { address: "t2", app: "claude-code", status: "idle", foreground: { pid: 502, cwd: lane, argv: ["claude"] } },
+      { address: "t3", app: "claude-code", status: "idle", foreground: { pid: 503, cwd: main, argv: ["claude"] } },
+    ];
+    ttyOf = { "501": "ttys001", "502": "ttys002", "503": "ttys003" };
+    writeFileSync(
+      join(root, "home", ".pp-stack", "session", "skill-abc.json"),
+      JSON.stringify({ session_id: "abc", skill: "vjr-ac", tty: "ttys002", cwd: lane, started_at: new Date().toISOString(), ended_at: new Date().toISOString() }),
+    );
+    const view = watcher();
+    await view.read(cx);
+    expect(state().lanes[0].claude).toEqual({ terminal: "t2", status: "idle", count: 2, ambiguous: false });
+  });
+
+  test("a gh failure after a PR was seen keeps the PR and adds the error", async () => {
+    const view = watcher();
+    let now = 1_000_000;
+    view.clock = () => now;
+    ghReturns(ghPr());
+    await view.read(cx);
+    gh = { code: 1, stdout: "", stderr: "gh: auth required" };
+    now += 61_000;
+    await view.read(cx);
+    expect(state().lanes[0].pr).toMatchObject({ number: 42 });
+    expect(state().lanes[0].prError).toBe("GitHub unavailable · gh: auth required");
+  });
+
+  test("a space opened on the task beats one whose shell only wandered into it", async () => {
+    herdr.panes = () => [{ pane: "p1", tab: "tb-main", terminal: "t1", cwd: lane }];
+    const view = watcher();
+    await view.read(cx);
+    expect(state().lanes[0]).toMatchObject({ space: "sp-1234", mainSpace: "sp-main" });
+  });
+
+  test("show focuses the last alerted task and opens the column", async () => {
+    const view = watcher();
+    let now = 1_000_000;
+    view.clock = () => now;
+    ghReturns(ghPr({ statusCheckRollup: [{ __typename: "CheckRun", name: "test", status: "IN_PROGRESS", conclusion: null }] }));
+    await view.read(cx);
+    ghReturns(ghPr({ statusCheckRollup: [{ __typename: "CheckRun", name: "test", status: "COMPLETED", conclusion: "FAILURE" }] }));
+    now += 61_000;
+    await view.read(cx);
+    expect(app.notes[0].title).toBe("PR #42 needs attention");
+    await view.command("show");
+    expect(app.shared["command-center.focus"]).toBe(lane);
+    expect(app.runs).toContainEqual(["layout.show", { id: "command-center" }]);
+  });
+});
+
+
+const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+function pathTo(node: Node, key: string): Node[] | null {
+  if (node.key === key) return [node];
+  for (const kid of node.kids) {
+    const found = pathTo(kid, key);
+    if (found) return [node, ...found];
+  }
+  return null;
+}
+
+function texts(node: Node): string[] {
+  return [...node.texts, ...node.kids.flatMap(texts)];
+}
+
+const clicks = { notified: 0, spawned: 0, stale: 0 };
+
+function press(view: { render(): Node }, key: string) {
+  const path = pathTo(view.render(), key);
+  if (!path) throw new Error(`no element ${key}`);
+  let done = false;
+  const guard = (use: () => unknown) => {
+    if (done) clicks.stale += 1;
+    else return use();
+  };
+  const task = { notify() {}, sleep: () => new Promise(() => {}) };
+  const context = {
+    stop_propagation() {},
+    notify: () => guard(() => (clicks.notified += 1)),
+    spawn: (run: (cx: typeof task) => unknown) => guard(() => {
+      clicks.spawned += 1;
+      return run(task);
+    }),
+  };
+  for (const node of [...path].reverse()) for (const handler of node.handlers.click ?? []) handler({}, context);
+  done = true;
+}
+
+const BASE_LANE = {
+  key: "/w/cup-1234",
+  path: "/w/cup-1234",
+  repo: { name: "app", main: "/r/app" },
+  branch: BRANCH,
+  space: "sp-1234",
+  mainSpace: "sp-main",
+  task: { id: "CUP-1234", title: "A saved draft disappears", kind: "bug", url: "https://app.clickup.com/t/86abc1234", base: "main", branch: BRANCH, done: [{ id: "D01", item: "The draft stays" }], verification: null },
+  lastCode: HEAD,
+  sinceVerified: 0,
+  skill: null,
+  claude: { terminal: "t12", status: "idle", count: 1, ambiguous: false },
+  evidence: null,
+  preview: null,
+  pr: null,
+  release: null,
+  steps: ["done", "next", "todo", "todo", "todo", "todo", "todo"],
+  chip: { chip: "Task", tone: "idle" },
+  next: { label: "Run /vjr-ac", kind: "send", terminal: "t12", text: "/vjr-ac", target: "claude · t12 in this worktree", space: "sp-1234", folder: "/w/cup-1234" },
+  note: null,
+};
+
+const RELEASE = {
+  slug: "fix-cup-1234-draft-reload",
+  dir: "/w/cup-1234/.pp-stack/updates/fix-cup-1234-draft-reload",
+  messagePath: "/w/cup-1234/.pp-stack/updates/fix-cup-1234-draft-reload/message.txt",
+  release: "2.3.0",
+  title: "Drafts Survive a Reload 💾✨",
+  items: [{ parts: [{ text: "Replies stay after a reload" }] }],
+  channel: "general",
+  links: "local",
+  shots: [
+    { file: "02-a.png", caption: "The reply is still there", featured: true, image: "data/command-center/fix-cup-1234-draft-reload/02-a.png" },
+    { file: "01-b.png", caption: "Saving", featured: false, image: "data/command-center/fix-cup-1234-draft-reload/01-b.png" },
+  ],
+};
+
+function column(lanes: Record<string, unknown>[] = [BASE_LANE]) {
+  app.shared["command-center.state"] = { lanes };
+  propsNow = {};
+  const view = new CommandCenter();
+  view.init({}, cx);
+  return view;
+}
+
+const sends = () => app.execs.filter((call) => call.command === "hc" && call.args[0] === "send");
+
+beforeEach(() => {
+  clicks.notified = 0;
+  clicks.spawned = 0;
+  clicks.stale = 0;
+});
+
+describe("column", () => {
+  test("the next step types only into the task's claude", async () => {
+    focusedCwd = "/w/cup-1234";
+    const view = column();
+    press(view, "next");
+    await flush();
+    expect(sends().map((call) => call.args)).toEqual([["send", "t12", "/vjr-ac"]]);
+    expect(texts(view.render())).toContain("Sent to claude · t12");
+  });
+
+  test("a disabled next step sends nothing", async () => {
+    focusedCwd = "/w/cup-1234";
+    const view = column([{ ...BASE_LANE, next: { label: "Waiting for /review", kind: "wait", disabled: true, target: "the skill is still working" } }]);
+    press(view, "next");
+    await flush();
+    expect(sends()).toEqual([]);
+    expect(app.runs).toEqual([]);
+  });
+
+  test("New tab instead opens claude with the step as its first message", () => {
+    focusedCwd = "/w/cup-1234";
+    press(column(), "new-tab");
+    expect(app.runs).toContainEqual(["tab.new", { space: "sp-1234", folder: "/w/cup-1234", argv: ["claude"], task: "/vjr-ac" }]);
+  });
+
+  test("a task without a space opens a new space in its folder", () => {
+    focusedCwd = "/w/cup-1234";
+    press(column([{ ...BASE_LANE, space: null }]), "new-tab");
+    expect(app.runs).toContainEqual(["space.new", { folder: "/w/cup-1234", argv: ["claude"], task: "/vjr-ac", machine: "" }]);
+  });
+
+  test("the task tab follows the focused terminal's folder and stays on the last task", () => {
+    const second = { ...BASE_LANE, key: "/w/cup-9", path: "/w/cup-9", task: { ...BASE_LANE.task, id: "CUP-9", title: "Another task" } };
+    const view = column([BASE_LANE, second]);
+    focusedCwd = "/w/cup-9/src";
+    expect(texts(view.render())).toContain("Another task");
+    focusedCwd = "/x/not-a-task";
+    expect(texts(view.render())).toContain("Another task");
+  });
+
+  test("a task published after the focus moved into it is still picked", () => {
+    const view = column([]);
+    focusedCwd = "/w/cup-1234/src";
+    expect(texts(view.render())).toContain("No task here");
+    app.shared["command-center.state"] = { lanes: [BASE_LANE] };
+    const shown = texts(view.render());
+    expect(shown).not.toContain("No task here");
+    expect(shown).toContain("Next step".toUpperCase());
+  });
+
+  test("with no task yet the tab says so", () => {
+    focusedCwd = "/x/not-a-task";
+    expect(texts(column().render())).toContain("No task here");
+  });
+
+  test("a toast's focus wins over the focused folder", () => {
+    const second = { ...BASE_LANE, key: "/w/cup-9", path: "/w/cup-9", task: { ...BASE_LANE.task, id: "CUP-9", title: "Another task" } };
+    const view = column([BASE_LANE, second]);
+    focusedCwd = "/w/cup-1234";
+    app.shared["command-center.focus"] = "/w/cup-9";
+    expect(texts(view.render())).toContain("Another task");
+  });
+
+  test("Copy message uses pp-stack-rich-copy on message.txt", async () => {
+    focusedCwd = "/w/cup-1234";
+    const view = column([{ ...BASE_LANE, release: RELEASE }]);
+    expect(texts(pathTo(view.render(), "copy")?.at(-1) as Node)).toEqual(["Copy message"]);
+    press(view, "copy");
+    await flush();
+    const copy = app.execs.find((call) => call.command.endsWith("/pp-stack-rich-copy"));
+    expect(copy?.args).toEqual([RELEASE.messagePath]);
+    expect(texts(view.render())).toContain("Copied the message");
+  });
+
+  test("a merged task with local links offers to regenerate", () => {
+    focusedCwd = "/w/cup-1234";
+    const merged = { ...BASE_LANE, release: RELEASE, pr: { number: 42, url: "https://github.com/acme/app/pull/42", state: "MERGED", isDraft: false, reviewDecision: "", statusCheckRollup: [] } };
+    const shown = texts(column([merged]).render());
+    expect(shown).toContain("Links still point to local.");
+    expect(shown).toContain("Regenerate with production links");
+  });
+
+  test("a screenshot opens the shot window", () => {
+    focusedCwd = "/w/cup-1234";
+    press(column([{ ...BASE_LANE, release: RELEASE }]), "shot-0");
+    expect(app.overlays[0]).toMatchObject({ kind: "window", key: "command-center-shot", mod: "command-center", props: { role: "shot", lane: "/w/cup-1234", index: 0 } });
+  });
+
+  test("the Lanes tab lists every task and picking one selects its space", () => {
+    focusedCwd = "/x/not-a-task";
+    const view = column();
+    press(view, "tab-lanes");
+    expect(texts(view.render())).toContain("A saved draft disappears");
+    press(view, "lane-/w/cup-1234");
+    expect(app.runs).toContainEqual(["space.select", { id: "sp-1234" }]);
+  });
+});
+
+describe("review fixes in the column", () => {
+  test("sending runs in a task and never touches the click after it returns", async () => {
+    focusedCwd = "/w/cup-1234";
+    const view = column();
+    press(view, "next");
+    await flush();
+    expect(clicks.spawned).toBeGreaterThan(0);
+    expect(clicks.stale).toBe(0);
+    expect(texts(view.render())).toContain("Sent to claude · t12");
+  });
+
+  test("copying runs in a task and never touches the click after it returns", async () => {
+    focusedCwd = "/w/cup-1234";
+    const view = column([{ ...BASE_LANE, release: RELEASE }]);
+    press(view, "copy");
+    await flush();
+    expect(clicks.stale).toBe(0);
+    expect(texts(view.render())).toContain("Copied the message");
+  });
+
+  test("a new tab always starts in the task's own folder", () => {
+    focusedCwd = "/w/cup-1234";
+    press(column([{ ...BASE_LANE, next: { label: "Run /vjr-ac in a new tab", kind: "tab", space: "sp-main", folder: "/w/cup-1234", text: "/vjr-ac", target: "new tab in app" } }]), "next");
+    expect(app.runs).toContainEqual(["tab.new", { space: "sp-main", folder: "/w/cup-1234", argv: ["claude"], task: "/vjr-ac" }]);
+  });
+
+  test("switching tabs and picking a task redraw at once", () => {
+    focusedCwd = "/x/not-a-task";
+    const view = column();
+    press(view, "tab-lanes");
+    expect(clicks.notified).toBe(1);
+    press(view, "lane-/w/cup-1234");
+    expect(clicks.notified).toBe(2);
+  });
+
+  test("regenerate never types into a claude that needs you", () => {
+    focusedCwd = "/w/cup-1234";
+    const merged = { ...BASE_LANE, claude: { terminal: "t12", status: "blocked", count: 1, ambiguous: false }, release: RELEASE, pr: { number: 42, url: "u", state: "MERGED", isDraft: false, reviewDecision: "", statusCheckRollup: [] } };
+    press(column([merged]), "regenerate");
+    expect(sends()).toEqual([]);
+    expect(app.runs).toEqual([]);
+  });
+
+  test("a gh failure after a PR was seen still says GitHub unavailable", () => {
+    focusedCwd = "/w/cup-1234";
+    const seen = { ...BASE_LANE, pr: { number: 42, url: "u", state: "OPEN", isDraft: false, reviewDecision: "", statusCheckRollup: [] }, prError: "GitHub unavailable · gh: auth required" };
+    expect(texts(column([seen]).render())).toContain("GitHub unavailable · gh: auth required");
+  });
+});
+
+describe("shot window", () => {
+  test("it shows the picked screenshot with its caption and moves with the arrows", () => {
+    app.shared["command-center.state"] = { lanes: [{ ...BASE_LANE, release: RELEASE }] };
+    propsNow = { role: "shot", lane: "/w/cup-1234", index: 0, overlay: "o9" };
+    const view = new CommandCenter();
+    view.init(propsNow, cx);
+    expect(texts(view.render())).toContain("The reply is still there");
+    let notified = 0;
+    view.key("right", { notify: () => (notified += 1) });
+    expect(notified).toBe(1);
+    expect(texts(view.render())).toContain("Saving");
+    view.key("escape");
+  });
+});

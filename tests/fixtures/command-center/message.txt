@@ -1,0 +1,5 @@
+Release 2.3.0
+*Drafts Survive a Reload* 💾✨
+
+• Replies you were typing are still there after a reload, from the <http://app.fix-cup-1234-draft-reload.localhost/inbox|Inbox page>
+• A sent reply never comes back as a draft

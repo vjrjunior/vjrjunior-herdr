@@ -4,6 +4,7 @@ import { join } from "node:path";
 import type { Variant } from "../recipes/recipe";
 import { LEFT_ROUNDED, VARIANTS } from "../recipes/variants";
 import { generateVariant } from "../scripts/generate-layout";
+import { MEMORY, SYNC } from "../recipes/command-center";
 import { removeTempDirs, repo, tempDir } from "./helpers";
 import { makeHerdrHome, SHIPPED_MODS } from "./herdr-home";
 
@@ -45,12 +46,12 @@ function modsIn(node: unknown): string[] {
 const graphChild = (generated: ReturnType<typeof generate>) => findNode(JSON.parse(generated.layoutText), "panel-body")?.children.at(-1);
 
 describe("variants", () => {
-  test("vjr-desk copies the palette, the status bar, the tab bar, the spaces tree and comeback", () => {
-    expect(Object.keys(generateDesk().mods).sort()).toEqual(["vjr-comeback", "vjr-palette", "vjr-spaces-tree", "vjr-tabs", "vjr-workspace-status"]);
+  test("vjr-desk copies the palette, the status bar, the tab bar, the spaces tree, comeback and the command center", () => {
+    expect(Object.keys(generateDesk().mods).sort()).toEqual(["vjr-comeback", "vjr-command-center", "vjr-palette", "vjr-spaces-tree", "vjr-tabs", "vjr-workspace-status"]);
   });
 
-  test("vjr-desk-square copies eighteen mods", () => {
-    expect(Object.keys(generateSquare().mods)).toHaveLength(18);
+  test("vjr-desk-square copies nineteen mods", () => {
+    expect(Object.keys(generateSquare().mods)).toHaveLength(19);
   });
 
   test("vjr-desk keeps the shipped mods elsewhere", () => {
@@ -298,6 +299,107 @@ describe("comeback", () => {
       expect(floating).toContainEqual({ id: "comeback", content: { mod: copy }, edge: "left", align: "end" });
       expect(floating.at(-1).id).toBe("vjr-sync");
       expect(generated.mods[copy]?.["logic.js"]).toContain("export function planPass");
+    }
+  });
+});
+
+describe("command center", () => {
+  test("both layouts add the hidden column after the panel and float the watcher", () => {
+    for (const [generated, copy] of [
+      [generateDesk(), "vjr-command-center"],
+      [generateSquare(), "vjr-square-command-center"],
+    ] as const) {
+      const layout = JSON.parse(generated.layoutText);
+      const body = findNode(layout, "work-body");
+      expect(body?.children.map((node: { id: string }) => node.id)).toEqual(["main", "panel", "command-center"]);
+      expect(body?.children[2]).toEqual({ id: "command-center", type: "block", size: { px: 380 }, hidden: true, content: { mod: copy } });
+      expect(layout.floating).toContainEqual({ id: "command-center-watch", content: { mod: copy, props: { role: "watch" } }, edge: "left", align: "end" });
+      expect(layout.floating.at(-1).id).toBe("vjr-sync");
+      expect(Object.keys(generated.mods[copy] ?? {}).sort()).toEqual(["column.js", "logic.js", "main.js", "mod.json"]);
+    }
+  });
+
+  test("the tab bar toggles the column right after the + button", () => {
+    for (const [generated, tabs] of [
+      [generateDesk(), "vjr-tabs"],
+      [generateSquare(), "vjr-square-tabs"],
+    ] as const) {
+      const text = generated.mods[tabs]?.["main.js"] ?? "";
+      expect(text).toContain('run("layout.toggle", { id: "command-center" })');
+      expect(text).toContain('.child("Command Center")');
+      expect(text).toContain('shared("command-center.badge")');
+      expect(text.indexOf('button("tab-new"')).toBeLessThan(text.indexOf('.child("Command Center")'));
+      expect(text.indexOf('.child("Command Center")')).toBeLessThan(text.indexOf('panelButton("files"'));
+    }
+  });
+
+  test("the square tab bar button has square corners", () => {
+    const text = generateSquare().mods["vjr-square-tabs"]?.["main.js"] ?? "";
+    const button = text.slice(text.indexOf('id("command-center-toggle")'), text.indexOf('.child("Command Center")'));
+    expect(button).toContain("items_center()");
+    expect(button).not.toMatch(/\.rounded\([1-9]/);
+    expect(generateDesk().mods["vjr-tabs"]?.["main.js"]).toContain('id("command-center-toggle").h(26).px(8).gap(5).flex_none().items_center().rounded(6)');
+  });
+
+  test("the watcher's own name and its overlays are rewired to the copy", () => {
+    const main = generateSquare().mods["vjr-square-command-center"]?.["main.js"] ?? "";
+    expect(main).toContain('const SELF = { name: "vjr-square-command-center" };');
+    expect(main).toContain('mod: "vjr-square-command-center"');
+  });
+});
+
+function tabBar(store: Record<string, string> = {}) {
+  const runs: [string, unknown][] = [];
+  const storage = new Map(Object.entries(store));
+  const localStorage = { getItem: (key: string) => storage.get(key) ?? null, setItem: (key: string, value: string) => storage.set(key, value) };
+  const make = new Function("run", "localStorage", `return class { constructor() { ${MEMORY} } ${SYNC} }`);
+  const Bar = make((name: string, args: unknown) => runs.push([name, args]), localStorage);
+  return { bar: new Bar(), runs, storage };
+}
+
+describe("command center per space", () => {
+  test("each space reopens the column the way it left it", () => {
+    const { bar, runs } = tabBar();
+    bar.syncCommandCenter({ id: "a" }, { hidden: true });
+    bar.syncCommandCenter({ id: "a" }, { hidden: false });
+    bar.syncCommandCenter({ id: "b" }, { hidden: false });
+    expect(runs).toEqual([["layout.hide", { id: "command-center" }]]);
+    bar.syncCommandCenter({ id: "b" }, { hidden: true });
+    bar.syncCommandCenter({ id: "a" }, { hidden: true });
+    expect(runs.at(-1)).toEqual(["layout.show", { id: "command-center" }]);
+  });
+
+  test("the first render keeps the column as it is and remembers it", () => {
+    const { bar, runs, storage } = tabBar();
+    bar.syncCommandCenter({ id: "a" }, { hidden: false });
+    expect(runs).toEqual([]);
+    expect(JSON.parse(storage.get("command-center") as string)).toEqual({ a: true });
+  });
+
+  test("a restore still landing is not taken as a choice", () => {
+    const { bar, storage } = tabBar({ "command-center": JSON.stringify({ a: true, b: false }) });
+    bar.syncCommandCenter({ id: "a" }, { hidden: false });
+    bar.syncCommandCenter({ id: "b" }, { hidden: false });
+    bar.syncCommandCenter({ id: "b" }, { hidden: false });
+    expect(JSON.parse(storage.get("command-center") as string)).toEqual({ a: true, b: false });
+  });
+
+  test("the choice survives a restart", () => {
+    const { bar, runs } = tabBar({ "command-center": JSON.stringify({ a: true }) });
+    bar.syncCommandCenter({ id: "b" }, { hidden: true });
+    bar.syncCommandCenter({ id: "a" }, { hidden: true });
+    expect(runs).toEqual([["layout.show", { id: "command-center" }]]);
+  });
+
+  test("both tab bars load the memory, define the sync and call it on every render", () => {
+    for (const [generated, tabs] of [
+      [generateDesk(), "vjr-tabs"],
+      [generateSquare(), "vjr-square-tabs"],
+    ] as const) {
+      const text = generated.mods[tabs]?.["main.js"] ?? "";
+      expect(text).toContain(MEMORY);
+      expect(text).toContain("syncCommandCenter(space, cc) {");
+      expect(text).toContain('this.syncCommandCenter(space, find(root, "command-center"));');
     }
   });
 });

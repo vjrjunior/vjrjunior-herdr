@@ -1,0 +1,15 @@
+{
+  "generatedAt": "2026-11-02T21:20:00Z",
+  "covers_sha": "58197b4b2aeb820e4ebd94758581fcb1180d3f23",
+  "pr": 42,
+  "release": "2.3.0",
+  "pp_stack_version": "0.93.0",
+  "branch": "fix/cup-1234-draft-reload",
+  "status": "open",
+  "links": "local",
+  "announce": "general",
+  "captions": {
+    "02-inbox-draft-after-reload.png": "The reply is still there after a reload",
+    "03-inbox-sent-reply.png": "A sent reply does not come back"
+  }
+}

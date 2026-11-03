@@ -312,6 +312,13 @@ export default class SpacesTree extends View {
       .child(text);
   }
 
+  stageChip(row, t) {
+    const found = row.path ? (shared("command-center.lanes") ?? {})[row.path] : null;
+    if (!found?.chip) return null;
+    const color = { done: t.done, work: t.working, bad: t.blocked }[found.tone] ?? t.unknown;
+    return h_flex().flex_none().h(16).px(5).items_center().text_size(10.5).border_1().border_color(color).text_color(color).rounded(3).child(found.chip);
+  }
+
   note(text, t) {
     return div().flex_none().text_size(11).text_color(t.unknown).child(text);
   }
@@ -447,6 +454,7 @@ export default class SpacesTree extends View {
           .when(!row.open, (el) => el.border(1.5).border_color(rail)),
       )
       .child(this.name(row, t))
+      .when(Boolean(this.stageChip(row, t)), (el) => el.child(this.stageChip(row, t)))
       .when(Boolean(counts(row)), (el) => el.child(this.note(counts(row), t)));
   }
 
@@ -474,6 +482,7 @@ export default class SpacesTree extends View {
       .when(Boolean(row.space), (el) => el.on_mouse_down("right", () => this.menu(row.space)))
       .when(row.open && Boolean(row.status), (el) => el.child(this.bar(row.status, t, 28)))
       .child(this.name(row, t))
+      .when(Boolean(this.stageChip(row, t)), (el) => el.child(this.stageChip(row, t)))
       .when(Boolean(counts(row)), (el) => el.child(this.note(counts(row), t)));
   }
 

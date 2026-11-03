@@ -34,6 +34,7 @@ Other colors: `surface` and `popover` `#161616`, `raised` `#1C1C1C`, `hover` `#2
 - **Palette:** `cmd-shift-p`, or the status bar hint, opens a copy of Herdr's palette that also lists `Theme: vjr`.
 - **In the square version,** `cmd-,`, `cmd-p` and `cmd-/`, or whichever keys `global` binds to Settings, search and help, open square copies of those screens.
 - **After a restart,** each terminal that lost its Claude Code gets it back on the same conversation as soon as the window opens, and a toast says what came back (`comeback`).
+- **Command Center:** the button right after `+` in the top bar toggles a 380px column at the right edge, next to the side panel, and each space remembers whether it was open, like the side panel. It follows the task in the focused space (a worktree with a `VJR-TASK.md`): its track, the next step (one click types the right skill into that worktree's Claude, or opens a new tab with it), the PR's checks and review, and the release card with the screenshots and `Copy message`. The number on the button counts the tasks waiting on you, red when one failed; a toast says when a PR is ready, needs attention or merged.
 - **After a Herdr update,** the layout rebuilds itself within seconds. If it can't, the previous copies keep running and a warning toast says why.
 
 ## Built from
@@ -50,6 +51,8 @@ Nothing here is a frozen copy of Herdr. `recipes/` holds small edits, and `scrip
 - `mods/spaces-tree/`: this repo's own Spaces mod, written against Herdr's public mod API. It reads `git worktree list` and `git for-each-ref` per repository, watches each repository's git folder, keeps `space.colors` for the other mods that draw space avatars, and stores `spaces.style` and `spaces.folded` in shared state.
 - **`comeback`:** copies `mods/comeback/` and adds a floating block, `{ "id": "comeback", "content": { "mod": "comeback" }, "edge": "left", "align": "end" }`, that draws nothing.
 - `mods/comeback/`: this repo's own mod, described in its own [`RECIPE.md`](mods/comeback/RECIPE.md).
+- **`command-center`:** copies `mods/command-center/` and `tabs`, puts the `Command Center` button before Files with a separator, remembers per space whether the column was open (in the tab bar's `localStorage`, next to its panel memory), adds `{ "id": "command-center", "type": "block", "size": { "px": 380 }, "hidden": true, "content": { "mod": "command-center" } }` after `panel` in `work-body`, and floats an invisible watcher, `{ "id": "command-center-watch", "content": { "mod": "command-center", "props": { "role": "watch" } }, "edge": "left", "align": "end" }`.
+- `mods/command-center/`: this repo's own mod. The watcher reads `VJR-TASK.md`, `git worktree list`, `gh pr list --head <branch>`, `pp-pr-evidence`, `pp-pr-preview-check` and `~/.pp-stack/session/skill-*.json`, and publishes `command-center.state`, `command-center.badge` and `command-center.lanes` in shared state; the column and the Spaces chips only draw them.
 - `themes/vjr.json`: generated from `palette/vjr.toml`.
 - `keys.json`: `layout:vjr-desk` and `layout:vjr-desk-square` sections, derived from the `global` section.
 

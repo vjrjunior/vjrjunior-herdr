@@ -14,6 +14,18 @@
 **Priority:** P1
 **Depends on:** The next restart
 
+### Command Center phase 2
+
+**What:** Manual check cards with Passed and Failed buttons in the AC step, and an Inbox tab with the open ClickUp tasks and a Start button that opens `/vjr-task CUP-xxxx`.
+
+**Why:** Today the AC step only says `vjr-ac is waiting on you` and sends you to the terminal, and starting a task still means typing the id.
+
+**Context:** The buttons need `vjr-ac` to write a `## Manual checks` table (`| # | URL | Steps | Expected | State |`) into `VJR-TASK.md` while it asks, and to accept `Dxx passed` / `Dxx failed: <note>`. The Inbox needs a fresh ClickUp source: `~/.pp-stack/cache/clickup/my-open.json` stopped on Oct 9.
+
+**Effort:** M
+**Priority:** P2
+**Depends on:** The `vjr-ac` change, in `vjr-brain`
+
 ### Publish comeback on herdr.dev
 
 **What:** Publish `mods/comeback/` as a community mod: a public repo or folder in Herdr's format with `mods/comeback/`, its `RECIPE.md` and a `preview.png`, and the `herdr-mod` topic.
