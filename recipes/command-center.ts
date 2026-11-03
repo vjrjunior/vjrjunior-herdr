@@ -13,6 +13,37 @@ const TOGGLE = [
   "      .child(div().w(1).h(16).mx(4).bg(t.input))",
 ].join("\n");
 
+const PANELS_MEMORY = '    this.panels = JSON.parse(localStorage.getItem("panels") ?? "{}");';
+const RENDER = "  render() {\n    const t = theme();";
+const PANEL_SYNC = "    this.syncPanel(space, panel, body, enabled);";
+
+export const MEMORY = 'this.commandCenter = JSON.parse(localStorage.getItem("command-center") ?? "{}");';
+
+export const SYNC = `syncCommandCenter(space, cc) {
+    if (!space || !cc) return;
+    const now = !cc.hidden;
+    if (space.id !== this.ccSpace) {
+      const first = this.ccSpace === undefined;
+      this.ccSpace = space.id;
+      this.ccPending = null;
+      if (!(first && !(space.id in this.commandCenter))) {
+        const want = this.commandCenter[space.id] === true;
+        if (want !== now) {
+          this.ccPending = { want, until: Date.now() + 1000 };
+          run(want ? "layout.show" : "layout.hide", { id: "command-center" });
+          return;
+        }
+      }
+    }
+    if (this.ccPending) {
+      if (this.ccPending.want !== now && Date.now() < this.ccPending.until) return;
+      this.ccPending = null;
+    }
+    if (this.commandCenter[space.id] === now) return;
+    this.commandCenter[space.id] = now;
+    localStorage.setItem("command-center", JSON.stringify(this.commandCenter));
+  }`;
+
 export const commandCenter: Recipe = {
   name: "command-center",
   mods: [
@@ -22,6 +53,9 @@ export const commandCenter: Recipe = {
   apply({ copies, layout, variant }) {
     const corners = variant.recipes.some((recipe) => recipe.name === "square") ? "" : ".rounded(6)";
     exact(copies.tabs as Copy, FILES_BUTTON, `${TOGGLE.replace("CORNERS", corners)}\n      ${FILES_BUTTON}`);
+    exact(copies.tabs as Copy, PANELS_MEMORY, `${PANELS_MEMORY}\n    ${MEMORY}`);
+    exact(copies.tabs as Copy, RENDER, `  ${SYNC}\n\n${RENDER}`);
+    exact(copies.tabs as Copy, PANEL_SYNC, `${PANEL_SYNC}\n    this.syncCommandCenter(space, find(root, "command-center"));`);
     (findNode(layout, "work-body").children as LayoutNode[]).push({ id: "command-center", type: "block", size: { px: 380 }, hidden: true, content: { mod: "command-center" } });
     layout.floating = [
       ...((layout.floating as LayoutNode[] | undefined) ?? []),

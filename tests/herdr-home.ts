@@ -56,14 +56,27 @@ const LAYOUT = {
 };
 
 const SOURCES: Record<string, string> = {
-  "mods/tabs/main.js": script(`    const enabled = shared("workspace.panels") ?? ["files", "changes"];
+  "mods/tabs/main.js": `import { View } from "gpui-kit";
+export default class Tabs extends View {
+  init() {
+    this.pressed = null;
+    this.panels = JSON.parse(localStorage.getItem("panels") ?? "{}");
+  }
+
+  render() {
+    const t = theme();
+    this.syncPanel(space, panel, body, enabled);
+    const enabled = shared("workspace.panels") ?? ["files", "changes"];
     const context = () => openOverlay({ mod: "menu", kind: "popup", width: 200, props: { tab: "tab" } });
     const add = () => openOverlay({ mod: "new-menu", kind: "popup", width: 250, height: 512 });
     return h_flex().rounded(7)
       .child(button("tab-new", "+", () => openOverlay({ mod: "new-menu", kind: "popup", width: 250, height: 512 })))
       .when(enabled.includes("files"), el => el.child(panelButton("files", "Files", "mods/files/file.svg")))
       .when(enabled.includes("changes"), el => el.child(panelButton("changes", "Changes", "mods/changes/changes.svg")))
-      .child(div().size(6).rounded(3));`),
+      .child(div().size(6).rounded(3));
+  }
+}
+`,
   "mods/workspace-chrome/main.js": script(`    return div().rounded(6)
       .child(row("machine", () => run("mod.open", { name: "machine-add" })))
       .child(row("search", () => run("mod.open", { name: "picker" })))

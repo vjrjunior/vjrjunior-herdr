@@ -4,6 +4,7 @@ import { join } from "node:path";
 import type { Variant } from "../recipes/recipe";
 import { LEFT_ROUNDED, VARIANTS } from "../recipes/variants";
 import { generateVariant } from "../scripts/generate-layout";
+import { MEMORY, SYNC } from "../recipes/command-center";
 import { removeTempDirs, repo, tempDir } from "./helpers";
 import { makeHerdrHome, SHIPPED_MODS } from "./herdr-home";
 
@@ -344,5 +345,61 @@ describe("command center", () => {
     const main = generateSquare().mods["vjr-square-command-center"]?.["main.js"] ?? "";
     expect(main).toContain('const SELF = { name: "vjr-square-command-center" };');
     expect(main).toContain('mod: "vjr-square-command-center"');
+  });
+});
+
+function tabBar(store: Record<string, string> = {}) {
+  const runs: [string, unknown][] = [];
+  const storage = new Map(Object.entries(store));
+  const localStorage = { getItem: (key: string) => storage.get(key) ?? null, setItem: (key: string, value: string) => storage.set(key, value) };
+  const make = new Function("run", "localStorage", `return class { constructor() { ${MEMORY} } ${SYNC} }`);
+  const Bar = make((name: string, args: unknown) => runs.push([name, args]), localStorage);
+  return { bar: new Bar(), runs, storage };
+}
+
+describe("command center per space", () => {
+  test("each space reopens the column the way it left it", () => {
+    const { bar, runs } = tabBar();
+    bar.syncCommandCenter({ id: "a" }, { hidden: true });
+    bar.syncCommandCenter({ id: "a" }, { hidden: false });
+    bar.syncCommandCenter({ id: "b" }, { hidden: false });
+    expect(runs).toEqual([["layout.hide", { id: "command-center" }]]);
+    bar.syncCommandCenter({ id: "b" }, { hidden: true });
+    bar.syncCommandCenter({ id: "a" }, { hidden: true });
+    expect(runs.at(-1)).toEqual(["layout.show", { id: "command-center" }]);
+  });
+
+  test("the first render keeps the column as it is and remembers it", () => {
+    const { bar, runs, storage } = tabBar();
+    bar.syncCommandCenter({ id: "a" }, { hidden: false });
+    expect(runs).toEqual([]);
+    expect(JSON.parse(storage.get("command-center") as string)).toEqual({ a: true });
+  });
+
+  test("a restore still landing is not taken as a choice", () => {
+    const { bar, storage } = tabBar({ "command-center": JSON.stringify({ a: true, b: false }) });
+    bar.syncCommandCenter({ id: "a" }, { hidden: false });
+    bar.syncCommandCenter({ id: "b" }, { hidden: false });
+    bar.syncCommandCenter({ id: "b" }, { hidden: false });
+    expect(JSON.parse(storage.get("command-center") as string)).toEqual({ a: true, b: false });
+  });
+
+  test("the choice survives a restart", () => {
+    const { bar, runs } = tabBar({ "command-center": JSON.stringify({ a: true }) });
+    bar.syncCommandCenter({ id: "b" }, { hidden: true });
+    bar.syncCommandCenter({ id: "a" }, { hidden: true });
+    expect(runs).toEqual([["layout.show", { id: "command-center" }]]);
+  });
+
+  test("both tab bars load the memory, define the sync and call it on every render", () => {
+    for (const [generated, tabs] of [
+      [generateDesk(), "vjr-tabs"],
+      [generateSquare(), "vjr-square-tabs"],
+    ] as const) {
+      const text = generated.mods[tabs]?.["main.js"] ?? "";
+      expect(text).toContain(MEMORY);
+      expect(text).toContain("syncCommandCenter(space, cc) {");
+      expect(text).toContain('this.syncCommandCenter(space, find(root, "command-center"));');
+    }
   });
 });
