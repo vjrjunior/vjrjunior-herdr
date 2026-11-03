@@ -410,7 +410,7 @@ describe("column", () => {
     const view = column();
     press(view, "next");
     await flush();
-    expect(sends().map((call) => call.args)).toEqual([["send", "t12", "/vjr-ac"]]);
+    expect(sends().map((call) => call.args)).toEqual([["send", "--if", "idle", "t12", "/vjr-ac"]]);
     expect(texts(view.render())).toContain("Sent to claude · t12");
   });
 
@@ -549,6 +549,83 @@ describe("review fixes in the column", () => {
     focusedCwd = "/w/cup-1234";
     const seen = { ...BASE_LANE, pr: { number: 42, url: "u", state: "OPEN", isDraft: false, reviewDecision: "", statusCheckRollup: [] }, prError: "GitHub unavailable · gh: auth required" };
     expect(texts(column([seen]).render())).toContain("GitHub unavailable · gh: auth required");
+  });
+});
+
+describe("manual checks in the column", () => {
+  const MANUAL = [
+    { id: "D01", url: "http://app.localhost/inbox", steps: "Type a reply, then reload.", expected: "The reply stays.", state: "passed", note: null },
+    { id: "D02", url: "http://app.localhost/inbox", steps: "Watch the label.", expected: "Saving… then Saved.", state: "asking", note: null },
+    { id: "D03", url: null, steps: "Send, then reload.", expected: "No draft.", state: "pending", note: null },
+  ];
+  const AC_LANE = {
+    ...BASE_LANE,
+    task: { ...BASE_LANE.task, manual: MANUAL },
+    skill: { family: "ac", skill: "vjr-ac", waiting: true, active: true },
+    steps: ["done", "run", "todo", "todo", "todo", "todo", "todo"],
+    next: { label: "Go to claude", kind: "focus", terminal: "t12", target: "vjr-ac is waiting on you" },
+  };
+  const task = { notify() {}, sleep: () => new Promise(() => {}) };
+  const enterCx = { notify() {}, spawn: (run: (cx: typeof task) => unknown) => run(task) };
+
+  test("the asking check answers Passed in the task's claude", async () => {
+    focusedCwd = "/w/cup-1234";
+    const view = column([AC_LANE]);
+    const shown = texts(view.render());
+    expect(shown).toContain("Watch the label.");
+    expect(shown).toContain("→ Saving… then Saved.");
+    press(view, "check-pass-D02");
+    await flush();
+    expect(sends().map((call) => call.args)).toEqual([["send", "--if", "idle", "t12", "D02 passed"]]);
+    expect(texts(view.render())).toContain("Sent");
+    expect(pathTo(view.render(), "check-pass-D02")).toBeNull();
+  });
+
+  test("Failed asks what you saw, Enter sends it, an empty note sends nothing", async () => {
+    focusedCwd = "/w/cup-1234";
+    const view = column([AC_LANE]);
+    press(view, "check-fail-D02");
+    expect(pathTo(view.render(), "check-note")).not.toBeNull();
+    view.failInput.set_value("   ");
+    view.failInput.emit("submit", enterCx);
+    await flush();
+    expect(sends()).toEqual([]);
+    view.failInput.set_value("Saved never showed");
+    view.failInput.emit("submit", enterCx);
+    await flush();
+    expect(sends().map((call) => call.args)).toEqual([["send", "--if", "idle", "t12", "D02 failed: Saved never showed"]]);
+    expect(pathTo(view.render(), "check-note")).toBeNull();
+  });
+
+  test("Esc closes the note without sending", () => {
+    focusedCwd = "/w/cup-1234";
+    const view = column([AC_LANE]);
+    press(view, "check-fail-D02");
+    view.noteKey("escape", enterCx);
+    expect(pathTo(view.render(), "check-note")).toBeNull();
+    expect(sends()).toEqual([]);
+  });
+
+  test("only the asked check has buttons, and Open opens its link", () => {
+    focusedCwd = "/w/cup-1234";
+    const view = column([AC_LANE]);
+    expect(pathTo(view.render(), "check-pass-D03")).toBeNull();
+    expect(pathTo(view.render(), "check-pass-D01")).toBeNull();
+    press(view, "check-open-D02");
+    expect(app.execs.find((call) => call.command === "open")?.args).toEqual(["http://app.localhost/inbox"]);
+  });
+
+  test("a working claude shows the checks without buttons and says why", () => {
+    focusedCwd = "/w/cup-1234";
+    const view = column([{ ...AC_LANE, claude: { terminal: "t12", status: "working", count: 1, ambiguous: false } }]);
+    expect(pathTo(view.render(), "check-pass-D02")).toBeNull();
+    expect(texts(view.render())).toContain("claude is working");
+  });
+
+  test("the checks leave once AC is done", () => {
+    focusedCwd = "/w/cup-1234";
+    const view = column([{ ...AC_LANE, skill: null, steps: ["done", "done", "next", "todo", "todo", "todo", "todo"] }]);
+    expect(texts(view.render())).not.toContain("Watch the label.");
   });
 });
 

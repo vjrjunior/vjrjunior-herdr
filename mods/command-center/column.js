@@ -1,6 +1,6 @@
 import { div, image } from "gpui-kit";
-import { TextView, h_flex, v_flex } from "gpui-base";
-import { rollup } from "./logic.js";
+import { Input, TextView, h_flex, v_flex } from "gpui-base";
+import { answerStep, rollup } from "./logic.js";
 
 const STEPS = ["Task", "AC", "Ship", "Evidence", "PR", "Merge", "Clear"];
 const MARK = { done: "✓", run: "●", next: "○", bad: "!", todo: "" };
@@ -125,6 +125,85 @@ function nextCard(view, lane, t) {
         .when(offerTab, (el) => el.child(link("new-tab", "New tab instead", t, () => view.newTab(lane)))),
     )
     .when(Boolean(lane.note), (el) => el.child(div().text_size(11.5).text_color(t.working).child(lane.note)));
+}
+
+function button(id, label, color, t, action) {
+  return h_flex()
+    .id(id)
+    .h(24)
+    .px(9)
+    .items_center()
+    .rounded(6)
+    .border_1()
+    .border_color(color)
+    .text_size(11.5)
+    .text_color(color)
+    .hover((s) => s.bg(t.hover))
+    .on_click((_e, cx) => action(cx))
+    .child(label);
+}
+
+const CHECK_MARK = { passed: "✓", failed: "!", asking: "●", pending: "○" };
+
+function manualCard(view, lane, check, t) {
+  const asking = check.state === "asking";
+  const sent = view.sent?.[`${lane.key}:${check.id}`] === check.state;
+  const failing = view.failing?.lane === lane.key && view.failing?.id === check.id;
+  const refused = asking && !sent ? answerStep(lane, check.id, "passed").refused : null;
+  const color = { passed: t.done, failed: t.blocked, asking: t.working }[check.state] ?? t.unknown;
+  return v_flex()
+    .gap(6)
+    .p(8)
+    .rounded(6)
+    .bg(t.surface)
+    .border_1()
+    .border_color(asking ? t.accent : t.border)
+    .child(
+      h_flex()
+        .items_start()
+        .gap(8)
+        .child(div().flex_none().w(30).text_color(t.unknown).child(check.id))
+        .child(div().flex_1().min_w(0).child(check.steps))
+        .child(div().flex_none().text_size(11).text_color(sent ? t.working : color).child(sent ? "Sent" : `${CHECK_MARK[check.state] ?? "○"} ${check.state}`)),
+    )
+    .child(div().pl(38).text_size(11.5).text_color(t.unknown).child(`→ ${check.expected}`))
+    .when(check.state === "failed" && Boolean(check.note), (el) => el.child(div().pl(38).text_size(11.5).text_color(t.blocked).child(`Saw: ${check.note}`)))
+    .when(Boolean(check.url) || (asking && !sent), (el) =>
+      el.child(
+        h_flex()
+          .pl(38)
+          .gap(6)
+          .items_center()
+          .flex_wrap()
+          .when(Boolean(check.url), (row) => row.child(link(`check-open-${check.id}`, "Open ↗", t, () => view.open(check.url))))
+          .when(asking && !sent && !refused && !failing, (row) =>
+            row
+              .child(button(`check-pass-${check.id}`, "Passed", t.done, t, (cx) => view.answer(lane, check.id, "passed", null, cx)))
+              .child(button(`check-fail-${check.id}`, "Failed…", t.blocked, t, (cx) => view.startFailure(lane, check.id, cx))),
+          )
+          .when(asking && !sent && Boolean(refused), (row) => row.child(div().text_size(11).text_color(t.unknown).child(refused))),
+      ),
+    )
+    .when(failing, (el) =>
+      el.child(
+        v_flex()
+          .id("check-note")
+          .pl(38)
+          .gap(4)
+          .on_key_down((event, cx) => view.noteKey(event.key, cx))
+          .child(Input.new(view.failInput))
+          .child(div().text_size(10.5).text_color(t.dim).child("Enter sends · Esc cancels")),
+      ),
+    );
+}
+
+function manualBlock(view, lane, t) {
+  const checks = lane.task.manual ?? [];
+  if (checks.length === 0 || lane.steps[1] === "done") return null;
+  return v_flex()
+    .gap(6)
+    .child(heading("Manual checks · vjr-ac", t))
+    .children(checks.map((check) => manualCard(view, lane, check, t)));
 }
 
 function doneBlock(lane, t) {
@@ -274,7 +353,7 @@ function releaseBlock(view, lane, t) {
 }
 
 function taskView(view, lane, t) {
-  const blocks = [header(view, lane, t), stepper(lane, t), nextCard(view, lane, t)];
+  const blocks = [header(view, lane, t), stepper(lane, t), nextCard(view, lane, t), manualBlock(view, lane, t)];
   if (lane.pr) blocks.push(prBlock(lane, t), releaseBlock(view, lane, t), doneBlock(lane, t));
   else if (lane.evidence && (lane.evidence.error || !lane.evidence.ready || lane.steps[2] !== "next")) blocks.push(evidenceBlock(lane, t), releaseBlock(view, lane, t), doneBlock(lane, t), gatesBlock(lane, t));
   else blocks.push(doneBlock(lane, t), gatesBlock(lane, t), releaseBlock(view, lane, t));

@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   alertState,
+  answerStep,
   badge,
   captionsFor,
   chipOf,
@@ -19,6 +20,7 @@ import {
   regenerateStep,
   rollup,
   scopeLine,
+  sendArgs,
   skillState,
   stepsOf,
   transitions,
@@ -57,7 +59,7 @@ describe("task file", () => {
   });
 
   test("a task without a Done table or header fields still reads", () => {
-    expect(parseTask("# Fix the thing\n\nfree text")).toEqual({ id: null, title: "Fix the thing", kind: null, url: null, base: "main", branch: null, done: [], verification: null });
+    expect(parseTask("# Fix the thing\n\nfree text")).toEqual({ id: null, title: "Fix the thing", kind: null, url: null, base: "main", branch: null, done: [], manual: [], verification: null });
   });
 
   test("a file without a title is not a task", () => {
@@ -373,5 +375,53 @@ describe("review fixes", () => {
   test("a screenshot name that leaves its folder is dropped", () => {
     const md = "### A\n![a](../../../../.zshrc)\n### B\n![b](sub/x.png)\n### C\n![c](.hidden.png)\n### D\n![d](04-ok_shot.png)";
     expect(parseScreenshots(md).shots.map((shot) => shot.file)).toEqual(["04-ok_shot.png"]);
+  });
+});
+
+describe("manual checks", () => {
+  const manualTask = () => parseTask(fixture("vjr-task-manual.md")) as any;
+  const acRunning = { family: "ac", skill: "vjr-ac", waiting: true, active: true };
+  const withChecks = (over: Record<string, any> = {}) => lane({ task: manualTask(), skill: acRunning, ...over });
+
+  test("the Manual checks table reads each row, its link and its state", () => {
+    expect(manualTask().manual).toEqual([
+      { id: "D01", url: "http://app.localhost/inbox", steps: "Type a reply, then reload the page.", expected: "The reply is still in the box.", state: "passed", note: null },
+      { id: "D02", url: "http://app.localhost/inbox", steps: "Watch the label under the reply box while typing.", expected: "\"Saving…\" shows, then \"Saved\".", state: "asking", note: null },
+      { id: "D03", url: null, steps: "Send a reply, then reload.", expected: "No draft comes back.", state: "pending", note: null },
+      { id: "D04", url: "http://app.localhost/inbox", steps: "Hold Send while it saves.", expected: "Send stays enabled.", state: "failed", note: "Send turned grey for a second" },
+    ]);
+  });
+
+  test("a task without the section has no manual checks", () => {
+    expect(parseTask(fixture("vjr-task-1234.md"))?.manual).toEqual([]);
+  });
+
+  test("the asking check can be answered in the task's claude", () => {
+    expect(answerStep(withChecks(), "D02", "passed")).toEqual({ terminal: "t12", text: "D02 passed" });
+    expect(answerStep(withChecks(), "D02", "failed", "  Saved never showed\nafter | reload ")).toEqual({ terminal: "t12", text: "D02 failed: Saved never showed after / reload" });
+  });
+
+  test("an answer is refused when the check is not asked, the note is empty, or vjr-ac is not running", () => {
+    expect(answerStep(withChecks(), "D03", "passed")).toEqual({ refused: "D03 is not being asked" });
+    expect(answerStep(withChecks(), "D02", "failed", "   ")).toEqual({ refused: "Say what you saw" });
+    expect(answerStep(withChecks({ skill: null }), "D02", "passed")).toEqual({ refused: "vjr-ac is not running here" });
+  });
+
+  test("an answer never goes to a working, blocked, missing or ambiguous claude", () => {
+    const claude = (over: Record<string, unknown>) => withChecks({ claude: { terminal: "t12", status: "idle", count: 1, ambiguous: false, ...over } });
+    expect(answerStep(claude({ status: "working" }), "D02", "passed")).toEqual({ refused: "claude is working" });
+    expect(answerStep(claude({ status: "blocked" }), "D02", "passed")).toEqual({ refused: "claude is waiting on a prompt" });
+    expect(answerStep(claude({ terminal: null, count: 0 }), "D02", "passed")).toEqual({ refused: "no claude in this worktree" });
+    expect(answerStep(claude({ terminal: null, count: 2, ambiguous: true }), "D02", "passed")).toEqual({ refused: "More than one claude here" });
+  });
+
+  test("an idle claude only gets the text if it is still idle when it lands", () => {
+    expect(sendArgs({ terminal: "t12", status: "idle" }, "D02 passed")).toEqual(["send", "--if", "idle", "t12", "D02 passed"]);
+    expect(sendArgs({ terminal: "t12", status: "done" }, "D02 passed")).toEqual(["send", "t12", "D02 passed"]);
+  });
+
+  test("a running AC with manual checks counts the passed ones", () => {
+    const l = withChecks();
+    expect(chipOf(l, stepsOf(l))).toEqual({ chip: "AC 1/4", tone: "work" });
   });
 });

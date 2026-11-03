@@ -1,4 +1,5 @@
 import { View, div } from "gpui-kit";
+import { InputState } from "gpui-base";
 import * as fs from "fs/promises";
 import { columnView, shotView } from "./column.js";
 import {
@@ -23,6 +24,7 @@ import {
 } from "herdr";
 import {
   alertState,
+  answerStep,
   badge,
   captionsFor,
   chipOf,
@@ -34,6 +36,7 @@ import {
   parseWorktrees,
   pickClaude,
   regenerateStep,
+  sendArgs,
   skillState,
   stepsOf,
   transitions,
@@ -95,6 +98,10 @@ export default class CommandCenter extends View {
     this.lastLane = null;
     this.pinnedCwd = undefined;
     this.flashText = null;
+    this.failing = null;
+    this.sent = {};
+    this.failInput = InputState.new({ placeholder: "What did you see?" });
+    this.failInput.on("submit", (_e, cx) => this.submitFailure(cx));
   }
 
   startShot(own, cx) {
@@ -158,20 +165,53 @@ export default class CommandCenter extends View {
     else run("space.new", { folder, argv: ["claude"], task: text, machine: "" });
   }
 
-  send(terminal, text, cx) {
+  send(claude, text, cx) {
     this.later(cx, async (cx) => {
       let sent = false;
       try {
-        sent = (await exec("hc", ["send", terminal, text]))?.code === 0;
+        sent = (await exec("hc", sendArgs(claude, text)))?.code === 0;
       } catch {}
-      await this.flash(sent ? `Sent to claude · ${terminal}` : `Could not reach claude · ${terminal}`, cx);
+      await this.flash(sent ? `Sent to claude · ${claude.terminal}` : `Not sent: claude · ${claude.terminal} is busy`, cx);
     });
+  }
+
+  answer(lane, id, verdict, note, cx) {
+    const step = answerStep(lane, id, verdict, note);
+    if (step.refused) {
+      this.later(cx, (cx) => this.flash(step.refused, cx));
+      return false;
+    }
+    this.sent[`${lane.key}:${id}`] = lane.task.manual.find((check) => check.id === id)?.state ?? null;
+    this.send(lane.claude, step.text, cx);
+    return true;
+  }
+
+  startFailure(lane, id, cx) {
+    this.failing = { lane: lane.key, id };
+    this.failInput.set_value("");
+    this.failInput.focus();
+    cx?.notify?.();
+  }
+
+  submitFailure(cx) {
+    const lane = this.stateLanes().find((item) => item.key === this.failing?.lane);
+    if (lane && this.answer(lane, this.failing.id, "failed", this.failInput.value(), cx)) {
+      this.failing = null;
+      this.failInput.set_value("");
+    }
+    cx?.notify?.();
+  }
+
+  noteKey(name, cx) {
+    if (name !== "escape") return;
+    this.failing = null;
+    cx?.notify?.();
   }
 
   act(lane, cx) {
     const next = lane.next;
     if (!next || next.disabled) return;
-    if (next.kind === "send") this.send(next.terminal, next.text, cx);
+    if (next.kind === "send") this.send({ terminal: next.terminal, status: lane.claude?.status ?? null }, next.text, cx);
     else if (next.kind === "focus") run("pane.focus", { terminal: next.terminal });
     else if (next.kind === "tab" || next.kind === "space") this.newClaude(next.kind === "tab" ? next.space : null, next.folder, next.text);
     else if (next.kind === "open") this.open(next.url);

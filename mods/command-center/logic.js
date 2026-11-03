@@ -65,6 +65,21 @@ export function parseTask(text) {
     const row = ROW.exec(line);
     if (row) done.push({ id: row[1], item: cells(row[2])[0] ?? "" });
   }
+  const manual = [];
+  for (const line of parts.find((section) => section.heading.trim() === "## Manual checks")?.lines ?? []) {
+    const row = ROW.exec(line);
+    if (!row) continue;
+    const [url = "", steps = "", expected = "", state = ""] = cells(row[2]);
+    const failed = /^failed:\s*(.*)$/i.exec(state);
+    manual.push({
+      id: row[1],
+      url: /^https?:\/\//.test(url) ? url : null,
+      steps,
+      expected,
+      state: failed ? "failed" : state.toLowerCase(),
+      note: failed ? failed[1].trim() : null,
+    });
+  }
   const verifications = parts.filter((section) => VERIFICATION.test(section.heading));
   return {
     id: title[1] ?? null,
@@ -74,6 +89,7 @@ export function parseTask(text) {
     base: fields.base || "main",
     branch: fields.branch || null,
     done,
+    manual,
     verification: verifications.length ? parseVerification(verifications.at(-1)) : null,
   };
 }
@@ -249,7 +265,8 @@ export function chipOf(lane, steps) {
   const first = steps.findIndex((step) => step !== "done");
   const state = steps[first];
   if (first === 1) {
-    if (state === "run") return { chip: "AC", tone: "work" };
+    const manual = lane.task?.manual ?? [];
+    if (state === "run") return { chip: manual.length ? `AC ${manual.filter((check) => check.state === "passed").length}/${manual.length}` : "AC", tone: "work" };
     if (state === "bad") return { chip: "AC stale", tone: "bad" };
     return { chip: "Task", tone: "idle" };
   }
@@ -316,6 +333,25 @@ export function nextStep(lane) {
   if (pr && steps[5] === "next") return { label: `Open PR #${pr.number} to merge`, kind: "open", url: pr.url, target: "you merge on GitHub" };
   if (pr) return { label: `Open PR #${pr.number}`, kind: "open", url: pr.url, target: "github.com" };
   return { label: "Waiting for the PR", kind: "wait", disabled: true, target: "nothing to run yet" };
+}
+
+export function sendArgs(claude, text) {
+  return claude.status === "idle" ? ["send", "--if", "idle", claude.terminal, text] : ["send", claude.terminal, text];
+}
+
+export function answerStep(lane, id, verdict, note) {
+  if (lane.skill?.family !== "ac" || !lane.skill.active) return { refused: "vjr-ac is not running here" };
+  const claude = lane.claude ?? {};
+  if (claude.ambiguous) return { refused: "More than one claude here" };
+  if (!claude.terminal) return { refused: "no claude in this worktree" };
+  if (claude.status === "working") return { refused: "claude is working" };
+  if (claude.status === "blocked") return { refused: "claude is waiting on a prompt" };
+  const check = (lane.task?.manual ?? []).find((item) => item.id === id);
+  if (check?.state !== "asking") return { refused: `${id} is not being asked` };
+  if (verdict === "passed") return { terminal: claude.terminal, text: `${id} passed` };
+  const line = String(note ?? "").replace(/\s+/g, " ").replaceAll("|", "/").trim();
+  if (!line) return { refused: "Say what you saw" };
+  return { terminal: claude.terminal, text: `${id} failed: ${line}` };
 }
 
 export function regenerateStep(lane) {

@@ -63,7 +63,37 @@ export const herdr: Record<string, (...args: never[]) => unknown> = {};
 const HERDR = ["exec", "notify", "props", "updates", "spaces", "panes", "run", "openOverlay", "theme", "shared", "setShared", "watchFolder", "window", "nextCommand", "layout", "agents", "readTextFile", "home", "terminals", "focused", "appHome", "closeOverlay"];
 
 mock.module("gpui-kit", () => ({ View: class {}, div: make, svg: () => make(), image: () => make() }));
-mock.module("gpui-base", () => ({ v_flex: make, h_flex: make, TextView: { markdown: (_id: string, text: string) => make().child(text), html: (_id: string, text: string) => make().child(text) } }));
+export class FakeInput {
+  text: string;
+  placeholder?: string;
+  handlers: Record<string, Handler> = {};
+  constructor(options?: { placeholder?: string; value?: string }) {
+    this.placeholder = options?.placeholder;
+    this.text = options?.value ?? "";
+  }
+  value() {
+    return this.text;
+  }
+  set_value(next: string) {
+    this.text = next;
+  }
+  on(event: string, handler: Handler) {
+    this.handlers[event] = handler;
+    return true;
+  }
+  focus() {}
+  emit(event: string, cx: unknown) {
+    this.handlers[event]?.({}, cx);
+  }
+}
+
+mock.module("gpui-base", () => ({
+  v_flex: make,
+  h_flex: make,
+  TextView: { markdown: (_id: string, text: string) => make().child(text), html: (_id: string, text: string) => make().child(text) },
+  InputState: { new: (options?: { placeholder?: string; value?: string }) => new FakeInput(options) },
+  Input: { new: () => make() },
+}));
 mock.module("herdr", () => Object.fromEntries(HERDR.map((name) => [name, (...args: never[]) => herdr[name]?.(...args)])));
 mock.module("fs/promises", () => ({
   readFile: async (path: string, encoding?: unknown) => (encoding ? readFileSync(path, "utf8") : new Uint8Array(readFileSync(path))),
