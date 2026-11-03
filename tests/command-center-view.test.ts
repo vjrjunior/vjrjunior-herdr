@@ -296,7 +296,7 @@ describe("watcher", () => {
     expect(state().lanes[0]).toMatchObject({ space: "sp-1234", mainSpace: "sp-main" });
   });
 
-  test("show focuses the last alerted task and opens the column", async () => {
+  test("show goes to the last alerted task and opens the column", async () => {
     const view = watcher();
     let now = 1_000_000;
     view.clock = () => now;
@@ -307,11 +307,95 @@ describe("watcher", () => {
     await view.read(cx);
     expect(app.notes[0].title).toBe("PR #42 needs attention");
     await view.command("show");
-    expect(app.shared["command-center.focus"]).toBe(lane);
+    expect(app.runs).toContainEqual(["space.select", { id: "sp-1234" }]);
     expect(app.runs).toContainEqual(["layout.show", { id: "command-center" }]);
   });
 });
 
+
+describe("watcher per checkout", () => {
+  const SESSION = "sess-1234";
+  const taskWithSession = (dir: string) =>
+    writeFileSync(join(dir, "VJR-TASK.md"), readFileSync(join(FIXTURES, "vjr-task-1234.md"), "utf8").replace("**Worktree:**", `**Session:** ${SESSION}\n**Worktree:**`));
+  const sessionRecord = (over: Record<string, unknown> = {}) =>
+    writeFileSync(
+      join(root, "home", ".pp-stack", "session", `skill-${SESSION}.json`),
+      JSON.stringify({ session_id: SESSION, skill: "vjr-ac", tty: "ttys003", cwd: main, started_at: new Date().toISOString(), ended_at: new Date().toISOString(), ...over }),
+    );
+  const mainClaude = () => {
+    agentsNow = [{ address: "t3", app: "claude-code", status: "idle", foreground: { pid: 503, cwd: main, argv: ["claude"] } }];
+    ttyOf = { "503": "ttys003" };
+  };
+
+  test("every repo in a space is published with its checkouts", async () => {
+    const view = watcher();
+    await view.read(cx);
+    expect((app.shared["command-center.state"] as any).repos).toEqual([{ name: "app", main, trees: [main, lane, other] }]);
+  });
+
+  test("a repo switched off is not read and alerts nothing", async () => {
+    app.shared["command-center.profiles"] = { [main]: "off" };
+    const view = watcher();
+    await view.read(cx);
+    expect(state().lanes).toEqual([]);
+    expect(ghCalls()).toBe(0);
+    expect(app.shared["command-center.lanes"]).toEqual({});
+    expect(app.shared["command-center.badge"]).toEqual({ count: 0, level: null });
+  });
+
+  test("the task's session counts for it even when it runs in the main checkout", async () => {
+    taskWithSession(lane);
+    mainClaude();
+    sessionRecord();
+    const view = watcher();
+    await view.read(cx);
+    const published = state().lanes[0];
+    expect(published.session).toEqual({ terminal: "t3", status: "idle", count: 1, ambiguous: false });
+    expect(published.skill).toMatchObject({ family: "ac", skill: "vjr-ac", active: true, from: "session" });
+    expect(published.claude.terminal).toBeNull();
+    expect(published.next).toMatchObject({ kind: "focus", terminal: "t3" });
+  });
+
+  test("an old session record still finds the session's claude", async () => {
+    taskWithSession(lane);
+    mainClaude();
+    sessionRecord({ skill: "vjr-task", started_at: "2026-10-01T10:00:00Z", ended_at: "2026-10-01T10:05:00Z" });
+    const view = watcher();
+    await view.read(cx);
+    expect(state().lanes[0].session).toMatchObject({ terminal: "t3" });
+    expect(state().lanes[0].skill).toBeNull();
+    expect(state().lanes[0].next).toMatchObject({ kind: "send", terminal: "t3", text: "/vjr-ac" });
+  });
+
+  test("a session two tasks claim counts for neither", async () => {
+    taskWithSession(lane);
+    taskWithSession(other);
+    mainClaude();
+    sessionRecord();
+    const view = watcher();
+    await view.read(cx);
+    for (const published of state().lanes) {
+      expect(published.skill).toBeNull();
+      expect(published.session).toBeNull();
+      expect(published.sessionShared).toBe(true);
+    }
+  });
+
+  test("show selects the alerted task's space before opening the column", async () => {
+    const view = watcher();
+    let now = 1_000_000;
+    view.clock = () => now;
+    ghReturns(ghPr({ statusCheckRollup: [{ __typename: "CheckRun", name: "test", status: "IN_PROGRESS", conclusion: null }] }));
+    await view.read(cx);
+    ghReturns(ghPr({ statusCheckRollup: [{ __typename: "CheckRun", name: "test", status: "COMPLETED", conclusion: "FAILURE" }] }));
+    now += 61_000;
+    await view.read(cx);
+    await view.command("show", cx);
+    const names = app.runs.map(([name]) => name);
+    expect(app.runs).toContainEqual(["space.select", { id: "sp-1234" }]);
+    expect(names.indexOf("space.select")).toBeLessThan(names.indexOf("layout.show"));
+  });
+});
 
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 

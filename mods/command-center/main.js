@@ -35,8 +35,10 @@ import {
   parseTask,
   parseWorktrees,
   pickClaude,
+  profileOf,
   regenerateStep,
   sendArgs,
+  skillRecord,
   skillState,
   stepsOf,
   transitions,
@@ -279,6 +281,9 @@ export default class CommandCenter extends View {
     this.cache = {};
     this.claudes = {};
     this.records = [];
+    this.ttys = {};
+    this.repos = [];
+    this.sharedSessions = new Set();
     this.skillsAt = 0;
     this.skillsDirty = true;
     this.discoveredAt = 0;
@@ -353,12 +358,14 @@ export default class CommandCenter extends View {
       }
     }
     const found = [];
+    const repos = [];
     for (const common of commons.keys()) {
       const result = await this.run("git", ["worktree", "list", "--porcelain"], common);
       if (result?.code !== 0) continue;
       const list = parseWorktrees(result.stdout);
       const main = list[0];
       if (!main) continue;
+      repos.push({ name: basename(main.path), main: main.path, trees: list.map((tree) => tree.path) });
       for (const tree of list.slice(1)) {
         if ((await readTextFile(`${tree.path}/VJR-TASK.md`)) == null) continue;
         found.push({ key: tree.path, path: tree.path, branch: tree.branch, repo: { name: basename(main.path), main: main.path } });
@@ -367,6 +374,7 @@ export default class CommandCenter extends View {
     const keep = new Set(found.map((lane) => lane.key));
     for (const key of Object.keys(this.cache)) if (!keep.has(key)) delete this.cache[key];
     this.lanes = found;
+    this.repos = repos;
   }
 
   async sweep() {
@@ -391,17 +399,20 @@ export default class CommandCenter extends View {
     this.skillsAt = now;
     const folder = `${home()}/.pp-stack/session`;
     const records = [];
+    const ttys = {};
     try {
       for (const name of await fs.readdir(folder)) {
         if (!/^skill-.+\.json$/.test(name)) continue;
         try {
           const record = JSON.parse((await readTextFile(`${folder}/${name}`)) ?? "");
           const started = Date.parse(record.started_at ?? "");
+          if (record?.session_id && record.tty) ttys[record.session_id] = record.tty;
           if (record?.skill && record.cwd && Number.isFinite(started) && now - started < SKILL_AGE) records.push(record);
         } catch {}
       }
     } catch {}
     this.records = records;
+    this.ttys = ttys;
   }
 
   async readClaudes() {
@@ -553,12 +564,13 @@ export default class CommandCenter extends View {
     };
   }
 
-  async readLane(lane, places) {
+  async readLane(lane, places, headMoved) {
     const cache = (this.cache[lane.key] ??= {});
     const now = this.clock();
-    const headMoved = await this.readTask(lane, cache, now);
     const base = cache.pr?.baseRefName || cache.task?.base || "main";
-    const record = this.records.filter((item) => inside(item.cwd, lane.path)).sort((a, b) => Date.parse(b.started_at) - Date.parse(a.started_at))[0] ?? null;
+    const found = skillRecord(this.records, { path: lane.path, task: cache.task }, this.sharedSessions);
+    const record = found?.record ?? null;
+    const treeRecord = skillRecord(this.records, { path: lane.path, task: null })?.record ?? null;
     const shipping = Boolean(record && ["ship"].includes(skillState(record, laneSignals(lane, cache))?.family));
     if (headMoved || !cache.evidence || (shipping && now - (cache.evidenceAt ?? 0) >= EVIDENCE_ACTIVE) || (cache.wasShipping && !shipping)) {
       await this.readEvidence(lane, cache, base, now, cache.wasShipping && !shipping);
@@ -575,9 +587,15 @@ export default class CommandCenter extends View {
       if (!cache.mainSpace && list.some((path) => inside(path, lane.repo.main) && !inside(path, lane.path))) cache.mainSpace = id;
     }
     const signals = laneSignals(lane, cache);
-    signals.skill = skillState(record, signals);
+    const state = skillState(record, signals);
+    signals.skill = state ? { ...state, from: found.from } : null;
     const here = Object.values(this.claudes).filter((claude) => inside(claude.cwd, lane.path));
-    signals.claude = pickClaude(here, record);
+    signals.claude = pickClaude(here, treeRecord);
+    const session = cache.task?.session ?? null;
+    signals.sessionShared = Boolean(session && this.sharedSessions.has(session));
+    const tty = session && !signals.sessionShared ? this.ttys[session] : null;
+    const mine = tty ? Object.values(this.claudes).find((claude) => claude.tty === tty) : null;
+    signals.session = mine ? { terminal: mine.terminal, status: mine.status, count: 1, ambiguous: false } : null;
     return signals;
   }
 
@@ -590,8 +608,18 @@ export default class CommandCenter extends View {
       await this.readSkills();
       await this.readClaudes();
       const places = this.spacePlaces();
+      const profiles = shared("command-center.profiles");
+      const lanes = this.lanes.filter((lane) => profileOf(profiles, lane.repo.main) !== "off");
+      const moved = {};
+      for (const lane of lanes) moved[lane.key] = await this.readTask(lane, (this.cache[lane.key] ??= {}), this.clock());
+      const claims = {};
+      for (const lane of lanes) {
+        const session = this.cache[lane.key]?.task?.session;
+        if (session) claims[session] = (claims[session] ?? 0) + 1;
+      }
+      this.sharedSessions = new Set(Object.keys(claims).filter((session) => claims[session] > 1));
       const signals = [];
-      for (const lane of this.lanes) signals.push(await this.readLane(lane, places));
+      for (const lane of lanes) signals.push(await this.readLane(lane, places, moved[lane.key]));
       this.publish(signals);
       await this.sweep();
     } finally {
@@ -622,14 +650,18 @@ export default class CommandCenter extends View {
       notify({ title: alert.title, body: alert.body, level: alert.level, timeout: 8000, action: { name: `${SELF.name}.show` } });
     }
     this.before = after;
-    this.share("command-center.state", { lanes });
+    this.share("command-center.state", { lanes, repos: this.repos });
     this.share("command-center.badge", badge(signals));
     this.share("command-center.lanes", Object.fromEntries(lanes.map((lane) => [lane.key, lane.chip])));
   }
 
-  async command(name) {
+  async command(name, cx) {
     if (name !== "show") return;
-    if (this.lastAlerted) setShared("command-center.focus", this.lastAlerted);
+    const space = this.lastAlerted ? this.cache[this.lastAlerted]?.space : null;
+    if (space) {
+      run("space.select", { id: space });
+      await cx?.sleep?.(300);
+    }
     run("layout.show", { id: "command-center" });
   }
 
