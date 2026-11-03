@@ -15,15 +15,21 @@ import {
   parseTask,
   parseWorktrees,
   pickClaude,
+  profileOf,
+  PROFILES,
   prStep,
   pushLine,
   regenerateStep,
   rollup,
   scopeLine,
   sendArgs,
+  laneSummary,
+  skillRecord,
   skillState,
+  stepNotes,
   stepsOf,
   transitions,
+  viewFor,
 } from "../mods/command-center/logic.js";
 
 const fixture = (name: string) => readFileSync(join(import.meta.dir, "fixtures/command-center", name), "utf8");
@@ -59,7 +65,7 @@ describe("task file", () => {
   });
 
   test("a task without a Done table or header fields still reads", () => {
-    expect(parseTask("# Fix the thing\n\nfree text")).toEqual({ id: null, title: "Fix the thing", kind: null, url: null, base: "main", branch: null, done: [], manual: [], verification: null });
+    expect(parseTask("# Fix the thing\n\nfree text")).toEqual({ id: null, title: "Fix the thing", kind: null, url: null, base: "main", branch: null, session: null, done: [], manual: [], verification: null });
   });
 
   test("a file without a title is not a task", () => {
@@ -181,9 +187,9 @@ describe("next step", () => {
     expect(nextStep(lane({ space: null, claude: { terminal: null, status: null, count: 0, ambiguous: false } }))).toMatchObject({ kind: "space", folder: "/w/cup-1234", text: "/vjr-ac" });
   });
 
-  test("a verified task on main ships with its base and scope", () => {
+  test("a verified task on main ships with its base and scope in a new tab of the worktree", () => {
     const step = nextStep(lane({ verified: "58197b4" }));
-    expect(step).toMatchObject({ label: "Run /pp-ship", kind: "send", text: scopeLine(task()) });
+    expect(step).toMatchObject({ label: "Run /pp-ship in a new tab", kind: "tab", space: "sp-1234", folder: "/w/cup-1234", name: "ship · CUP-1234", text: scopeLine(task()) });
     expect(step.text.startsWith("/pp-ship --base main Scope: CUP-1234's done items D01–D04 only. Step 8: no plan file")).toBe(true);
     expect(step.text).not.toContain("\n");
   });
@@ -423,5 +429,167 @@ describe("manual checks", () => {
   test("a running AC with manual checks counts the passed ones", () => {
     const l = withChecks();
     expect(chipOf(l, stepsOf(l))).toEqual({ chip: "AC 1/4", tone: "work" });
+  });
+});
+
+describe("the task's session", () => {
+  const SESSION = "36e3d7b8-84b8-4835-b4d8-bdf862298d31";
+  const withSession = (text: string, line: string) => text.replace("**Worktree:**", `${line}\n**Worktree:**`);
+  const sessionClaude = { terminal: "t30", status: "idle", count: 1, ambiguous: false };
+  const record = (over: Record<string, unknown>) => ({ session_id: SESSION, skill: "vjr-task", tty: "ttys030", cwd: "/r/app", started_at: "2026-11-03T10:00:00Z", ended_at: "2026-11-03T10:05:00Z", ...over });
+
+  test("vjr-task's Session line names the session", () => {
+    expect(parseTask(withSession(fixture("vjr-task-1234.md"), `**Session:** ${SESSION}`))?.session).toBe(SESSION);
+    expect(parseTask(withSession(fixture("vjr-task-1234.md"), "**Session:** ${CLAUDE_SESSION_ID}"))?.session).toBeNull();
+    expect(parseTask(fixture("vjr-task-1234.md"))?.session).toBeNull();
+  });
+
+  test("the session's record counts for its task wherever the session runs", () => {
+    const l = lane({ task: task({ session: SESSION }) });
+    const records = [record({ skill: "vjr-ac", started_at: "2026-11-03T11:00:00Z" }), record({ session_id: "other", skill: "review", cwd: "/r/app" })];
+    expect(skillRecord(records, l)).toEqual({ record: records[0], from: "session" });
+  });
+
+  test("the newest record wins between the session and the worktree", () => {
+    const l = lane({ task: task({ session: SESSION }) });
+    const tree = record({ session_id: "ship", skill: "pp-ship", tty: "ttys031", cwd: "/w/cup-1234", started_at: "2026-11-03T12:00:00Z" });
+    expect(skillRecord([record({ skill: "vjr-ac" }), tree], l)).toEqual({ record: tree, from: "worktree" });
+    expect(skillRecord([tree], lane())).toEqual({ record: tree, from: "worktree" });
+    expect(skillRecord([record({})], lane())).toBeNull();
+  });
+
+  test("a session shared by two tasks counts for neither", () => {
+    const l = lane({ task: task({ session: SESSION }) });
+    expect(skillRecord([record({ skill: "vjr-ac" })], l, new Set([SESSION]))).toBeNull();
+  });
+
+  test("vjr-ac goes to the task's session", () => {
+    expect(nextStep(lane({ session: sessionClaude }))).toMatchObject({ label: "Run /vjr-ac", kind: "send", terminal: "t30", text: "/vjr-ac", target: "the task's claude · t30" });
+  });
+
+  test("vjr-ac falls back to the worktree's claude, then a new tab", () => {
+    expect(nextStep(lane({ session: null }))).toMatchObject({ kind: "send", terminal: "t12", target: "claude · t12 in this worktree" });
+    expect(nextStep(lane({ session: null, claude: { terminal: null, status: null, count: 0, ambiguous: false } }))).toMatchObject({ kind: "tab", label: "Run /vjr-ac in a new tab" });
+  });
+
+  test("a working session waits instead of falling back", () => {
+    expect(nextStep(lane({ session: { ...sessionClaude, status: "working" } }))).toMatchObject({ disabled: true, target: "claude is working" });
+  });
+
+  test("pp-ship opens a new tab even next to an idle claude", () => {
+    const step = nextStep(lane({ verified: "58197b4", session: sessionClaude }));
+    expect(step).toMatchObject({ kind: "tab", space: "sp-1234", folder: "/w/cup-1234", name: "ship · CUP-1234" });
+    expect(step.terminal).toBeUndefined();
+    expect(nextStep(lane({ verified: "58197b4", space: null }))).toMatchObject({ kind: "space", label: "Run /pp-ship in a new space", folder: "/w/cup-1234" });
+  });
+
+  test("the push for a stacked task never goes to the session in the main checkout", () => {
+    expect(nextStep(lane({ base: "feat/parent", verified: "58197b4", session: sessionClaude }))).toMatchObject({ label: "Push and open draft PR", kind: "send", terminal: "t12" });
+    expect(nextStep(lane({ base: "feat/parent", verified: "58197b4", session: sessionClaude, claude: { terminal: null, status: null, count: 0, ambiguous: false } }))).toMatchObject({ kind: "tab" });
+  });
+
+  test("a vjr-ac waiting in the session sends you to the session", () => {
+    const step = nextStep(lane({ session: sessionClaude, skill: { family: "ac", skill: "vjr-ac", waiting: true, active: true, from: "session" } }));
+    expect(step).toMatchObject({ label: "Go to claude", kind: "focus", terminal: "t30" });
+  });
+
+  test("a blocked session sends you to it", () => {
+    expect(nextStep(lane({ session: { ...sessionClaude, status: "blocked" } }))).toMatchObject({ kind: "focus", terminal: "t30" });
+  });
+
+  test("manual checks asked in the session are answered there", () => {
+    const l = lane({ task: parseTask(fixture("vjr-task-manual.md")), session: sessionClaude, claude: { terminal: null, status: null, count: 0, ambiguous: false }, skill: { family: "ac", skill: "vjr-ac", waiting: true, active: true, from: "session" } });
+    expect(answerStep(l, "D02", "passed")).toEqual({ terminal: "t30", text: "D02 passed" });
+  });
+});
+
+describe("profiles", () => {
+  test("every repo follows Partner Programmer until it is switched off", () => {
+    expect(PROFILES.pp.label).toBe("Partner Programmer");
+    expect(profileOf({}, "/r/app")).toBe("pp");
+    expect(profileOf(null, "/r/app")).toBe("pp");
+    expect(profileOf({ "/r/app": "off" }, "/r/app")).toBe("off");
+    expect(profileOf({ "/r/app": "nonsense" }, "/r/app")).toBe("pp");
+  });
+});
+
+describe("one view per checkout", () => {
+  const repos = [{ name: "app", main: "/r/app", trees: ["/r/app", "/w/cup-1234", "/w/bare"] }, { name: "site", main: "/r/site", trees: ["/r/site"] }];
+  const one = lane();
+  const state = { lanes: [one], repos };
+
+  test("a worktree with a task shows its task", () => {
+    expect(viewFor("/w/cup-1234/src", state, {})).toEqual({ kind: "task", lane: one, repo: repos[0] });
+  });
+
+  test("the main checkout shows the repo and its tasks", () => {
+    expect(viewFor("/r/app", state, {})).toEqual({ kind: "repo", repo: repos[0], lanes: [one] });
+    expect(viewFor("/r/site/docs", state, {})).toEqual({ kind: "repo", repo: repos[1], lanes: [] });
+  });
+
+  test("a worktree without a task says so", () => {
+    expect(viewFor("/w/bare", state, {})).toEqual({ kind: "bare", repo: repos[0] });
+  });
+
+  test("a repo switched off shows nothing but the switch", () => {
+    expect(viewFor("/w/cup-1234", state, { "/r/app": "off" })).toEqual({ kind: "off", repo: repos[0] });
+    expect(viewFor("/r/app", state, { "/r/app": "off" })).toEqual({ kind: "off", repo: repos[0] });
+  });
+
+  test("outside every repo there is nothing to show", () => {
+    expect(viewFor("/Users/me", state, {})).toEqual({ kind: "none" });
+    expect(viewFor(null, state, {})).toEqual({ kind: "none" });
+  });
+
+  test("a worktree nested in the main checkout is still its own task", () => {
+    const nested = lane({ key: "/r/app/.worktrees/x", path: "/r/app/.worktrees/x" });
+    expect(viewFor("/r/app/.worktrees/x", { lanes: [nested], repos: [{ name: "app", main: "/r/app", trees: ["/r/app", "/r/app/.worktrees/x"] }] }, {}).kind).toBe("task");
+  });
+});
+
+describe("step notes", () => {
+  test("each step says what happened or what comes next", () => {
+    const planned = lane();
+    expect(stepNotes(planned, stepsOf(planned))).toEqual(["4 done items", "next: /vjr-ac", "/pp-ship in a new tab", "4 receipts", "no PR yet", "you merge on GitHub", "/pp-clear from main"]);
+  });
+
+  test("a running AC counts its checks and a verified one shows its sha", () => {
+    const asking = lane({ task: parseTask(fixture("vjr-task-manual.md")), skill: { family: "ac", skill: "vjr-ac", waiting: true, active: true } });
+    expect(stepNotes(asking, stepsOf(asking))[1]).toBe("1 of 4 checks");
+    const verified = lane({ verified: "58197b4" });
+    expect(stepNotes(verified, stepsOf(verified))[1]).toBe("verified · 58197b4");
+  });
+
+  test("an open PR shows its number and checks, a merged one says so", () => {
+    const open = lane({ evidence: current(), pr: pr({ number: 482, isDraft: true, statusCheckRollup: [check("lint", "SUCCESS"), check("e2e", null, "IN_PROGRESS")] }) });
+    expect(stepNotes(open, stepsOf(open)).slice(2, 5)).toEqual(["shipped", "4 of 4 current", "#482 · 1/2 checks · draft"]);
+    const done = lane({ evidence: current(), pr: pr({ number: 482, state: "MERGED" }) });
+    expect(stepNotes(done, stepsOf(done)).slice(4)).toEqual(["#482 merged", "merged", "/pp-clear from main"]);
+  });
+
+  test("a GitHub error shows on the PR step", () => {
+    const l = lane({ pr: { error: "gh: not logged in" } });
+    expect(stepNotes(l, stepsOf(l))[4]).toBe("GitHub unavailable");
+  });
+});
+
+describe("repo rows", () => {
+  test("a task waiting on you is red and says why", () => {
+    const l = lane({ task: parseTask(fixture("vjr-task-manual.md")), skill: { family: "ac", skill: "vjr-ac", waiting: true, active: true } });
+    expect(laneSummary(l)).toMatchObject({ stage: 1, tone: "blocked", why: "vjr-ac asks D02", action: "Go to task" });
+  });
+
+  test("a running PR is working, a ready one offers the PR, a merged one the cleanup", () => {
+    expect(laneSummary(lane({ evidence: current(), pr: pr({ statusCheckRollup: [check("e2e", null, "IN_PROGRESS")] }) }))).toMatchObject({ stage: 4, tone: "working", action: null });
+    expect(laneSummary(lane({ evidence: current(), pr: pr({ reviewDecision: "APPROVED", statusCheckRollup: [check("e2e", "SUCCESS")] }) }))).toMatchObject({ stage: 5, tone: "done", action: "Open PR" });
+    expect(laneSummary(lane({ evidence: current(), pr: pr({ state: "MERGED" }) }))).toMatchObject({ stage: 6, tone: "done", why: "merged · clean up", action: "Run /pp-clear" });
+  });
+
+  test("a failed PR is red", () => {
+    expect(laneSummary(lane({ evidence: current(), pr: pr({ statusCheckRollup: [check("e2e", "FAILURE")] }) }))).toMatchObject({ stage: 4, tone: "blocked", why: "e2e failed" });
+  });
+
+  test("a task with nothing to do yet is idle and shows its next step", () => {
+    expect(laneSummary(lane())).toMatchObject({ stage: 1, tone: "idle", why: "next: /vjr-ac", action: null });
   });
 });

@@ -4,6 +4,11 @@ const URL = /^https?:\/\/\S+$/;
 const ROW = /^\|\s*(D\d+)\s*\|(.*)\|\s*$/;
 const VERIFICATION = /^## Verification — (\S+)\s*$/;
 const SLACK_LINK = /<([^|>]+)\|([^>]+)>/g;
+const SESSION_ID = /^[A-Za-z0-9_-]+$/;
+
+export const PROFILES = { pp: { label: "Partner Programmer" } };
+
+const inside = (path, root) => Boolean(path && root) && (path === root || path.startsWith(`${root}/`));
 
 function sections(lines) {
   const found = [];
@@ -88,6 +93,7 @@ export function parseTask(text) {
     url,
     base: fields.base || "main",
     branch: fields.branch || null,
+    session: SESSION_ID.test(fields.session ?? "") ? fields.session : null,
     done,
     manual,
     verification: verifications.length ? parseVerification(verifications.at(-1)) : null,
@@ -298,30 +304,43 @@ export function pushLine(task) {
   return `!git push -u origin HEAD && gh pr create --draft --base ${shellWord(task.base || "main")} --title '${String(title).replaceAll("'", "'\\''")}' --body ''`;
 }
 
-function sendTo(lane, label, text) {
-  const claude = lane.claude ?? { terminal: null, status: null, count: 0, ambiguous: false };
+const NO_CLAUDE = { terminal: null, status: null, count: 0, ambiguous: false };
+
+function skillClaude(lane) {
+  return (lane.skill?.from === "session" ? lane.session : lane.claude) ?? NO_CLAUDE;
+}
+
+function sendTo(lane, label, text, session = false) {
+  const own = session && lane.session?.terminal ? lane.session : null;
+  const claude = own ?? lane.claude ?? NO_CLAUDE;
   const fallback = { text, space: lane.space ?? null, folder: lane.path };
   if (claude.ambiguous) return { label, kind: "wait", disabled: true, target: "More than one claude here", ...fallback };
   if (claude.terminal && claude.status === "working") return { label, kind: "wait", disabled: true, target: "claude is working", ...fallback };
-  if (claude.terminal) return { label, kind: "send", terminal: claude.terminal, target: `claude · ${claude.terminal} in this worktree`, ...fallback };
+  if (claude.terminal) return { label, kind: "send", terminal: claude.terminal, target: own ? `the task's claude · ${claude.terminal}` : `claude · ${claude.terminal} in this worktree`, ...fallback };
   if (lane.space) return { label: `${label} in a new tab`, kind: "tab", target: `new tab in ${lane.repo?.name ?? "this repo"}`, ...fallback };
   return { label: `${label} in a new space`, kind: "space", target: "new space in this worktree", ...fallback };
 }
 
+function inNewTab(lane, label, text) {
+  const name = `ship · ${lane.task?.id ?? lane.path.split("/").pop()}`;
+  if (lane.space) return { label: `${label} in a new tab`, kind: "tab", target: "new tab in this worktree", text, space: lane.space, folder: lane.path, name };
+  return { label: `${label} in a new space`, kind: "space", target: "new space in this worktree", text, space: null, folder: lane.path, name };
+}
+
 export function nextStep(lane) {
-  const claude = lane.claude ?? {};
   const skill = lane.skill?.active ? lane.skill : null;
-  if (claude.terminal && (claude.status === "blocked" || skill?.waiting)) {
-    return { label: "Go to claude", kind: "focus", terminal: claude.terminal, target: skill?.waiting ? `${skill.skill} is waiting on you` : `claude · ${claude.terminal} needs you` };
-  }
+  const owner = skillClaude(lane);
+  if (skill?.waiting && owner.terminal) return { label: "Go to claude", kind: "focus", terminal: owner.terminal, target: `${skill.skill} is waiting on you` };
+  const blocked = [owner, lane.claude, lane.session].find((claude) => claude?.terminal && claude.status === "blocked");
+  if (blocked) return { label: "Go to claude", kind: "focus", terminal: blocked.terminal, target: `claude · ${blocked.terminal} needs you` };
   if (skill?.waiting) return { label: `${skill.skill} is waiting on you`, kind: "wait", disabled: true, target: "no claude found in this worktree" };
   if (skill) return { label: `Waiting for /${skill.skill}`, kind: "wait", disabled: true, target: "the skill is still working" };
   const steps = stepsOf(lane);
   const pr = hasPr(lane.pr) ? lane.pr : null;
-  if (steps[1] === "next" || steps[1] === "bad") return sendTo(lane, "Run /vjr-ac", "/vjr-ac");
+  if (steps[1] === "next" || steps[1] === "bad") return sendTo(lane, "Run /vjr-ac", "/vjr-ac", true);
   if (steps[2] === "next" || steps[2] === "bad") {
     if ((lane.task.base || "main") !== "main" && !pr) return sendTo(lane, "Push and open draft PR", pushLine(lane.task));
-    return sendTo(lane, "Run /pp-ship", scopeLine(lane.task));
+    return inNewTab(lane, "Run /pp-ship", scopeLine(lane.task));
   }
   if (steps[6] === "next" && pr) {
     const text = `/pp-clear ${pr.number}`;
@@ -341,7 +360,7 @@ export function sendArgs(claude, text) {
 
 export function answerStep(lane, id, verdict, note) {
   if (lane.skill?.family !== "ac" || !lane.skill.active) return { refused: "vjr-ac is not running here" };
-  const claude = lane.claude ?? {};
+  const claude = skillClaude(lane);
   if (claude.ambiguous) return { refused: "More than one claude here" };
   if (!claude.terminal) return { refused: "no claude in this worktree" };
   if (claude.status === "working") return { refused: "claude is working" };
@@ -396,4 +415,82 @@ export function badge(lanes) {
     if (next.kind === "focus" || failed || steps[5] === "next" || steps[6] === "next") count += 1;
   }
   return { count, level: bad ? "bad" : count > 0 ? "wait" : null };
+}
+
+export function profileOf(profiles, main) {
+  const chosen = profiles?.[main];
+  return chosen === "off" || Object.hasOwn(PROFILES, chosen ?? "") ? chosen : "pp";
+}
+
+export function skillRecord(records, lane, shared) {
+  const session = lane.task?.session && !shared?.has(lane.task.session) ? lane.task.session : null;
+  let best = null;
+  for (const record of records ?? []) {
+    const from = session && record.session_id === session ? "session" : inside(record.cwd, lane.path) ? "worktree" : null;
+    if (from && (!best || Date.parse(record.started_at) > Date.parse(best.record.started_at))) best = { record, from };
+  }
+  return best;
+}
+
+export function viewFor(cwd, state, profiles) {
+  if (!cwd) return { kind: "none" };
+  const lanes = state?.lanes ?? [];
+  const repos = state?.repos ?? [];
+  const lane = lanes.filter((item) => inside(cwd, item.path)).sort((a, b) => b.path.length - a.path.length)[0] ?? null;
+  let hit = null;
+  for (const repo of repos) {
+    for (const tree of repo.trees ?? [repo.main]) if (inside(cwd, tree) && (!hit || tree.length > hit.tree.length)) hit = { repo, tree };
+  }
+  const repo = lane ? (repos.find((item) => item.main === lane.repo?.main) ?? lane.repo) : (hit?.repo ?? null);
+  if (repo && profileOf(profiles, repo.main) === "off") return { kind: "off", repo };
+  if (lane) return { kind: "task", lane, repo };
+  if (!hit) return { kind: "none" };
+  if (hit.tree === repo.main) return { kind: "repo", repo, lanes: lanes.filter((item) => item.repo?.main === repo.main) };
+  return { kind: "bare", repo };
+}
+
+const plural = (count, word) => `${count} ${word}${count === 1 ? "" : "s"}`;
+
+export function stepNotes(lane, steps) {
+  const manual = lane.task?.manual ?? [];
+  const sha = lane.task?.verification?.sha;
+  const pr = hasPr(lane.pr) ? lane.pr : null;
+  const files = lane.evidence && !lane.evidence.error ? Object.values(lane.evidence.files ?? {}) : null;
+  const running = lane.skill?.skill ?? "the skill";
+  const ac = {
+    run: manual.length ? `${manual.filter((check) => check.state === "passed").length} of ${manual.length} checks` : `${running} is running`,
+    done: sha ? `verified · ${sha.slice(0, 7)}` : "done",
+    bad: lane.sinceVerified > 0 ? `${plural(lane.sinceVerified, "code commit")} since vjr-ac` : "stale: run /vjr-ac again",
+  }[steps[1]] ?? "next: /vjr-ac";
+  const ship = { done: "shipped", run: `${running} is running`, bad: "ship.json is stale" }[steps[2]] ?? "/pp-ship in a new tab";
+  const evidence = lane.evidence?.error ? "unavailable" : files ? `${files.filter((state) => state === "current").length} of 4 current` : "4 receipts";
+  let request = lane.pr?.error ? "GitHub unavailable" : "no PR yet";
+  if (pr?.state === "MERGED") request = `#${pr.number} merged`;
+  else if (pr?.state === "CLOSED") request = `#${pr.number} closed`;
+  else if (pr) {
+    const checks = rollup(pr.statusCheckRollup);
+    const passed = checks.items.filter((item) => item.state === "ok").length;
+    request = `#${pr.number} · ${checks.items.length ? `${passed}/${checks.items.length} checks` : "no checks yet"}${pr.isDraft ? " · draft" : ""}`;
+  }
+  const merge = { done: "merged", next: "ready: you merge on GitHub" }[steps[5]] ?? "you merge on GitHub";
+  return [plural(lane.task?.done?.length ?? 0, "done item"), ac, ship, evidence, request, merge, "/pp-clear from main"];
+}
+
+export function laneSummary(lane) {
+  const steps = lane.steps ?? stepsOf(lane);
+  const next = lane.next ?? nextStep(lane);
+  const found = steps.findIndex((step) => step !== "done");
+  const stage = found < 0 ? 6 : found;
+  if (next.kind === "focus") {
+    const asking = lane.skill?.family === "ac" ? (lane.task?.manual ?? []).find((check) => check.state === "asking") : null;
+    return { stage, tone: "blocked", why: asking ? `vjr-ac asks ${asking.id}` : next.target, action: "Go to task" };
+  }
+  if (steps[4] === "bad") {
+    const checks = rollup(lane.pr.statusCheckRollup);
+    const why = checks.failed.length ? `${checks.failed.join(", ")} failed` : lane.pr.reviewDecision === "CHANGES_REQUESTED" ? "changes requested" : "closed without merging";
+    return { stage, tone: "blocked", why, action: "Open PR" };
+  }
+  if (steps[6] === "next") return { stage, tone: "done", why: "merged · clean up", action: "Run /pp-clear" };
+  if (steps[5] === "next") return { stage, tone: "done", why: "ready to merge", action: "Open PR" };
+  return { stage, tone: steps[stage] === "run" ? "working" : "idle", why: stepNotes(lane, steps)[stage], action: null };
 }
