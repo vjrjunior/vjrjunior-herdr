@@ -26,6 +26,18 @@
 **Priority:** P2
 **Depends on:** A fresh ClickUp source
 
+### Draw Mermaid diagrams in the Markdown viewer
+
+**What:** Draw ` ```mermaid ` blocks as diagrams in `mods/markdown/` instead of showing their source.
+
+**Why:** Plans and specs use Mermaid for flows, and the pane shows them as code.
+
+**Context:** [herdr-files-plus](https://github.com/jjongkwann/herdr-files-plus) (MIT, `b43c4e3`) draws them natively with a bundled 1.5 MB renderer and caches the SVGs under `data/files-plus/`. Read its renderer before deciding to adopt it or to build ours.
+
+**Effort:** M
+**Priority:** P3
+**Depends on:** The Markdown viewer
+
 ### Publish comeback on herdr.dev
 
 **What:** Publish `mods/comeback/` as a community mod: a public repo or folder in Herdr's format with `mods/comeback/`, its `RECIPE.md` and a `preview.png`, and the `herdr-mod` topic.

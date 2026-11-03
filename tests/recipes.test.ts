@@ -46,12 +46,12 @@ function modsIn(node: unknown): string[] {
 const graphChild = (generated: ReturnType<typeof generate>) => findNode(JSON.parse(generated.layoutText), "panel-body")?.children.at(-1);
 
 describe("variants", () => {
-  test("vjr-desk copies the palette, the status bar, the tab bar, the spaces tree, comeback and the command center", () => {
-    expect(Object.keys(generateDesk().mods).sort()).toEqual(["vjr-comeback", "vjr-command-center", "vjr-palette", "vjr-spaces-tree", "vjr-tabs", "vjr-workspace-status"]);
+  test("vjr-desk copies the palette, the status bar, the tab bar, the spaces tree, comeback, the command center and the markdown viewer", () => {
+    expect(Object.keys(generateDesk().mods).sort()).toEqual(["vjr-comeback", "vjr-command-center", "vjr-markdown", "vjr-palette", "vjr-spaces-tree", "vjr-tabs", "vjr-workspace-status"]);
   });
 
-  test("vjr-desk-square copies nineteen mods", () => {
-    expect(Object.keys(generateSquare().mods)).toHaveLength(19);
+  test("vjr-desk-square copies twenty mods", () => {
+    expect(Object.keys(generateSquare().mods)).toHaveLength(20);
   });
 
   test("vjr-desk keeps the shipped mods elsewhere", () => {
@@ -300,6 +300,23 @@ describe("comeback", () => {
       expect(floating.at(-1).id).toBe("vjr-sync");
       expect(generated.mods[copy]?.["logic.js"]).toContain("export function planPass");
     }
+  });
+});
+
+describe("markdown viewer", () => {
+  test("both layouts install the viewer without placing it", () => {
+    for (const [generated, copy] of [
+      [generateDesk(), "vjr-markdown"],
+      [generateSquare(), "vjr-square-markdown"],
+    ] as const) {
+      expect(Object.keys(generated.mods[copy] ?? {}).sort()).toEqual(["logic.js", "main.js", "mod.json"]);
+      expect(modsIn(JSON.parse(generated.layoutText))).not.toContain(copy);
+    }
+  });
+
+  test("the square copy squares the viewer's buttons", () => {
+    expect(generateDesk().mods["vjr-markdown"]?.["main.js"]).toContain(".rounded(5)");
+    expect(generateSquare().mods["vjr-square-markdown"]?.["main.js"]).not.toMatch(/\.rounded\([1-9]/);
   });
 });
 
