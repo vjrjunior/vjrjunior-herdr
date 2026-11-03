@@ -127,7 +127,7 @@ The next step is one click:
 
 It never types into another worktree, into a working Claude, into one waiting on a prompt, or into a session whose skill is still running. A send to an idle Claude uses `hc send --if idle`, so it fails rather than typing into a Claude that just started working. It never merges, pushes, posts to Slack or changes ClickUp.
 
-`mods/command-center/` reads `VJR-TASK.md`, `git`, `gh`, the pp-stack scripts in `~/.claude/skills/pp-stack/bin/` and `~/.pp-stack/session/`. It asks GitHub at most once a minute per open PR, and alerts only when a PR becomes ready, needs attention or merges. It writes nothing but copies of the screenshots under `data/<copy>/shots/`, removed when the task is gone, and the repos switched off, in `command-center.profiles` in shared state. Clicking an alert runs `vjr-command-center.show` (`vjr-square-command-center.show` in the square layout), which selects the task's space and opens the column.
+`mods/command-center/` reads `VJR-TASK.md`, `git`, `gh`, the pp-stack scripts in `~/.claude/skills/pp-stack/bin/`, `~/.pp-stack/session/` and `~/.claude/sessions/`, where each Claude's current conversation tells which one is the task's session. It asks GitHub at most once a minute per open PR, and alerts only when a PR becomes ready, needs attention or merges. It writes nothing but copies of the screenshots under `data/<copy>/shots/`, removed when the task is gone, and the repos switched off, in `command-center.profiles` in shared state. Clicking an alert runs `vjr-command-center.show` (`vjr-square-command-center.show` in the square layout), which selects the task's space and opens the column.
 
 ### Markdown viewer
 
