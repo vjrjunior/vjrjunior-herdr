@@ -433,6 +433,7 @@ describe("column", () => {
     await flush();
     const copy = app.execs.find((call) => call.command.endsWith("/pp-stack-rich-copy"));
     expect(copy?.args).toEqual([RELEASE.messagePath]);
+    expect(texts(view.render())).toContain("Copied the message");
   });
 
   test("a merged task with local links offers to regenerate", () => {

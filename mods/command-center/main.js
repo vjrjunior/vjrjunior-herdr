@@ -179,7 +179,7 @@ export default class CommandCenter extends View {
   }
 
   copy(release, cx) {
-    const done = () => this.flash("Copied the release update for Slack", cx);
+    const done = () => this.flash("Copied the message", cx);
     const plain = () => exec("sh", ["-c", 'pbcopy < "$1"', "_", release.messagePath]).then(done).catch(() => this.flash("Could not copy the release update", cx));
     exec(bin("pp-stack-rich-copy"), [release.messagePath])
       .then((result) => (result?.code === 0 ? done() : plain()))

@@ -333,7 +333,7 @@ export function transitions(before, after) {
     const was = before?.[key];
     if (!was || !now) continue;
     const where = `${now.repo} · ${now.id}`;
-    if (now.merged && !was.merged) alerts.push({ key, title: `PR #${now.number} merged`, body: `${where} · Copy the release update for Slack`, level: "success" });
+    if (now.merged && !was.merged) alerts.push({ key, title: `PR #${now.number} merged`, body: `${where} · Copy the release message`, level: "success" });
     else if (!now.merged && now.step === "done" && was.step !== "done") alerts.push({ key, title: `PR #${now.number} is ready to merge`, body: `${where} · all checks passed`, level: "success" });
     else if (now.step === "bad" && was.step !== "bad") alerts.push({ key, title: `PR #${now.number} needs attention`, body: `${where} · ${now.reason}`, level: "warning" });
   }

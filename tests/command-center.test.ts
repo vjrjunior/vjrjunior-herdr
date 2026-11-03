@@ -283,7 +283,7 @@ describe("alerts and badge", () => {
 
   test("a failure and a merge each alert once", () => {
     expect(transitions({ a: running }, { a: badPr })[0]).toMatchObject({ title: "PR #42 needs attention", body: "app · CUP-1234 · test failed", level: "warning" });
-    expect(transitions({ a: readyPr }, { a: { ...readyPr, merged: true } })[0]).toMatchObject({ title: "PR #42 merged", level: "success" });
+    expect(transitions({ a: readyPr }, { a: { ...readyPr, merged: true } })[0]).toMatchObject({ title: "PR #42 merged", body: "app · CUP-1234 · Copy the release message", level: "success" });
   });
 
   test("the alert state reads the PR of a lane", () => {
