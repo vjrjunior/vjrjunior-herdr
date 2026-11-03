@@ -259,4 +259,170 @@ describe("watcher", () => {
   });
 });
 
-export type { Node };
+
+const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+function pathTo(node: Node, key: string): Node[] | null {
+  if (node.key === key) return [node];
+  for (const kid of node.kids) {
+    const found = pathTo(kid, key);
+    if (found) return [node, ...found];
+  }
+  return null;
+}
+
+function texts(node: Node): string[] {
+  return [...node.texts, ...node.kids.flatMap(texts)];
+}
+
+function press(view: { render(): Node }, key: string) {
+  const path = pathTo(view.render(), key);
+  if (!path) throw new Error(`no element ${key}`);
+  const context = { stop_propagation() {}, notify() {} };
+  for (const node of [...path].reverse()) for (const handler of node.handlers.click ?? []) handler({}, context);
+}
+
+const BASE_LANE = {
+  key: "/w/cup-1234",
+  path: "/w/cup-1234",
+  repo: { name: "app", main: "/r/app" },
+  branch: BRANCH,
+  space: "sp-1234",
+  mainSpace: "sp-main",
+  task: { id: "CUP-1234", title: "A saved draft disappears", kind: "bug", url: "https://app.clickup.com/t/86abc1234", base: "main", branch: BRANCH, done: [{ id: "D01", item: "The draft stays" }], verification: null },
+  lastCode: HEAD,
+  sinceVerified: 0,
+  skill: null,
+  claude: { terminal: "t12", status: "idle", count: 1, ambiguous: false },
+  evidence: null,
+  preview: null,
+  pr: null,
+  release: null,
+  steps: ["done", "next", "todo", "todo", "todo", "todo", "todo"],
+  chip: { chip: "Task", tone: "idle" },
+  next: { label: "Run /vjr-ac", kind: "send", terminal: "t12", text: "/vjr-ac", target: "claude · t12 in this worktree", space: "sp-1234", folder: "/w/cup-1234" },
+  note: null,
+};
+
+const RELEASE = {
+  slug: "fix-cup-1234-draft-reload",
+  dir: "/w/cup-1234/.pp-stack/updates/fix-cup-1234-draft-reload",
+  messagePath: "/w/cup-1234/.pp-stack/updates/fix-cup-1234-draft-reload/message.txt",
+  release: "2.3.0",
+  title: "Drafts Survive a Reload 💾✨",
+  items: [{ parts: [{ text: "Replies stay after a reload" }] }],
+  channel: "general",
+  links: "local",
+  shots: [
+    { file: "02-a.png", caption: "The reply is still there", featured: true, image: "data/command-center/fix-cup-1234-draft-reload/02-a.png" },
+    { file: "01-b.png", caption: "Saving", featured: false, image: "data/command-center/fix-cup-1234-draft-reload/01-b.png" },
+  ],
+};
+
+function column(lanes: Record<string, unknown>[] = [BASE_LANE]) {
+  app.shared["command-center.state"] = { lanes };
+  propsNow = {};
+  const view = new CommandCenter();
+  view.init({}, cx);
+  return view;
+}
+
+const sends = () => app.execs.filter((call) => call.command === "hc" && call.args[0] === "send");
+
+describe("column", () => {
+  test("the next step types only into the task's claude", async () => {
+    focusedCwd = "/w/cup-1234";
+    const view = column();
+    press(view, "next");
+    await flush();
+    expect(sends().map((call) => call.args)).toEqual([["send", "t12", "/vjr-ac"]]);
+    expect(texts(view.render())).toContain("Sent to claude · t12");
+  });
+
+  test("a disabled next step sends nothing", async () => {
+    focusedCwd = "/w/cup-1234";
+    const view = column([{ ...BASE_LANE, next: { label: "Waiting for /review", kind: "wait", disabled: true, target: "the skill is still working" } }]);
+    press(view, "next");
+    await flush();
+    expect(sends()).toEqual([]);
+    expect(app.runs).toEqual([]);
+  });
+
+  test("New tab instead opens claude with the step as its first message", () => {
+    focusedCwd = "/w/cup-1234";
+    press(column(), "new-tab");
+    expect(app.runs).toContainEqual(["tab.new", { space: "sp-1234", argv: ["claude"], task: "/vjr-ac" }]);
+  });
+
+  test("a task without a space opens a new space in its folder", () => {
+    focusedCwd = "/w/cup-1234";
+    press(column([{ ...BASE_LANE, space: null }]), "new-tab");
+    expect(app.runs).toContainEqual(["space.new", { folder: "/w/cup-1234", argv: ["claude"], task: "/vjr-ac", machine: "" }]);
+  });
+
+  test("the task tab follows the focused terminal's folder and stays on the last task", () => {
+    const second = { ...BASE_LANE, key: "/w/cup-9", path: "/w/cup-9", task: { ...BASE_LANE.task, id: "CUP-9", title: "Another task" } };
+    const view = column([BASE_LANE, second]);
+    focusedCwd = "/w/cup-9/src";
+    expect(texts(view.render())).toContain("Another task");
+    focusedCwd = "/x/not-a-task";
+    expect(texts(view.render())).toContain("Another task");
+  });
+
+  test("with no task yet the tab says so", () => {
+    focusedCwd = "/x/not-a-task";
+    expect(texts(column().render())).toContain("No task here");
+  });
+
+  test("a toast's focus wins over the focused folder", () => {
+    const second = { ...BASE_LANE, key: "/w/cup-9", path: "/w/cup-9", task: { ...BASE_LANE.task, id: "CUP-9", title: "Another task" } };
+    const view = column([BASE_LANE, second]);
+    focusedCwd = "/w/cup-1234";
+    app.shared["command-center.focus"] = "/w/cup-9";
+    expect(texts(view.render())).toContain("Another task");
+  });
+
+  test("Copy for Slack uses pp-stack-rich-copy on message.txt", async () => {
+    focusedCwd = "/w/cup-1234";
+    press(column([{ ...BASE_LANE, release: RELEASE }]), "copy");
+    await flush();
+    const copy = app.execs.find((call) => call.command.endsWith("/pp-stack-rich-copy"));
+    expect(copy?.args).toEqual([RELEASE.messagePath]);
+  });
+
+  test("a merged task with local links offers to regenerate", () => {
+    focusedCwd = "/w/cup-1234";
+    const merged = { ...BASE_LANE, release: RELEASE, pr: { number: 42, url: "https://github.com/acme/app/pull/42", state: "MERGED", isDraft: false, reviewDecision: "", statusCheckRollup: [] } };
+    const shown = texts(column([merged]).render());
+    expect(shown).toContain("Links still point to local.");
+    expect(shown).toContain("Regenerate with production links");
+  });
+
+  test("a screenshot opens the shot window", () => {
+    focusedCwd = "/w/cup-1234";
+    press(column([{ ...BASE_LANE, release: RELEASE }]), "shot-0");
+    expect(app.overlays[0]).toMatchObject({ kind: "window", key: "command-center-shot", mod: "command-center", props: { role: "shot", lane: "/w/cup-1234", index: 0 } });
+  });
+
+  test("the Lanes tab lists every task and picking one selects its space", () => {
+    focusedCwd = "/x/not-a-task";
+    const view = column();
+    press(view, "tab-lanes");
+    expect(texts(view.render())).toContain("A saved draft disappears");
+    press(view, "lane-/w/cup-1234");
+    expect(app.runs).toContainEqual(["space.select", { id: "sp-1234" }]);
+  });
+});
+
+describe("shot window", () => {
+  test("it shows the picked screenshot with its caption and moves with the arrows", () => {
+    app.shared["command-center.state"] = { lanes: [{ ...BASE_LANE, release: RELEASE }] };
+    propsNow = { role: "shot", lane: "/w/cup-1234", index: 0, overlay: "o9" };
+    const view = new CommandCenter();
+    view.init(propsNow, cx);
+    expect(texts(view.render())).toContain("The reply is still there");
+    view.key("right");
+    expect(texts(view.render())).toContain("Saving");
+    view.key("escape");
+  });
+});

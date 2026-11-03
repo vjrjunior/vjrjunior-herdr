@@ -1,13 +1,16 @@
 import { View, div } from "gpui-kit";
 import * as fs from "fs/promises";
+import { columnView, shotView } from "./column.js";
 import {
   agents,
   appHome,
+  closeOverlay,
   exec,
   focused,
   home,
   nextCommand,
   notify,
+  openOverlay,
   panes,
   props,
   readTextFile,
@@ -15,6 +18,7 @@ import {
   setShared,
   shared,
   spaces,
+  theme,
   watchFolder,
 } from "herdr";
 import {
@@ -80,6 +84,130 @@ export default class CommandCenter extends View {
     const own = given && typeof given === "object" ? given : {};
     this.role = own.role ?? props()?.role ?? null;
     if (this.role === "watch") this.startWatch(cx);
+    else if (this.role === "shot") this.startShot(own, cx);
+    else this.startColumn();
+  }
+
+  startColumn() {
+    this.tab = "task";
+    this.lastLane = null;
+    this.lastCwd = undefined;
+    this.flashText = null;
+  }
+
+  startShot(own, cx) {
+    const given = { ...(props() ?? {}), ...own };
+    this.shotLane = given.lane ?? null;
+    this.index = Number(given.index) || 0;
+    this.overlay = given.overlay ?? null;
+    this.handle = cx?.focus_handle?.() ?? null;
+    if (this.handle) cx?.timer?.after?.(100, () => this.handle.focus());
+  }
+
+  stateLanes() {
+    const state = shared("command-center.state");
+    return Array.isArray(state?.lanes) ? state.lanes : [];
+  }
+
+  currentLane(lanes) {
+    const cwd = focused()?.cwd ?? null;
+    if (cwd !== this.lastCwd) {
+      this.lastCwd = cwd;
+      const hit = lanes.find((lane) => inside(cwd, lane.path));
+      if (hit) this.lastLane = hit.key;
+    }
+    const focus = shared("command-center.focus");
+    if (focus) {
+      if (lanes.some((lane) => lane.key === focus)) {
+        this.lastLane = focus;
+        this.tab = "task";
+      }
+      setShared("command-center.focus", null);
+    }
+    return lanes.find((lane) => lane.key === this.lastLane) ?? null;
+  }
+
+  flash(text, cx) {
+    this.flashText = text;
+    cx?.notify?.();
+    cx?.spawn?.(async (cx) => {
+      await cx.sleep(2000);
+      if (this.flashText === text) this.flashText = null;
+      cx.notify();
+    });
+  }
+
+  open(target) {
+    exec("open", [target]).catch(() => {});
+  }
+
+  zed(path) {
+    exec("zed", [path]).catch(() => {});
+  }
+
+  newClaude(lane, text) {
+    if (lane.space) run("tab.new", { space: lane.space, argv: ["claude"], task: text });
+    else run("space.new", { folder: lane.path, argv: ["claude"], task: text, machine: "" });
+  }
+
+  send(terminal, text, cx) {
+    exec("hc", ["send", terminal, text])
+      .then((result) => this.flash(result?.code === 0 ? `Sent to claude · ${terminal}` : `Could not reach claude · ${terminal}`, cx))
+      .catch(() => this.flash(`Could not reach claude · ${terminal}`, cx));
+  }
+
+  act(lane, cx) {
+    const next = lane.next;
+    if (!next || next.disabled) return;
+    if (next.kind === "send") this.send(next.terminal, next.text, cx);
+    else if (next.kind === "focus") run("pane.focus", { terminal: next.terminal });
+    else if (next.kind === "tab") run("tab.new", { space: next.space, argv: ["claude"], task: next.text });
+    else if (next.kind === "space") run("space.new", { folder: next.folder, argv: ["claude"], task: next.text, machine: "" });
+    else if (next.kind === "open") this.open(next.url);
+  }
+
+  newTab(lane) {
+    if (lane.next?.text) this.newClaude(lane, lane.next.text);
+  }
+
+  regenerate(lane, cx) {
+    const claude = lane.claude ?? {};
+    const text = "/pp-client-slack-update";
+    if (claude.terminal && !claude.ambiguous && claude.status !== "working") this.send(claude.terminal, text, cx);
+    else this.newClaude(lane, text);
+  }
+
+  copy(release, cx) {
+    const done = () => this.flash("Copied the release update for Slack", cx);
+    const plain = () => exec("sh", ["-c", 'pbcopy < "$1"', "_", release.messagePath]).then(done).catch(() => this.flash("Could not copy the release update", cx));
+    exec(bin("pp-stack-rich-copy"), [release.messagePath])
+      .then((result) => (result?.code === 0 ? done() : plain()))
+      .catch(plain);
+  }
+
+  openShot(lane, index) {
+    openOverlay({ kind: "window", key: "command-center-shot", mod: "command-center", props: { role: "shot", lane: lane.key, index }, width: 0.7, height: 0.8 });
+  }
+
+  pick(lane) {
+    this.lastLane = lane.key;
+    this.tab = "task";
+    if (lane.space) run("space.select", { id: lane.space });
+  }
+
+  switchTab(id) {
+    this.tab = id;
+  }
+
+  key(name) {
+    const total = this.stateLanes().find((lane) => lane.key === this.shotLane)?.release?.shots?.length ?? 0;
+    if (name === "escape") {
+      if (this.overlay) closeOverlay(this.overlay);
+      return;
+    }
+    if (!total) return;
+    if (name === "right") this.index = (this.index + 1) % total;
+    if (name === "left") this.index = (this.index + total - 1) % total;
   }
 
   startWatch(cx) {
@@ -425,6 +553,10 @@ export default class CommandCenter extends View {
   }
 
   render() {
-    return div();
+    if (this.role === "watch") return div();
+    const t = theme();
+    const lanes = this.stateLanes();
+    if (this.role === "shot") return shotView(this, lanes.find((lane) => lane.key === this.shotLane), t);
+    return columnView(this, lanes, this.currentLane(lanes), t);
   }
 }
