@@ -111,11 +111,11 @@ Each loss gets one automatic try. `herdr-app do vjr-square-comeback.resume` (or 
 
 The `Command Center` button, right after `+` in the top bar, opens a column for the checkout of the focused terminal. Like the side panel, each space remembers whether its column was open.
 
-- **In a task's worktree** (a worktree other than the main checkout, with a `VJR-TASK.md` from `/vjr-task`), the column shows the task and its track as a timeline: Task, AC, Ship, Evidence, PR, Merge, Clear. Each step says what happened or what comes next. The current step opens with what it needs: the manual checks while `/vjr-ac` asks them, the PR's checks, preview and review, or the next step's button. Task and Evidence open with a click, on the done items and on the receipts with the release card (the screenshots and `Copy message`); Evidence opens by itself once the PR merges. `VJR-TASK.md` opens in the Markdown viewer next to the terminal.
+- **In a task's worktree** (a worktree other than the main checkout, with a `VJR-TASK.md` from `/vjr-task`), the column shows the task and its track as a timeline: Task, AC, Ship, Evidence, PR, Merge, Clear. Each step says what happened or what comes next. The current step opens with what it needs: the manual checks while `/vjr-ac` asks them, the PR's checks, preview and review, or the next step's button. Task and Evidence open with a click, on the done items and on the receipts with the release card (the screenshots and `Copy message`); Evidence opens by itself once the PR merges. The task's links (ClickUp, the PR, `VJR-TASK.md`, Zed) are 26px icon buttons in the brand's color, and the old label shows as a tooltip. The timeline's nodes are drawn icons: done is filled with a check, the current step is a ring with a dot (an exclamation when it went wrong), later steps are empty rings, and Task and Evidence have a chevron that turns when they are open. Check states are chips with an icon. `VJR-TASK.md` opens in the Markdown viewer next to the terminal.
 - **In the main checkout,** it lists the repo's tasks, each with its step, why it waits and what to do, and `Start a task` opens `/vjr-task` in a new tab.
 - **Profiles:** the button in the header picks the repo's flow. `Partner Programmer` is every repo's default, and `Off` stops the panel from reading that repo at all.
 
-The number on the button counts the tasks that wait on you, red when one failed, and each worktree in the Spaces tree gets a chip with its step.
+The number on the button counts the tasks that wait on you, red when one failed. Each worktree with a lane gets a second line in the Spaces tree under its name: the step (`Task`, `AC 3/5`, `AC done`, `Ship`, `PR open`, `PR failed`, `Ready`, `Merged`...) in the lane's color, red when it waits on you, then `· <why>`.
 
 While `/vjr-ac` asks its manual checks, the AC step shows them as cards, read from the `## Manual checks` table it writes to `VJR-TASK.md`: the check being asked has `Passed` and `Failed…` (type what you saw, Enter sends, Esc cancels), which answer in the Claude running `/vjr-ac`.
 
@@ -137,7 +137,23 @@ It never types into another worktree, into a working Claude, into one waiting on
 herdr-app do pane.split --direction right --mod vjr-markdown --props '{"file":"/path/to/VJR-TASK.md"}'
 ```
 
-In the square layout the mod is `vjr-square-markdown`. The pane reads the file again when it changes and hides front matter. A link to another `.md` opens in the same pane, with `← Back` to return; web links open in the browser and other files in their own app. `Zed ↗` opens the file in Zed. It reads only the file it shows and the files it links to, runs `open` and `zed`, and never reaches the network.
+In the square layout the mod is `vjr-square-markdown`. The pane reads the file again when it changes and hides front matter. A link to another `.md` opens in the same pane, with `Back` (an outline button with an arrow) to return; web links open in the browser and other files in their own app. The header's right side has two icon buttons with tooltips: Zed opens the file in Zed, and Reload reads it again. It reads only the file it shows and the files it links to, runs `open` and `zed`, and never reaches the network.
+
+## Kit
+
+`kit/kit.js` is the UI kit of this repo's mods: tokens (sizes, text, radii, brand colors), components (`button`, `iconButton`, `link`, `chip`, `pill`, `card`, `heading`, `line`, `mark`, `statusDot`, `stepNode`, `icon`) and the SVG icons in `kit/icons/`. A mod imports it as `../../kit/kit.js`, and `apply-layout` copies it, with the icons it uses, into each installed mod. Today the Command Center, the Spaces tree and the Markdown viewer use it.
+
+`mods/kit/` is a gallery that shows every component and icon. Open it beside the focused terminal:
+
+```sh
+herdr-app do pane.split --direction right --mod vjr-kit
+```
+
+In the square layout the mod is `vjr-square-kit`.
+
+Credits:
+- [Lucide](https://lucide.dev) icons (ISC), from `lucide-static@0.469.0`. Each file keeps Lucide's license notice.
+- [Simple Icons](https://simpleicons.org) (CC0), from `simple-icons@13.21.0`: ClickUp, GitHub and Zed. Brand marks are their owners' trademarks.
 
 ## License
 

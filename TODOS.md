@@ -14,6 +14,18 @@
 **Priority:** P1
 **Depends on:** The next restart
 
+### The Command Center button in the tab bar on the kit
+
+**What:** Draw the Command Center button in the tab bar with the kit's components.
+
+**Why:** The button is drawn by hand inside the copy of Herdr's `tabs`.
+
+**Context:** The kit only reaches this repo's mods. Copies of shipped mods would need the generator to inject it there, and `square` to treat `tabs` as an own mod.
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** Nothing
+
 ### Command Center Inbox
 
 **What:** An Inbox in the main checkout's view, under `Start a task`, with the open ClickUp tasks and a Start button that opens `/vjr-task CUP-xxxx` in a new tab of the main checkout.

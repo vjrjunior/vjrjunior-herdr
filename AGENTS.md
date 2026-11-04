@@ -51,6 +51,10 @@ Every feature ships in `vjr-desk` and `vjr-desk-square`, built from the same rec
 - A mod from this repo's `mods/` also goes in `recipes/square.ts`, in its `mods` (`from: "repo"`) and in `OWN_MODS`. Nothing warns when a feature is missing from one layout, so the shot of each layout in Done is the check.
 - Mods are installed as `vjr-<name>` in one layout and `vjr-square-<name>` in the other. Name another mod as `mod: "<name>"` or `{ name: "<name>" }`, in double quotes, so the generator can add the prefix; it refuses a reference it cannot rewrite. Commands sent to a mod differ the same way (`vjr-comeback.resume`, `vjr-square-comeback.resume`), so docs give both.
 
+## UI
+
+The mods in this repo draw their UI with the kit in `kit/kit.js`: its components, its icons in `kit/icons/` and its tokens. A mod imports it as `../../kit/kit.js`; `bun run apply-layout` copies it into each installed mod. Colors come from `theme()` by name; the only hex values are the brand colors in `BRAND`. Icons are SVG files, never font glyphs. A new component goes into the kit as soon as a second mod would draw the same thing; a piece only one mod needs stays in that mod. `vjr-kit` (`vjr-square-kit`) shows every component: open it with `herdr-app do pane.split --direction right --mod vjr-kit`.
+
 ## Done
 
 - `bun test` passes. The tests use temporary homes, never the real app folder.
