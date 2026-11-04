@@ -1,22 +1,8 @@
 import { View, div } from "gpui-kit";
 import { h_flex, TextView, v_flex } from "gpui-base";
 import { exec, home, props, readTextFile, theme, watchFolder } from "herdr";
+import { BRAND, button, iconButton } from "../../kit/kit.js";
 import { folderOf, linkTarget, nameOf, shortFolder, stripFrontMatter } from "./logic.js";
-
-function button(id, label, t, action) {
-  return h_flex()
-    .id(id)
-    .flex_none()
-    .h(22)
-    .px(7)
-    .items_center()
-    .rounded(5)
-    .text_size(11)
-    .text_color(t.muted)
-    .hover((s) => s.bg(t.hover).text_color(t.foreground))
-    .on_click((_e, cx) => action(cx))
-    .child(label);
-}
 
 function message(text, t) {
   return div().p(16).text_size(12).text_color(t.dim).child(text);
@@ -109,16 +95,26 @@ export default class Markdown extends View {
       .bg(t.chrome)
       .border_b_1()
       .border_color(t.border)
-      .when(this.history.length > 0, (el) => el.child(button("md-back", "← Back", t, (cx) => this.back(cx))))
+      .when(this.history.length > 0, (el) => el.child(button("md-back", { icon: "arrow-left", label: "Back", onClick: (cx) => this.back(cx) }, t)))
       .child(div().flex_none().text_size(12).font_semibold().text_color(t.foreground).child(file ? nameOf(file) : "Markdown"))
       .child(div().flex_1().min_w(0).overflow_hidden().whitespace_nowrap().text_ellipsis_start().text_size(11).text_color(t.dim).child(file ? shortFolder(folderOf(file), home()) : ""))
       .when(Boolean(file), (el) =>
-        el.child(button("md-zed", "Zed ↗", t, () => exec("zed", [file]).catch(() => {}))).child(
-          button("md-reload", "↻", t, (cx) => {
-            this.reload(cx);
-            this.watch(folderOf(file), cx);
-          }),
-        ),
+        el
+          .child(iconButton("md-zed", { icon: "zed", tooltip: "Zed", color: BRAND.zed, onClick: () => exec("zed", [file]).catch(() => {}) }, t))
+          .child(
+            iconButton(
+              "md-reload",
+              {
+                icon: "rotate-cw",
+                tooltip: "Reload",
+                onClick: (cx) => {
+                  this.reload(cx);
+                  this.watch(folderOf(file), cx);
+                },
+              },
+              t,
+            ),
+          ),
       );
     let body;
     if (!file) body = message("No file to show", t);

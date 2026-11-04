@@ -98,16 +98,13 @@ const ADOPTERS = [
   "mods/spaces-tree/main.js",
   "mods/markdown/main.js",
 ];
-const PENDING = new Set(["mods/markdown/main.js"]);
 
 for (const file of ADOPTERS) {
-  if (PENDING.has(file)) test.todo(`${file} draws no glyphs`);
-  else
-    test(`${file} draws no glyphs`, () => {
-      const source = readFileSync(join(repo, file), "utf8");
-      expect(source).not.toMatch(/[\u2713\u25cf\u25cb\u2197\u25b8\u25be\u21bb\u2190\u2715\u25a0\u25a1]/);
-      expect(source).not.toMatch(/["'`]!["'`]/);
-    });
+  test(`${file} draws no glyphs`, () => {
+    const source = readFileSync(join(repo, file), "utf8");
+    expect(source).not.toMatch(/[\u2713\u25cf\u25cb\u2197\u25b8\u25be\u21bb\u2190\u2715\u25a0\u25a1]/);
+    expect(source).not.toMatch(/["'`]!["'`]/);
+  });
 }
 
 test("a button's text size follows its height", () => {

@@ -324,14 +324,16 @@ describe("markdown viewer", () => {
       [generateDesk(), "vjr-markdown"],
       [generateSquare(), "vjr-square-markdown"],
     ] as const) {
-      expect(Object.keys(generated.mods[copy] ?? {}).sort()).toEqual(["logic.js", "main.js", "mod.json"]);
+      expect(Object.keys(generated.mods[copy] ?? {}).sort()).toEqual(["kit.js", "logic.js", "main.js", "mod.json"]);
       expect(modsIn(JSON.parse(generated.layoutText))).not.toContain(copy);
     }
   });
 
   test("the square copy squares the viewer's buttons", () => {
-    expect(generateDesk().mods["vjr-markdown"]?.["main.js"]).toContain(".rounded(5)");
-    expect(generateSquare().mods["vjr-square-markdown"]?.["main.js"]).not.toMatch(/\.rounded\([1-9]/);
+    expect(generateDesk().mods["vjr-markdown"]?.["kit.js"]).toContain(".rounded(RADIUS.control)");
+    const squared = generateSquare().mods["vjr-square-markdown"]?.["kit.js"] ?? "";
+    expect(squared).toContain(".rounded(0)");
+    expect(squared).not.toContain(".rounded(RADIUS");
   });
 });
 

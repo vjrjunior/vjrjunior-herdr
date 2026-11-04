@@ -259,6 +259,29 @@ describe("links and buttons", () => {
     expect(execs).toContainEqual(["zed", [FILE]]);
   });
 
+  test("the header's buttons are icons with tooltips", async () => {
+    files["/Users/me/w/app/docs/plan.md"] = "# The plan";
+    const { view, cx } = await open();
+    linkHandler(view)("../docs/plan.md", cx);
+    await flush();
+    const root = view.render();
+    const svgs = (node: Node): string[] => [...node.calls.filter(([n]) => n === "svg").map(([, a]) => a[0] as string), ...node.kids.flatMap(svgs)];
+    const at = (id: string) => find(root, (item) => item.key === id) as Node;
+    const zed = at("md-zed");
+    expect(zed.calls).toContainEqual(["tooltip", ["Zed"]]);
+    expect(svgs(zed)).toEqual(["mods/kit/icons/zed.svg"]);
+    expect(find(zed, (item) => item.calls.some(([n, a]) => n === "text_color" && a[0] === "#4A9EFF"))).not.toBeNull();
+    const reload = at("md-reload");
+    expect(reload.calls).toContainEqual(["tooltip", ["Reload"]]);
+    expect(svgs(reload)).toEqual(["mods/kit/icons/rotate-cw.svg"]);
+    const back = at("md-back");
+    expect(svgs(back)).toEqual(["mods/kit/icons/arrow-left.svg"]);
+    expect(texts(back)).toEqual(["Back"]);
+    for (const node of [zed, reload, back]) {
+      for (const glyph of ["\u2197", "\u21bb", "\u2190"]) expect(texts(node).join("")).not.toContain(glyph);
+    }
+  });
+
   test("reload reads the file again", async () => {
     const { view, cx } = await open();
     click(view, "md-reload", cx);
