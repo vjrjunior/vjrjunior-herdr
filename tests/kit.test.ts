@@ -109,3 +109,10 @@ for (const file of ADOPTERS) {
       expect(source).not.toMatch(/["'`]!["'`]/);
     });
 }
+
+test("a button's text size follows its height", () => {
+  const size = (height?: number) => own(button("b", { label: "Go", height, onClick() {} }, t), "text_size");
+  expect(size(32)).toEqual([[12]]);
+  expect(size(28)).toEqual([[11.5]]);
+  expect(size()).toEqual([[11]]);
+});

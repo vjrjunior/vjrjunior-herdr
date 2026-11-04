@@ -70,7 +70,7 @@ export function button(id, { label, icon: iconName, variant = "outline", color, 
     .gap(6)
     .items_center()
     .rounded(RADIUS.control)
-    .text_size(TEXT.sm)
+    .text_size(height === CONTROL.large ? TEXT.base : height === CONTROL.row ? TEXT.md : TEXT.sm)
     .text_color(textColor)
     .when(disabled, (el) => el.bg(t.raised))
     .when(solid, (el) => el.bg(color ?? t.accent).font_bold().hover((s) => s.opacity(0.9)))
