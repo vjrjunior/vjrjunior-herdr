@@ -312,9 +312,9 @@ describe("chips", () => {
   const chip = (l: any) => chipOf(l, stepsOf(l));
   test("chips follow the first unfinished step", () => {
     expect(chip(lane())).toMatchObject({ chip: "Task", tone: "idle" });
-    expect(chip(lane({ skill: waitingAc }))).toMatchObject({ chip: "AC" });
-    expect(chip(lane({ verified: "aaaaaaa", lastCode: "bbbbbbb" }))).toMatchObject({ chip: "AC stale" });
-    expect(chip(lane({ verified: "58197b4" }))).toMatchObject({ chip: "AC done" });
+    expect(chip(lane({ skill: waitingAc }))).toMatchObject({ chip: "AC", tone: "blocked" });
+    expect(chip(lane({ verified: "aaaaaaa", lastCode: "bbbbbbb" }))).toMatchObject({ chip: "AC stale", tone: "idle" });
+    expect(chip(lane({ verified: "58197b4" }))).toMatchObject({ chip: "AC done", tone: "idle" });
     expect(chip(lane({ verified: "58197b4", skill: { family: "ship", skill: "ship", waiting: false, active: true } }))).toMatchObject({ chip: "Ship", tone: "working" });
     expect(chip(lane({ evidence: current(), pr: pr({ statusCheckRollup: [check("test", null, "IN_PROGRESS")] }) }))).toMatchObject({ chip: "PR open", tone: "working" });
     expect(chip(lane({ evidence: current(), pr: pr({ reviewDecision: "CHANGES_REQUESTED" }) }))).toMatchObject({ chip: "PR failed", tone: "blocked", why: "changes requested" });

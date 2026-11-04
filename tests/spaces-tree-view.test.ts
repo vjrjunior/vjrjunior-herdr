@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { herdr, type Node } from "./app-mocks";
 
 const app = {
@@ -227,6 +227,14 @@ describe("command center lane line", () => {
     }
     return null;
   };
+  const shared = herdr.theme;
+  beforeEach(() => {
+    herdr.theme = () => new Proxy({}, { get: (_target, prop) => (typeof prop === "string" ? `#${prop}` : undefined) });
+  });
+  afterEach(() => {
+    herdr.theme = shared;
+  });
+  const colorOf = (node: Node) => node.calls.find(([call]) => call === "text_color")?.[1][0];
   const withLane = (lane: Record<string, unknown>) => {
     const view = setup();
     app.shared["command-center.lanes"] = { "/w/app/one": lane };
@@ -238,7 +246,8 @@ describe("command center lane line", () => {
     expect(node.calls).toContainEqual(["h", [42]]);
     expect(texts(node)).toContain("AC 3/5");
     expect(texts(node)).toContain("· vjr-ac asks M4");
-    expect(find(node, "AC 3/5")?.calls).toContainEqual(["text_color", ["#505050"]]);
+    expect(colorOf(find(node, "AC 3/5") as Node)).toBe("#blocked");
+    expect(colorOf(find(node, "· vjr-ac asks M4") as Node)).toBe("#muted");
   });
 
   test("a row without a lane stays one 28 px line", () => {
@@ -251,6 +260,7 @@ describe("command center lane line", () => {
     const node = row(withLane({ chip: "PR open", tone: "work" }));
     expect(texts(node)).toContain("PR open");
     expect(texts(node).filter((text) => text.startsWith("·"))).toEqual([]);
+    expect(colorOf(find(node, "PR open") as Node)).toBe("#unknown");
   });
 
   test("both lines of a lane row truncate", () => {
@@ -259,6 +269,11 @@ describe("command center lane line", () => {
     expect(name.calls.some(([call]) => call === "truncate")).toBe(true);
     const sub = node.kids.flatMap((kid) => [kid, ...kid.kids]).find((kid) => kid.calls.some(([call, args]) => call === "h" && args[0] === 14) && kid.calls.some(([call]) => call === "text_size")) as Node;
     expect(sub.calls.some(([call]) => call === "truncate")).toBe(true);
+    const why = find(node, "· vjr-ac asks M4") as Node;
+    const names = why.calls.map(([call]) => call);
+    expect(names).toContain("flex_1");
+    expect(names).toContain("truncate");
+    expect(why.calls).toContainEqual(["min_w", [0]]);
   });
 
   test("the lane line shows in the blocks style too", () => {

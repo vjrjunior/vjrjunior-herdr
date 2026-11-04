@@ -309,7 +309,7 @@ export default class SpacesTree extends View {
       .truncate()
       .text_size(TEXT.sm)
       .child(div().flex_none().text_color(color).child(found.chip))
-      .when(Boolean(found.why), (el) => el.child(div().text_color(t.muted).child(`· ${found.why}`)));
+      .when(Boolean(found.why), (el) => el.child(div().flex_1().min_w(0).truncate().text_color(t.muted).child(`· ${found.why}`)));
     return { height: LANE, sub };
   }
 
