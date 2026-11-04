@@ -584,7 +584,7 @@ describe("column", () => {
     const shown = texts(column().render());
     expect(shown).toContain("app");
     expect(shown).toContain("cup-1234");
-    expect(shown).toContain("Partner Programmer ▾");
+    expect(shown).toContain("Partner Programmer");
   });
 
   test("the timeline names every step with what it did or will do", () => {
@@ -630,7 +630,7 @@ describe("column", () => {
     app.shared["command-center.profiles"] = { "/r/app": "off" };
     const view = column();
     expect(texts(view.render())).toContain("Command Center is off in app");
-    expect(texts(view.render())).toContain("Off ▾");
+    expect(texts(view.render())).toContain("Off");
     expect(texts(view.render())).not.toContain("A saved draft disappears");
     press(view, "profile-on");
     expect(app.shared["command-center.profiles"]).toEqual({});
@@ -808,6 +808,17 @@ describe("manual checks in the column", () => {
     expect(app.execs.find((call) => call.command === "open")?.args).toEqual(["http://app.localhost/inbox"]);
   });
 
+  test("an asking check shows its state as a chip and its answers with icons", () => {
+    focusedCwd = "/w/cup-1234";
+    const root = column([AC_LANE]).render();
+    expect(svgs(pathTo(root, "check-pass-D02")?.at(-1) as Node)).toContain("mods/kit/icons/check.svg");
+    expect(svgs(pathTo(root, "check-fail-D02")?.at(-1) as Node)).toContain("mods/kit/icons/x.svg");
+    expect(texts(root)).toContain("asking");
+    expect(texts(root)).toContain("passed");
+    expect(texts(root)).toContain("pending");
+    expect(texts(root).join("")).not.toMatch(/[\u2713\u25cf\u25cb\u2197]/);
+  });
+
   test("a working claude shows the checks without buttons and says why", () => {
     focusedCwd = "/w/cup-1234";
     const view = column([{ ...AC_LANE, claude: { terminal: "t12", status: "working", count: 1, ambiguous: false } }]);
@@ -818,7 +829,7 @@ describe("manual checks in the column", () => {
   test("checks asked in the task's session link to its claude and answer there", async () => {
     focusedCwd = "/w/cup-1234";
     const view = column([{ ...AC_LANE, claude: { terminal: null, status: null, count: 0, ambiguous: false }, session: { terminal: "t30", status: "idle", count: 1, ambiguous: false }, skill: { ...AC_LANE.skill, from: "session" } }]);
-    expect(texts(view.render())).toContain("claude · t30 ↗");
+    expect(texts(view.render())).toContain("claude · t30");
     press(view, "check-pass-D02");
     await flush();
     expect(sends().map((call) => call.args)).toEqual([["send", "--if", "idle", "t30", "D02 passed"]]);
@@ -883,6 +894,15 @@ describe("shot window", () => {
     expect(texts(view.render())).toContain("Saving");
     view.key("escape");
   });
+
+  test("the screenshot viewer closes with an x icon", () => {
+    app.shared["command-center.state"] = { lanes: [{ ...BASE_LANE, release: RELEASE }] };
+    propsNow = { role: "shot", lane: "/w/cup-1234", index: 0, overlay: "o9" };
+    const view = new CommandCenter();
+    view.init(propsNow, cx);
+    expect(svgs(pathTo(view.render(), "close")?.at(-1) as Node)).toEqual(["mods/kit/icons/x.svg"]);
+    expect(texts(view.render()).join("")).not.toMatch(/[\u2715\u2190]/);
+  });
 });
 
 describe("timeline and identity", () => {
@@ -910,6 +930,21 @@ describe("timeline and identity", () => {
     press(view, "step-Task");
     expect(svgs(head())).toContain("mods/kit/icons/chevron-down.svg");
     expect(texts(head()).join("")).not.toContain("▾");
+  });
+
+  test("Start a task is a dashed button with a plus", () => {
+    focusedCwd = "/r/app";
+    const start = pathTo(column([]).render(), "start-task")?.at(-1) as Node;
+    expect(svgs(start)).toEqual(["mods/kit/icons/plus.svg"]);
+    expect(called(start, "border_dashed")).toHaveLength(1);
+    expect(texts(start)).toContain("Start a task");
+  });
+
+  test("the profile button shows a chevron", () => {
+    focusedCwd = "/w/cup-1234";
+    const profile = pathTo(column().render(), "profile")?.at(-1) as Node;
+    expect(svgs(profile)).toEqual(["mods/kit/icons/chevron-down.svg"]);
+    expect(texts(profile).join("")).not.toContain("\u25be");
   });
 
   test("the step gutter is as wide as the node", () => {

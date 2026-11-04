@@ -1,72 +1,22 @@
 import { div, image } from "gpui-kit";
 import { Input, TextView, h_flex, v_flex } from "gpui-base";
-import { BRAND, ICON_SIZE, icon, iconButton, stepNode } from "../../kit/kit.js";
+import { BRAND, CONTROL, ICON_SIZE, button, card, chip, heading, icon, iconButton, line, link, pill, statusDot, stepNode } from "../../kit/kit.js";
 import { answerStep, laneSummary, PROFILES, profileOf, rollup, stepNotes, viewFor } from "./logic.js";
 
 const STEPS = ["Task", "AC", "Ship", "Evidence", "PR", "Merge", "Clear"];
 const FILES = ["ship.json", "screenshots.md", "message.txt", "meta.json"];
-const CHECK_MARK = { passed: "✓", failed: "!", asking: "●", pending: "○" };
+const CHECK_CHIP = { passed: ["check", "done"], failed: ["exclamation", "blocked"], asking: ["dot", "working"], pending: ["ring", "unknown"] };
+const MARK_OF = { ok: "check", run: "dot", bad: "exclamation", idle: "ring" };
 const OPTIONS = [...Object.entries(PROFILES).map(([id, profile]) => [id, profile.label]), ["off", "Off"]];
 
 const toneColor = (tone, t) => ({ blocked: t.blocked, working: t.working, done: t.done }[tone] ?? t.unknown);
 const stateColor = (state, t) => ({ done: t.done, ok: t.done, current: t.done, run: t.working, next: t.accent, bad: t.blocked, stale: t.blocked }[state] ?? t.unknown);
-const linkColor = (t) => t.ansi12 ?? t.accent;
 const merged = (lane) => lane.pr && !lane.pr.error && lane.pr.state === "MERGED";
 const hasPr = (lane) => Boolean(lane.pr && !lane.pr.error && lane.pr.number);
 const currentOf = (steps) => {
   const index = steps.findIndex((step) => step !== "done");
   return index < 0 ? 6 : index;
 };
-
-function heading(text, t, right) {
-  return h_flex()
-    .justify_between()
-    .text_size(10.5)
-    .text_color(t.unknown)
-    .child(div().child(text.toUpperCase()))
-    .when(right != null, (el) => el.child(div().text_color(t.dim).child(String(right))));
-}
-
-function pill(text, t) {
-  return h_flex().flex_none().h(18).px(6).items_center().rounded(4).text_size(10.5).font_bold().bg(t.accent).text_color(t.accent_foreground ?? t.chrome).child(text);
-}
-
-function link(id, text, t, action) {
-  return div().id(id).flex_none().text_size(11).text_color(linkColor(t)).hover((s) => s.text_color(t.foreground)).on_click((_e, cx) => action(cx)).child(text);
-}
-
-function button(id, label, color, t, action) {
-  return h_flex()
-    .id(id)
-    .flex_none()
-    .h(24)
-    .px(9)
-    .items_center()
-    .rounded(5)
-    .border_1()
-    .border_color(color)
-    .text_size(11)
-    .text_color(color)
-    .hover((s) => s.bg(t.hover))
-    .on_click((_e, cx) => action(cx))
-    .child(label);
-}
-
-function line(name, detail, color, t) {
-  return h_flex()
-    .h(24)
-    .gap(10)
-    .items_center()
-    .border_t_1()
-    .border_color(t.border)
-    .text_size(11.5)
-    .child(div().flex_1().min_w(0).truncate().text_color(t.foreground).child(name))
-    .child(div().flex_none().text_size(11).text_color(color).child(detail));
-}
-
-function card(t) {
-  return v_flex().gap(8).p(10).rounded(6).bg(t.surface).border_1().border_color(t.border);
-}
 
 function topBar(view, left, repo, profiles, t) {
   const profile = repo ? profileOf(profiles, repo.main) : null;
@@ -85,7 +35,7 @@ function topBar(view, left, repo, profiles, t) {
         h_flex()
           .id("profile")
           .flex_none()
-          .h(22)
+          .h(CONTROL.small)
           .px(8)
           .gap(5)
           .items_center()
@@ -96,8 +46,9 @@ function topBar(view, left, repo, profiles, t) {
           .text_color(t.foreground)
           .hover((s) => s.bg(t.hover))
           .on_click((_e, cx) => view.chooseProfile(repo, cx))
-          .child(div().size(6).rounded(3).bg(profile === "off" ? t.dim : t.accent))
-          .child(`${profile === "off" ? "Off" : PROFILES[profile].label} ▾`),
+          .child(statusDot(profile === "off" ? t.dim : t.accent, { size: 6 }))
+          .child(profile === "off" ? "Off" : PROFILES[profile].label)
+          .child(icon("chevron-down", { size: ICON_SIZE.sm })),
       ),
     );
 }
@@ -127,29 +78,14 @@ function nextAction(view, lane, t) {
   const offerTab = Boolean(next.text) && (next.kind === "send" || next.kind === "wait");
   return v_flex()
     .gap(6)
-    .child(
-      h_flex()
-        .id("next")
-        .h(32)
-        .w_full()
-        .items_center()
-        .justify_center()
-        .rounded(5)
-        .font_bold()
-        .text_size(12)
-        .bg(next.disabled ? t.raised : t.accent)
-        .text_color(next.disabled ? t.unknown : (t.accent_foreground ?? t.chrome))
-        .when(!next.disabled, (el) => el.hover((s) => s.opacity(0.9)))
-        .on_click((_e, cx) => view.act(lane, cx))
-        .child(next.label ?? ""),
-    )
+    .child(button("next", { label: next.label ?? "", variant: "solid", full: true, height: CONTROL.large, disabled: next.disabled, onClick: (cx) => view.act(lane, cx) }, t))
     .child(
       h_flex()
         .gap(8)
         .text_size(11)
         .text_color(t.unknown)
         .child(div().flex_1().min_w(0).child(`→ ${next.target ?? ""}`))
-        .when(offerTab, (el) => el.child(link("new-tab", "New tab instead", t, () => view.newTab(lane)))),
+        .when(offerTab, (el) => el.child(link("new-tab", { label: "New tab instead", onClick: () => view.newTab(lane) }, t))),
     )
     .when(Boolean(lane.note), (el) => el.child(div().text_size(11).text_color(t.working).child(lane.note)));
 }
@@ -159,7 +95,7 @@ function checkRow(view, lane, check, t) {
   const sent = view.sent?.[`${lane.key}:${check.id}`] === check.state;
   const failing = view.failing?.lane === lane.key && view.failing?.id === check.id;
   const refused = asking && !sent ? answerStep(lane, check.id, "passed").refused : null;
-  const color = { passed: t.done, failed: t.blocked, asking: t.working }[check.state] ?? t.unknown;
+  const [stateMark, stateTone] = CHECK_CHIP[check.state] ?? CHECK_CHIP.pending;
   return v_flex()
     .gap(4)
     .p(8)
@@ -171,7 +107,7 @@ function checkRow(view, lane, check, t) {
         .gap(8)
         .child(div().flex_none().w(28).text_size(11).text_color(t.unknown).child(check.id))
         .child(div().flex_1().min_w(0).text_size(11.5).text_color(t.foreground).child(check.steps))
-        .child(div().flex_none().text_size(10.5).text_color(sent ? t.working : color).child(sent ? "Sent" : `${CHECK_MARK[check.state] ?? "○"} ${check.state}`)),
+        .child(sent ? chip("Sent", { color: t.working }, t) : chip(check.state, { mark: stateMark, color: t[stateTone] }, t)),
     )
     .child(div().pl(36).text_size(11).text_color(t.muted).child(`→ ${check.expected}`))
     .when(check.state === "failed" && Boolean(check.note), (el) => el.child(div().pl(36).text_size(11).text_color(t.blocked).child(`Saw: ${check.note}`)))
@@ -183,16 +119,16 @@ function checkRow(view, lane, check, t) {
           .gap(6)
           .items_center()
           .flex_wrap()
-          .when(Boolean(check.url), (row) => row.child(link(`check-open-${check.id}`, "Open ↗", t, () => view.open(check.url))))
+          .when(Boolean(check.url), (row) => row.child(link(`check-open-${check.id}`, { label: "Open", icon: "external-link", onClick: () => view.open(check.url) }, t)))
           .when(!sent && !refused && !failing, (row) =>
             row
-              .child(button(`check-pass-${check.id}`, "Passed", t.done, t, (cx) => view.answer(lane, check.id, "passed", null, cx)))
-              .child(button(`check-fail-${check.id}`, "Failed…", t.blocked, t, (cx) => view.startFailure(lane, check.id, cx))),
+              .child(button(`check-pass-${check.id}`, { label: "Passed", icon: "check", color: t.done, onClick: (cx) => view.answer(lane, check.id, "passed", null, cx) }, t))
+              .child(button(`check-fail-${check.id}`, { label: "Failed…", icon: "x", color: t.blocked, onClick: (cx) => view.startFailure(lane, check.id, cx) }, t)),
           )
           .when(!sent && Boolean(refused), (row) => row.child(div().text_size(11).text_color(t.unknown).child(refused))),
       ),
     )
-    .when(!asking && Boolean(check.url), (el) => el.child(div().pl(36).child(link(`check-open-${check.id}`, "Open ↗", t, () => view.open(check.url)))))
+    .when(!asking && Boolean(check.url), (el) => el.child(div().pl(36).child(link(`check-open-${check.id}`, { label: "Open", icon: "external-link", onClick: () => view.open(check.url) }, t))))
     .when(failing, (el) =>
       el.child(
         v_flex()
@@ -223,7 +159,7 @@ function checksBody(view, lane, t) {
         .items_center()
         .text_size(11.5)
         .child(div().flex_1().min_w(0).text_color(t.foreground).child(running ? `${lane.skill.skill} is asking you` : "Manual checks"))
-        .when(Boolean(claude.terminal), (el) => el.child(link("go-claude", `claude · ${claude.terminal} ↗`, t, () => view.focusClaude(claude.terminal)))),
+        .when(Boolean(claude.terminal), (el) => el.child(link("go-claude", { label: `claude · ${claude.terminal}`, icon: "terminal", onClick: () => view.focusClaude(claude.terminal) }, t))),
     )
     .children(checks.map((check) => checkRow(view, lane, check, t)));
 }
@@ -232,14 +168,13 @@ function prBody(lane, t) {
   const pr = lane.pr;
   if (!pr || pr.error) return div().text_size(11.5).text_color(t.unknown).child(pr?.error ?? "No PR yet");
   const checks = rollup(pr.statusCheckRollup);
-  const marks = { ok: "✓", run: "●", bad: "!", idle: "○" };
   const body = v_flex().child(div().pb(4).text_size(11.5).text_color(t.foreground).child(`PR #${pr.number} · ${pr.isDraft ? "draft" : pr.state === "MERGED" ? "merged" : "ready for review"}`));
   if (lane.prError) body.child(div().pb(4).text_size(11).text_color(t.working).child(lane.prError));
-  for (const item of checks.items) body.child(line(item.name, `${marks[item.state]} ${item.detail}`, stateColor(item.state, t), t));
-  if (lane.preview?.link) body.child(line("Preview", `✓ ${lane.preview.state?.toLowerCase?.() ?? "ready"}`, t.done, t));
+  for (const item of checks.items) body.child(line(item.name, { detail: item.detail, color: stateColor(item.state, t), mark: MARK_OF[item.state] }, t));
+  if (lane.preview?.link) body.child(line("Preview", { detail: lane.preview.state?.toLowerCase?.() ?? "ready", color: t.done, mark: "check" }, t));
   if (pr.reviewDecision) {
     const color = pr.reviewDecision === "CHANGES_REQUESTED" ? t.blocked : pr.reviewDecision === "APPROVED" ? t.done : t.working;
-    body.child(line("Review", pr.reviewDecision.toLowerCase().replaceAll("_", " "), color, t));
+    body.child(line("Review", { detail: pr.reviewDecision.toLowerCase().replaceAll("_", " "), color }, t));
   }
   return body;
 }
@@ -250,11 +185,11 @@ function doneBody(lane, t) {
   const body = v_flex();
   for (const item of lane.task.done) {
     const verified = rows.get(item.id);
-    body.child(line(`${item.id}  ${item.item}`, verified ? `✓ ${verified.verdict.toLowerCase()}` : "to verify", verified ? t.done : t.unknown, t));
+    body.child(line(`${item.id}  ${item.item}`, { detail: verified ? verified.verdict.toLowerCase() : "to verify", color: verified ? t.done : t.unknown, mark: verified ? "check" : "ring" }, t));
   }
   if (lane.task.done.length === 0) body.child(div().text_size(11.5).text_color(t.unknown).child("No done items in VJR-TASK.md"));
-  if (verification?.gates) body.child(line(verification.gates, "✓ gates", t.done, t));
-  if (verification?.review) body.child(line(verification.review, "✓ review", t.done, t));
+  if (verification?.gates) body.child(line(verification.gates, { detail: "gates", color: t.done, mark: "check" }, t));
+  if (verification?.review) body.child(line(verification.review, { detail: "review", color: t.done, mark: "check" }, t));
   return body;
 }
 
@@ -265,7 +200,7 @@ function evidenceBody(view, lane, t) {
   else if (evidence) {
     for (const file of FILES) {
       const state = evidence.files?.[file] ?? "missing";
-      body.child(line(file, `${state === "current" ? "✓" : state === "stale" ? "!" : "○"} ${state}`, stateColor(state, t), t));
+      body.child(line(file, { detail: state, color: stateColor(state, t), mark: state === "current" ? "check" : state === "stale" ? "exclamation" : "ring" }, t));
     }
   }
   const release = releaseCard(view, lane, t);
@@ -325,26 +260,12 @@ function releaseCard(view, lane, t) {
           .text_size(11)
           .text_color(t.working)
           .child(div().child(`Links still point to ${release.links}.`))
-          .child(link("regenerate", "Regenerate with production links", t, (cx) => view.regenerate(lane, cx))),
+          .child(link("regenerate", { label: "Regenerate with production links", onClick: (cx) => view.regenerate(lane, cx) }, t)),
       ),
     )
     .when(Boolean(release.messagePath), (el) =>
       el.child(
-        h_flex()
-          .id("copy")
-          .h(28)
-          .w_full()
-          .items_center()
-          .justify_center()
-          .rounded(5)
-          .font_bold()
-          .text_size(11.5)
-          .bg(done ? t.accent : t.raised)
-          .text_color(done ? (t.accent_foreground ?? t.chrome) : t.foreground)
-          .border_1()
-          .border_color(done ? t.accent : t.input)
-          .on_click((_e, cx) => view.copy(release, cx))
-          .child("Copy message"),
+        button("copy", { label: "Copy message", variant: done ? "solid" : "outline", full: true, height: CONTROL.row, onClick: (cx) => view.copy(release, cx) }, t),
       ),
     );
 }
@@ -425,8 +346,9 @@ function laneRow(view, lane, t) {
   const summary = laneSummary(lane);
   const tone = toneColor(summary.tone, t);
   const dots = STEPS.map((_, index) => {
-    const color = index < summary.stage ? t.done : index === summary.stage ? tone : t.dim;
-    return div().text_size(8).text_color(color).when(index < summary.stage, (el) => el.opacity(0.6)).child(index <= summary.stage ? "●" : "○");
+    if (index < summary.stage) return statusDot(t.done, { size: 6 }).opacity(0.6);
+    if (index === summary.stage) return statusDot(tone, { size: 6 });
+    return statusDot(t.dim, { size: 6, hollow: true });
   });
   return h_flex()
     .gap(8)
@@ -455,27 +377,11 @@ function laneRow(view, lane, t) {
             .child(div().flex_1().min_w(0).truncate().text_color(t.muted).child(summary.why ?? "")),
         ),
     )
-    .when(Boolean(summary.action), (el) => el.child(button(`lane-act-${lane.key}`, summary.action, t.muted, t, (cx) => view.laneAction(lane, summary.action, cx))));
+    .when(Boolean(summary.action), (el) => el.child(button(`lane-act-${lane.key}`, { label: summary.action, color: t.muted, onClick: (cx) => view.laneAction(lane, summary.action, cx) }, t)));
 }
 
 function repoView(view, repo, lanes, t) {
-  const start = h_flex()
-    .id("start-task")
-    .h(32)
-    .w_full()
-    .gap(8)
-    .items_center()
-    .justify_center()
-    .rounded(5)
-    .border_1()
-    .border_dashed()
-    .border_color(t.input)
-    .text_size(12)
-    .text_color(t.foreground)
-    .hover((s) => s.bg(t.hover))
-    .on_click((_e, cx) => view.startTask(repo, cx))
-    .child("+ Start a task")
-    .child(div().text_size(11).text_color(t.unknown).child("/vjr-task in a new tab"));
+  const start = button("start-task", { label: "Start a task", icon: "plus", variant: "dashed", full: true, height: CONTROL.large, hint: "/vjr-task in a new tab", onClick: (cx) => view.startTask(repo, cx) }, t);
   const list = lanes.length ? v_flex().children(lanes.map((lane) => laneRow(view, lane, t))) : div().text_size(11.5).text_color(t.unknown).child("No tasks in progress.");
   return [start, v_flex().gap(6).child(heading(`Tasks in ${repo.name}`, t, lanes.length)).child(list)];
 }
@@ -506,7 +412,7 @@ export function columnView(view, state, cwd, profiles, t) {
     body = [message("No task in this worktree", "A task is a worktree with a VJR-TASK.md from /vjr-task.", t)];
   } else if (shown.kind === "off") {
     left = [div().font_semibold().text_color(t.foreground).child(repo.name)];
-    body = [message(`Command Center is off in ${repo.name}`, "Nothing is read here until a profile is on.", t), h_flex().justify_center().child(button("profile-on", `Use ${PROFILES.pp.label}`, t.muted, t, () => view.setProfile(repo.main, "pp")))];
+    body = [message(`Command Center is off in ${repo.name}`, "Nothing is read here until a profile is on.", t), h_flex().justify_center().child(button("profile-on", { label: `Use ${PROFILES.pp.label}`, color: t.muted, onClick: () => view.setProfile(repo.main, "pp") }, t))];
   }
   return v_flex()
     .size_full()
@@ -539,7 +445,7 @@ export function profileView(view, profiles, t) {
           .rounded(4)
           .hover((s) => s.bg(t.hover))
           .on_click(() => view.setProfile(view.profileRepo, id))
-          .child(div().w(12).text_color(t.accent).child(id === chosen ? "✓" : ""))
+          .child(div().w(12).flex().items_center().when(id === chosen, (el) => el.child(icon("check", { color: t.accent }))))
           .child(div().text_color(t.foreground).child(label)),
       ),
     );
@@ -566,8 +472,8 @@ export function shotView(view, lane, t) {
         .border_color(t.border)
         .text_size(12)
         .child(div().text_color(t.foreground).child(shot?.file ?? "No screenshot"))
-        .child(div().flex_1().text_color(t.unknown).child(shots.length ? `${view.index + 1} of ${shots.length} · ← → to move · Esc to close` : ""))
-        .child(div().id("close").text_color(t.unknown).on_mouse_down("left", (_e, cx) => cx.stop_propagation()).on_click(() => view.key("escape")).child("✕")),
+        .child(div().flex_1().text_color(t.unknown).child(shots.length ? `${view.index + 1} of ${shots.length} · arrow keys to move · Esc to close` : ""))
+        .child(iconButton("close", { icon: "x", bordered: false, size: CONTROL.small, stop: true, onClick: () => view.key("escape") }, t)),
     )
     .child(h_flex().flex_1().min_h(0).items_center().justify_center().p(12).bg(t.background ?? t.chrome).when(Boolean(shot), (el) => el.child(image(shot.image).size_full())))
     .child(div().flex_none().px(12).py(10).border_t(1).border_color(t.border).text_size(12).child(shot?.caption ?? ""));
