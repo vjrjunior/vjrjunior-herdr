@@ -40,3 +40,17 @@ test("the gallery shows each step state", () => {
   expect(borders).toEqual(["t.accent", "t.blocked", "t.input"]);
   expect(svgs(section)).toEqual(["mods/kit/icons/check-heavy.svg", "mods/kit/icons/exclamation.svg"]);
 });
+
+test("the gallery shows the buttons and chips the mods use", () => {
+  const root = render();
+  const colorOf = (id: string) => walk(find(root, id)).flatMap((n) => n.calls.filter(([c]) => c === "text_color").map(([, args]) => args[0]));
+  expect(texts(find(root, "kit-b-named"))).toContain("ClickUp");
+  expect(colorOf("kit-b-named")).toContain("t.muted");
+  expect(svgs(find(root, "kit-b-pass"))).toEqual(["mods/kit/icons/check.svg"]);
+  expect(colorOf("kit-b-pass")).toContain("t.done");
+  expect(svgs(find(root, "kit-b-fail"))).toEqual(["mods/kit/icons/x.svg"]);
+  expect(colorOf("kit-b-fail")).toContain("t.blocked");
+  const chips = svgs(find(root, "kit-chips"));
+  expect(chips).toContain("mods/kit/icons/exclamation.svg");
+  expect(chips).not.toContain("mods/kit/icons/x.svg");
+});

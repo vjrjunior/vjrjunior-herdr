@@ -256,6 +256,15 @@ describe("command center lane line", () => {
     expect(node.calls).not.toContainEqual(["h", [42]]);
   });
 
+  test("the narrow rail shows no lane line", () => {
+    const view = withLane({ chip: "AC 3/5", tone: "blocked", why: "vjr-ac asks M4" });
+    herdr.layout = () => ({ id: "root", children: [{ id: "sidebar", size: { px: 100 } }] });
+    const root = view.render();
+    expect(texts(root)).not.toContain("AC 3/5");
+    expect(texts(root)).not.toContain("· vjr-ac asks M4");
+    expect(pathTo(root, "kid-/w/app/one")).toBeNull();
+  });
+
   test("a lane without a why shows only its step", () => {
     const node = row(withLane({ chip: "PR open", tone: "work" }));
     expect(texts(node)).toContain("PR open");

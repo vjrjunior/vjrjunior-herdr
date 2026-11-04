@@ -117,6 +117,15 @@ describe("the kit", () => {
     expect(() => setup().generate(variantWith(userRecipe))).toThrow("user uses the kit, but test-desk has no kit");
   });
 
+  test("a single-quoted kit import is rewritten too", () => {
+    const { repo, generate } = setup();
+    writeFileSync(join(repo, "mods/user/main.js"), "import { KIT } from '../../kit/kit.js';\nexport default class Mod {}\n");
+    const mods = generate(variantWith(withKit, userRecipe)).mods;
+    expect(mods["test-user"]?.["main.js"]).toContain("from './kit.js'");
+    expect(mods["test-user"]?.["main.js"]).not.toContain("kit/kit.js");
+    expect(mods["test-user"]?.["kit.js"]).toContain("test-kit");
+  });
+
   test("a kit import by another path refuses", () => {
     const { repo, generate } = setup();
     writeFileSync(join(repo, "mods/user/main.js"), 'import { KIT } from "../kit/kit.js";\nexport default class Mod {}\n');

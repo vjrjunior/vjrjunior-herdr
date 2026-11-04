@@ -4,7 +4,7 @@ import { join } from "node:path";
 import type { Node } from "./app-mocks";
 import "./app-mocks";
 
-const { ICONS, button, chip, iconButton, iconPath, stepNode } = await import("../kit/kit.js");
+const { ICONS, button, chip, iconButton, iconPath, stepNode, toneColor } = await import("../kit/kit.js");
 
 const repo = join(import.meta.dir, "..");
 const t = new Proxy({}, { get: (_x, p) => (typeof p === "string" ? `t.${p}` : undefined) }) as any;
@@ -122,6 +122,20 @@ test("a button's text size follows its height", () => {
   expect(size(32)).toEqual([[12]]);
   expect(size(28)).toEqual([[11.5]]);
   expect(size()).toEqual([[11]]);
+});
+
+test("a button's hint stays at the small text size whatever the height", () => {
+  const hint = (height?: number) => own(button("b", { label: "Go", hint: "ctrl-k", height, onClick() {} }, t).kids.at(-1) as Node, "text_size");
+  expect(hint(32)).toEqual([[11]]);
+  expect(hint()).toEqual([[11]]);
+});
+
+test("toneColor maps a tone to its theme color", () => {
+  expect(toneColor("blocked", t)).toBe("t.blocked");
+  expect(toneColor("working", t)).toBe("t.working");
+  expect(toneColor("done", t)).toBe("t.done");
+  expect(toneColor("idle", t)).toBe("t.unknown");
+  expect(toneColor(undefined, t)).toBe("t.unknown");
 });
 
 test("an icon button without a tooltip makes no tooltip call", () => {
