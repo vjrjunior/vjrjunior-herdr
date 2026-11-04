@@ -268,9 +268,10 @@ export default class SpacesTree extends View {
   }
 
   drop(target, row) {
+    const lit = this.dropOver === row.key;
     const drag = this.taking(target, row);
     this.dropOver = null;
-    if (!drag) return false;
+    if (!lit || !drag) return false;
     const time = Date.now();
     setShared(REQUEST, { id: String(time), tab: drag.tab, space: drag.space, to: target.path, toSpace: row.space?.id ?? null, at: time });
     setShared(DRAG, null);

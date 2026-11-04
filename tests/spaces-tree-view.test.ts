@@ -331,9 +331,14 @@ describe("tab drops", () => {
     return path;
   }
 
+  function enter(view: { render(): Node }, key: string): void {
+    for (const handler of (at(view, key).at(-1) as Node).handlers.hover ?? []) handler(true, cx);
+  }
+
   test("releasing a drag on a worktree row asks for the move", () => {
     const view = dropSetup();
     app.shared[DRAG] = drag();
+    enter(view, "kid-/w/app/one");
     fire(at(view, "kid-/w/app/one"), "up:left");
     const request = app.shared[REQUEST] as Record<string, unknown>;
     expect(request).toMatchObject({ tab: "t1", space: "m", to: "/w/app/one", toSpace: null });
@@ -342,11 +347,13 @@ describe("tab drops", () => {
     expect(app.shared[DRAG]).toBeNull();
 
     app.shared[DRAG] = drag();
+    enter(view, "kid-w");
     fire(at(view, "kid-w"), "up:left");
     expect(app.shared[REQUEST]).toMatchObject({ tab: "t1", space: "m", to: "/w/app/two", toSpace: "w" });
 
     delete app.shared[REQUEST];
     app.shared[DRAG] = drag("w");
+    enter(view, `head-${common}`);
     fire(at(view, `head-${common}`), "up:left");
     expect(app.shared[REQUEST]).toMatchObject({ tab: "t1", space: "w", to: "/r/app", toSpace: "m" });
     expect(app.runs).toEqual([]);
@@ -388,9 +395,19 @@ describe("tab drops", () => {
   test("a drop on an extra space of the main checkout asks for the move into that space", () => {
     const view = dropSetup(true);
     app.shared[DRAG] = drag("w");
+    enter(view, "head-e");
     fire(at(view, "head-e"), "up:left");
     expect(app.shared[REQUEST]).toMatchObject({ tab: "t1", space: "w", to: "/r/app", toSpace: "e" });
     expect(app.shared[DRAG]).toBeNull();
+  });
+
+  test("a release on a row that never lit, as after a drag of the list's scrollbar, asks nothing and ends the drag", () => {
+    const view = dropSetup();
+    app.shared[DRAG] = { ...drag(), at: Date.now() - 5000 };
+    fire(at(view, "kid-/w/app/one"), "up:left");
+    expect(app.shared[REQUEST]).toBeUndefined();
+    expect(app.shared[DRAG]).toBeNull();
+    expect(app.runs).toEqual([]);
   });
 
   test("a press on a row's chevron that slides off onto the row asks nothing", () => {
