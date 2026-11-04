@@ -137,7 +137,7 @@ It never types into another worktree, into a working Claude, into one waiting on
 herdr-app do pane.split --direction right --mod vjr-markdown --props '{"file":"/path/to/VJR-TASK.md"}'
 ```
 
-In the square layout the mod is `vjr-square-markdown`. The pane reads the file again when it changes and hides front matter. A link to another `.md` opens in the same pane, with `Back` (an outline button with an arrow) to return; web links open in the browser and other files in their own app. The header's right side has two icon buttons with tooltips: Zed opens the file in Zed, and Reload reads it again. It reads only the file it shows and the files it links to, runs `open` and `zed`, and never reaches the network.
+In the square layout the mod is `vjr-square-markdown`. The pane reads the file again when it changes and hides front matter. A link to another `.md` opens in the same pane, with `Back` (an outline button with an arrow) to return; web links open in the browser and other files in their own app. The header's right side has two buttons: Zed, an outline button with a gray Zed icon and the name, opens the file in Zed, and Reload, an icon button with a tooltip, reads it again. It reads only the file it shows and the files it links to, runs `open` and `zed`, and never reaches the network.
 
 ## Kit
 

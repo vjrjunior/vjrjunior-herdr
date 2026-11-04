@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { herdr, type Node } from "./app-mocks";
 
 const { default: Markdown } = await import("../mods/markdown/main.js");
@@ -13,6 +13,12 @@ let execs: [string, string[]][];
 let watches: { dir: string; resolve: (paths: string[]) => void }[];
 let given: Record<string, unknown>;
 let slow: ((value: string | null) => void)[] | null;
+
+const originalTheme = herdr.theme;
+
+afterEach(() => {
+  herdr.theme = originalTheme;
+});
 
 beforeEach(() => {
   files = { [FILE]: "# Draft autosave\n\nBody text" };
