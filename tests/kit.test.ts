@@ -108,6 +108,7 @@ const ADOPTERS = [
   "mods/spaces-tree/main.js",
   "mods/markdown/main.js",
   "mods/move-tab/main.js",
+  "tools/test-panel/main.js",
 ];
 
 for (const file of ADOPTERS) {

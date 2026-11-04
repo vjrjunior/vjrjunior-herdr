@@ -60,6 +60,7 @@ The mods in this repo draw their UI with the kit in `kit/kit.js`: its components
 - `bun test` passes. The tests use temporary homes, never the real app folder.
 - For a mod or a recipe, `bun run apply-layout` passes (it runs `herdr-app check` on every changed mod and installs nothing if one fails) and `herdr-app status` shows no errors. Then switch to each layout (`herdr-app do layout.switch '{"name":"vjr-desk"}'`, then `vjr-desk-square`) and take a `herdr-app shot` that shows the change in both.
 - A change people can see updates its section of `README.md` and the recipe that describes it (`RECIPE.md`, or `mods/<name>/RECIPE.md`) on the same branch. Recipes follow the order in Herdr's guide.
+- A check only a person in the window can make (a drag, a toast, a key) goes in a test panel run (`bun run test-panel <run.json>`, see `README.md`), all the checks in one run. Don't post steps in the chat and wait.
 - Work left for later goes in `TODOS.md`, in its What, Why, Context, Effort, Priority and Depends on shape.
 
 ## Commits

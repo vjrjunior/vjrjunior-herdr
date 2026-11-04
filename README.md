@@ -169,6 +169,41 @@ Credits:
 - [Lucide](https://lucide.dev) icons by Lucide Contributors (ISC; portions from Feather by Cole Bemis, MIT), from `lucide-static@0.469.0`. The license is in `kit/icons/LICENSE-lucide`.
 - [Simple Icons](https://simpleicons.org) by Simple Icons contributors (CC0), from `simple-icons@13.21.0`: ClickUp, GitHub and Zed. Brand marks are their owners' trademarks.
 
+## Test panel
+
+Checks that need a person in the window, a drag or a toast, run from a small window inside Herdr instead of the chat. It shows one step at a time, with what to do, what to expect, a note field, `Passed` and `Failed`, and the last few things that happened. Write the steps as JSON and install them:
+
+```sh
+bun run test-panel path/to/run.json   # installs vjr-test-panel and opens it in each of the run's layouts
+bun run test-panel --results          # every verdict, note and shot, then the events by step
+bun run test-panel --close            # closes the panel in every layout
+```
+
+```json
+{
+  "title": "Move tab",
+  "layouts": ["vjr-desk", "vjr-desk-square"],
+  "watch": ["move-tab.drag", "move-tab.request"],
+  "shotOn": ["move-tab.request"],
+  "report": "t17",
+  "steps": [
+    {
+      "title": "Drag a tab onto a worktree",
+      "run": [{ "command": "space.select", "args": { "id": "sp..." } }],
+      "do": ["Drag the tab \"split test\" onto feat/move-tab and let go."],
+      "expect": "The row lights up, then the tab moves."
+    }
+  ]
+}
+```
+
+- **Steps** run their `run` commands when they open, so a step can switch the layout, the space or the zoom for the person. A window is open in each layout in `layouts`, so it comes back after a switch, at the same step.
+- **Events** are logged on their own: spaces and tabs opened, closed, moved and reordered, a tab's pane count, the layout, and each shared key in `watch`.
+- **Shots:** each answer takes a `herdr-app shot`, and so does each change to a key in `shotOn`. They go to `~/.local/state/vjr-herdr/test-panel/<id>/` unless the run names `shots`.
+- **When the last step is answered,** the panel types a one-line summary into the terminal in `report` with `hc send`, so the Claude that wrote the run gets the result without anyone going back to it.
+
+The panel lives in `tools/test-panel/`, not in a layout, and uses the kit's icons from `vjr-kit`. It runs `herdr-app shot` and `hc send`, and reads only its own files.
+
 ## License
 
 [MIT](LICENSE)

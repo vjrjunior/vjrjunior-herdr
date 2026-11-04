@@ -11,6 +11,7 @@
     "apply-layout": "bun scripts/layout.ts apply",
     "uninstall-layout": "bun scripts/layout.ts uninstall",
     "watch": "bun --watch scripts/watch.ts",
-    "test": "bun test"
+    "test": "bun test",
+    "test-panel": "bun scripts/test-panel.ts"
   }
 }
