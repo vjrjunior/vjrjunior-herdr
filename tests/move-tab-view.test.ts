@@ -150,6 +150,17 @@ describe("move-tab popup", () => {
     expect(own(detail, "text_color")).toEqual([["t.muted"]]);
   });
 
+  test("the popup grows with its rows and scrolls past a fixed height", async () => {
+    const { view, cx } = await popup();
+    const root = view.render(cx);
+    expect(own(root, "size_full")).toEqual([]);
+    expect(own(root, "w_full")).toEqual([[]]);
+    const list = byKey(root, "move-tab-targets");
+    expect(own(list, "max_h")).toEqual([[260]]);
+    expect(own(list, "flex_1")).toEqual([]);
+    expect(own(list, "overflow_y_scrollbar")).toEqual([[]]);
+  });
+
   test("a closed worktree whose label is its branch shows it once", async () => {
     const { view, cx } = await popup();
     const root = view.render(cx);

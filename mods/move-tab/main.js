@@ -8,6 +8,7 @@ import { moveTab } from "./move.js";
 
 const KEY = "move-tab.request";
 const STALE = 10000;
+const LIST_HEIGHT = 260;
 
 function message(text, t) {
   return div().px(8).py(6).text_size(TEXT.md).text_color(t.muted).child(text);
@@ -126,8 +127,7 @@ export default class MoveTab extends View {
       .on_key_down((event, cx) => {
         if (this.key(event.key)) cx.notify();
       })
-      .size_full()
-      .min_h(0)
+      .w_full()
       .p(5)
       .gap(2)
       .bg(t.popover)
@@ -138,8 +138,7 @@ export default class MoveTab extends View {
     return root.child(
       v_flex()
         .id("move-tab-targets")
-        .flex_1()
-        .min_h(0)
+        .max_h(LIST_HEIGHT)
         .gap(2)
         .overflow_y_scrollbar()
         .children(this.targets.map((target, index) => this.row(target, index, t))),
