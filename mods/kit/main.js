@@ -23,6 +23,9 @@ export default class Kit extends View {
       .child(button("kit-b-outline", { label: "Outline", onClick: noop }, t))
       .child(button("kit-b-dashed", { label: "Dashed", variant: "dashed", onClick: noop }, t))
       .child(button("kit-b-icon", { label: "With icon", icon: "plus", onClick: noop }, t))
+      .child(button("kit-b-named", { label: "ClickUp", icon: "clickup", iconColor: t.muted, onClick: noop }, t))
+      .child(button("kit-b-pass", { label: "Passed", icon: "check", color: t.done, onClick: noop }, t))
+      .child(button("kit-b-fail", { label: "Failed", icon: "x", color: t.blocked, onClick: noop }, t))
       .child(button("kit-b-hint", { label: "With hint", hint: "ctrl-k", onClick: noop }, t))
       .child(button("kit-b-disabled", { label: "Disabled", disabled: true, onClick: noop }, t));
     const iconButtons = row()
@@ -35,9 +38,9 @@ export default class Kit extends View {
       .child(link("kit-l-icon", { label: "An external link", icon: "external-link", onClick: noop }, t));
     const chips = row()
       .child(chip("passed", { mark: "check", color: t.done }, t))
-      .child(chip("failed", { mark: "x", color: t.blocked }, t))
+      .child(chip("failed", { mark: "exclamation", color: t.blocked }, t))
       .child(chip("asking", { mark: "dot", color: t.working }, t))
-      .child(chip("Sent", { color: t.muted }, t));
+      .child(chip("Sent", { color: t.working }, t));
     const lines = card(t)
       .child(line("Check", { detail: "check", color: t.done, mark: "check" }, t))
       .child(line("Cross", { detail: "x", color: t.blocked, mark: "x" }, t))

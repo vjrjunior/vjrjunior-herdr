@@ -50,6 +50,8 @@ export function mark(kind, color, { size = ICON_SIZE.sm } = {}) {
   return icon(kind, { size, color });
 }
 
+export const toneColor = (tone, t) => ({ blocked: t.blocked, working: t.working, done: t.done }[tone] ?? t.unknown);
+
 export function stepNode(state, t) {
   const box = h_flex().size(18).flex_none().items_center().justify_center().rounded(RADIUS.round);
   if (state === "done") return box.bg(t.done).child(icon("check-heavy", { size: 11, color: t.accent_foreground }));
@@ -79,7 +81,7 @@ export function button(id, { label, icon: iconName, variant = "outline", color, 
     .on_click((_e, cx) => onClick?.(cx))
     .when(iconName != null, (el) => el.child(icon(iconName, { size: ICON_SIZE.md, color: iconColor ?? textColor })))
     .when(label != null, (el) => el.child(label))
-    .when(hint != null, (el) => el.child(div().text_color(t.unknown).child(hint)));
+    .when(hint != null, (el) => el.child(div().text_size(TEXT.sm).text_color(t.unknown).child(hint)));
 }
 
 export function iconButton(id, { icon: iconName, tooltip, color, size = CONTROL.square, iconSize = ICON_SIZE.lg, bordered = true, stop = false, onClick }, t) {

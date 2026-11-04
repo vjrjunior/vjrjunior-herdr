@@ -673,7 +673,8 @@ export default class CommandCenter extends View {
   publish(signals) {
     const lanes = signals.map((lane) => {
       const steps = stepsOf(lane);
-      return { ...lane, steps, chip: chipOf(lane, steps), next: nextStep(lane), note: noteOf(lane) };
+      const next = nextStep(lane);
+      return { ...lane, steps, chip: chipOf({ ...lane, next }, steps), next, note: noteOf(lane) };
     });
     const after = {};
     for (const lane of signals) {

@@ -27,8 +27,9 @@ function installKit(source: ModSource, options: GenerateOptions, files: Record<s
     for (const match of text.matchAll(KIT_SPECIFIER)) {
       if (match[2] !== KIT_IMPORT) throw new RecipeError(`${source.name}/${file}: import the kit as "${KIT_IMPORT}"`);
     }
-    if (text.includes(`"${KIT_IMPORT}"`)) {
-      files[file] = text.replaceAll(`"${KIT_IMPORT}"`, '"./kit.js"');
+    const rewritten = text.replace(KIT_SPECIFIER, (whole, quote) => (whole === `${quote}${KIT_IMPORT}${quote}` ? `${quote}./kit.js${quote}` : whole));
+    if (rewritten !== text) {
+      files[file] = rewritten;
       uses = true;
     }
   }

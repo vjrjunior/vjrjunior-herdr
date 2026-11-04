@@ -18,7 +18,7 @@ import {
   readLook,
   repoName,
 } from "./tree.js";
-import { CONTROL, ICON_SIZE, TEXT, iconButton, statusDot } from "../../kit/kit.js";
+import { CONTROL, ICON_SIZE, TEXT, iconButton, statusDot, toneColor } from "../../kit/kit.js";
 
 const WAIT = 1500;
 const RAIL = 16.25;
@@ -299,7 +299,7 @@ export default class SpacesTree extends View {
   laneLine(row, t) {
     const found = row.path ? (shared("command-center.lanes") ?? {})[row.path] : null;
     if (!found?.chip) return null;
-    const color = { blocked: t.blocked, working: t.working, done: t.done }[found.tone] ?? t.unknown;
+    const color = toneColor(found.tone, t);
     const sub = h_flex()
       .h(SUB)
       .flex_none()

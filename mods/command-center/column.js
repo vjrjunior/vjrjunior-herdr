@@ -1,6 +1,6 @@
 import { div, image } from "gpui-kit";
 import { Input, TextView, h_flex, v_flex } from "gpui-base";
-import { CONTROL, ICON_SIZE, button, card, chip, heading, icon, iconButton, line, link, pill, statusDot, stepNode } from "../../kit/kit.js";
+import { CONTROL, ICON_SIZE, button, card, chip, heading, icon, iconButton, line, link, pill, statusDot, stepNode, toneColor } from "../../kit/kit.js";
 import { answerStep, laneSummary, PROFILES, profileOf, rollup, stepNotes, viewFor } from "./logic.js";
 
 const STEPS = ["Task", "AC", "Ship", "Evidence", "PR", "Merge", "Clear"];
@@ -9,7 +9,6 @@ const CHECK_CHIP = { passed: ["check", "done"], failed: ["exclamation", "blocked
 const MARK_OF = { ok: "check", run: "dot", bad: "exclamation", idle: "ring" };
 const OPTIONS = [...Object.entries(PROFILES).map(([id, profile]) => [id, profile.label]), ["off", "Off"]];
 
-const toneColor = (tone, t) => ({ blocked: t.blocked, working: t.working, done: t.done }[tone] ?? t.unknown);
 const stateColor = (state, t) => ({ done: t.done, ok: t.done, current: t.done, run: t.working, next: t.accent, bad: t.blocked, stale: t.blocked }[state] ?? t.unknown);
 const merged = (lane) => lane.pr && !lane.pr.error && lane.pr.state === "MERGED";
 const hasPr = (lane) => Boolean(lane.pr && !lane.pr.error && lane.pr.number);
