@@ -150,6 +150,14 @@ describe("move-tab popup", () => {
     expect(own(detail, "text_color")).toEqual([["t.muted"]]);
   });
 
+  test("a closed worktree whose label is its branch shows it once", async () => {
+    const { view, cx } = await popup();
+    const root = view.render(cx);
+    expect(texts(byKey(root, "target-0") as Node)).toEqual(["live", "feat/live · open"]);
+    expect(texts(byKey(root, "target-1") as Node)).toEqual(["alpha"]);
+    expect(texts(byKey(root, "target-2") as Node)).toEqual(["zeta"]);
+  });
+
   test("picking a row asks the worker and closes the popup", async () => {
     const { view, cx } = await popup();
     click(view, cx, "target-0");
@@ -196,6 +204,20 @@ describe("move-tab popup", () => {
     expect(app.sets).toBe(0);
   });
 
+  test("a failed load says there is no other checkout", async () => {
+    answer = () => Promise.reject(new Error("no such folder"));
+    const rejected = await popup();
+    expect(texts(rejected.view.render(rejected.cx))).toContain("No other checkout of this repo.");
+
+    herdr.spaces = () => {
+      throw new Error("not ready");
+    };
+    const thrown = await popup();
+    const shown = texts(thrown.view.render(thrown.cx));
+    expect(shown).toContain("No other checkout of this repo.");
+    expect(shown).not.toContain("Looking for checkouts…");
+  });
+
   test("without props the popup draws nothing and asks nothing", async () => {
     given = {};
     herdr.props = () => undefined;
@@ -215,15 +237,34 @@ describe("move-tab worker", () => {
     const root = view.render(cx);
     expect(root.kids).toEqual([]);
     expect(texts(root)).toEqual([]);
+    expect(cx.spawned).toBe(1);
+    expect(app.shared[KEY]).toBeNull();
     view.render(cx);
     expect(cx.spawned).toBe(1);
     await flush();
     expect(app.execs).toContainEqual({ command: "sh", args: ["-c", 'printf "%s\\n" "$1" | hc connect', "sh", DOC], cwd: undefined });
     expect(app.notes.map((note) => note.body)).toEqual(["The tab is gone."]);
-    expect(app.shared[KEY]).toBeNull();
     view.render(cx);
     expect(cx.spawned).toBe(1);
     expect(cx.focused).toBe(0);
+  });
+
+  test("a fresh worker never runs a request a move already took", async () => {
+    let release: (value: Exec) => void = () => {};
+    answer = (call) => (call.command === "sh" ? new Promise((resolve) => (release = resolve)) : { code: 1, stdout: "", stderr: "" });
+    const first = worker();
+    app.shared[KEY] = { id: "r1", tab: "tb1", space: "s1", to: "/r/wt/live", toSpace: "s2", at: Date.now() };
+    first.view.render(first.cx);
+    expect(first.cx.spawned).toBe(1);
+    await flush();
+    const fresh = worker();
+    fresh.view.render(fresh.cx);
+    expect(fresh.cx.spawned).toBe(0);
+    release({ code: 1, stdout: "", stderr: "" });
+    await flush();
+    fresh.view.render(fresh.cx);
+    expect(fresh.cx.spawned).toBe(0);
+    expect(app.notes.map((note) => note.body)).toEqual(["The tab is gone."]);
   });
 
   test("the worker drops a stale request", () => {
@@ -244,6 +285,7 @@ describe("move-tab worker", () => {
     await flush();
     app.shared[KEY] = { id: "r2", tab: "tb1", space: "s1", to: "/r/wt/alpha", toSpace: null, at: Date.now() };
     view.render(cx);
+    expect(app.shared[KEY]).toBeNull();
     view.render(cx);
     expect(cx.spawned).toBe(1);
     expect(app.notes.map((note) => note.body)).toEqual(["Another move is running."]);
@@ -261,6 +303,13 @@ describe("move-tab io", () => {
     expect(app.execs).toEqual([{ command: "herdr-app", args: ["do", "tab.close", '{"id":"x"}'], cwd: undefined }]);
     answer = () => ok('{"space":"s9","tab":"tb9"}');
     expect(await appIo(makeCx()).act("space.new", { folder: "/r/wt/alpha" })).toEqual({ space: "s9", tab: "tb9" });
+  });
+
+  test("act refuses output that isn't JSON and takes empty output as nothing made", async () => {
+    answer = () => ok("Opened a new tab\n");
+    await expect(appIo(makeCx()).act("tab.new", { space: "s1" })).rejects.toThrow("herdr-app do tab.new printed something unexpected");
+    answer = () => ok("");
+    expect(await appIo(makeCx()).act("tab.select", { id: "tb1" })).toEqual({});
   });
 
   test("the io reads and signals through the programs the move needs", async () => {

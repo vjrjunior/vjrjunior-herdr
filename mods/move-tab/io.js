@@ -15,9 +15,9 @@ async function output(command, args, options) {
 function parse(text) {
   try {
     const value = JSON.parse(text);
-    return value && typeof value === "object" ? value : {};
+    return value && typeof value === "object" && !Array.isArray(value) ? value : null;
   } catch {
-    return {};
+    return null;
   }
 }
 
@@ -58,8 +58,10 @@ export function appIo(cx) {
     },
     async act(name, args) {
       const result = await exec("herdr-app", ["do", name, JSON.stringify(args)]);
-      const parsed = parse(result.stdout);
-      if (result.code !== 0) throw new Error(parsed.error ?? ((result.stderr ?? "").trim() || `${name} failed`));
+      const text = (result.stdout ?? "").trim();
+      const parsed = text ? parse(text) : {};
+      if (result.code !== 0) throw new Error(parsed?.error ?? ((result.stderr ?? "").trim() || `${name} failed`));
+      if (!parsed) throw new Error(`herdr-app do ${name} printed something unexpected`);
       return parsed;
     },
     sleep: (ms) => cx.sleep(ms),

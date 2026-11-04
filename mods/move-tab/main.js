@@ -30,7 +30,11 @@ export default class MoveTab extends View {
     this.handle = cx.focus_handle();
     this.handle.focus();
     cx.spawn(async (cx) => {
-      this.targets = await this.load(cx);
+      try {
+        this.targets = await this.load(cx);
+      } catch {
+        this.targets = [];
+      }
       cx.notify();
     });
   }
@@ -70,10 +74,8 @@ export default class MoveTab extends View {
     const request = shared(KEY);
     if (!request || typeof request.id !== "string" || request.id === this.seen) return;
     this.seen = request.id;
-    if (!Number.isFinite(request.at) || Date.now() - request.at > STALE) {
-      setShared(KEY, null);
-      return;
-    }
+    setShared(KEY, null);
+    if (!Number.isFinite(request.at) || Date.now() - request.at > STALE) return;
     if (this.running) {
       notify({ title: "Can't move this tab", body: REASONS.running(), level: "warning" });
       return;
@@ -84,7 +86,6 @@ export default class MoveTab extends View {
         await moveTab(request, appIo(cx));
       } finally {
         this.running = false;
-        if (shared(KEY)?.id === this.seen) setShared(KEY, null);
       }
     });
   }
