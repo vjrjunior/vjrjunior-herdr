@@ -121,7 +121,7 @@ async function readPane(block, where, io) {
     const pid = info.foreground.pid;
     const found = await io.session(pid);
     if (!found) return { reason: REASONS.session(where) };
-    return { kind: "claude", block, address, where, pid, own: info.pid === pid, session: found.session, cwd: found.cwd, args: keepArgs(info.foreground.argv ?? []) };
+    return { kind: "claude", block, address, where, pid, own: info.pid === pid, session: found.session, cwd: found.cwd, args: keepArgs(info.foreground.argv ?? [], found.cwd) };
   }
   if (atShell(info)) return { kind: "shell", where, cwd: info.cwd ?? info.foreground?.cwd ?? null };
   const pane = io.panes().find((candidate) => candidate.terminal === address);

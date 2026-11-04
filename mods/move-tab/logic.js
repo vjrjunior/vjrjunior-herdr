@@ -15,6 +15,8 @@ const ALLOWED = {
 const PLAIN = /^[A-Za-z0-9_/.,:@%+=-]+$/;
 const UNTYPABLE = /['\\\u0000-\u001f\u007f]/;
 const SESSION = /^[A-Za-z0-9-]+$/;
+const PATHS = ["--add-dir", "--plugin-dir"];
+const FILES = ["--mcp-config", "--settings"];
 
 export const REASONS = {
   working: (where) => `Claude is working in ${where}. Move it when the turn ends.`,
@@ -87,7 +89,23 @@ export function quote(value) {
   return `'${value}'`;
 }
 
-export function keepArgs(argv) {
+function resolvePath(value, cwd) {
+  if (typeof cwd !== "string" || !cwd.startsWith("/") || value === "" || value.startsWith("/") || value.startsWith("~")) return value;
+  const parts = [];
+  for (const part of `${cwd}/${value}`.split("/")) {
+    if (part === "" || part === ".") continue;
+    if (part === "..") parts.pop();
+    else parts.push(part);
+  }
+  return `/${parts.join("/")}`;
+}
+
+function keptValue(flag, value, cwd) {
+  if (PATHS.includes(flag) || (FILES.includes(flag) && !value.trim().startsWith("{"))) return resolvePath(value, cwd);
+  return value;
+}
+
+export function keepArgs(argv, cwd) {
   const list = argv.slice(1);
   const out = [];
   for (let i = 0; i < list.length; i++) {
@@ -105,8 +123,9 @@ export function keepArgs(argv) {
     else if (arity === "many") while (i + 1 < list.length && !list[i + 1].startsWith("-")) values.push(list[++i]);
     if (arity === 0 && values.length > 0) continue;
     if (arity !== 0 && values.length === 0) continue;
-    if (values.some((value) => quote(value) === null)) continue;
-    out.push(flag, ...values);
+    const kept = values.map((value) => keptValue(flag, value, cwd));
+    if (kept.some((value) => quote(value) === null)) continue;
+    out.push(flag, ...kept);
   }
   return out;
 }

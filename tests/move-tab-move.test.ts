@@ -172,6 +172,13 @@ describe("moveTab", () => {
     expect(result).toEqual({ moved: true });
   });
 
+  test("resumes Claude with its relative paths resolved in the old folder", async () => {
+    const info = claudeInfo();
+    info.foreground.argv = ["claude", "--add-dir", "../shared", "--model", "opus"];
+    const { acts } = await move(world({ infos: { t1: info } }));
+    expect(acts[0].args.argv).toEqual(resumeArgv({ session: "new-id", args: ["--add-dir", "/r/shared", "--model", "opus"], note: NOTE }));
+  });
+
   test("ends every Claude before the first one resumes", async () => {
     const { io, result, acts } = await move(twoClaudes());
     const resumed = io.log.findIndex((line) => line.startsWith("act ") && line.includes('"--resume"'));

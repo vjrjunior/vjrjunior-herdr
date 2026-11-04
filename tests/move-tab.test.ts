@@ -9,6 +9,18 @@ describe("move-tab logic", () => {
   test("drops a flag whose value can't be typed", () => {
     expect(keepArgs(["claude", "--model", "it's"])).toEqual([]);
   });
+  test("resolves kept paths against the old Claude's folder", () => {
+    const cwd = "/r/main/api";
+    expect(keepArgs(["claude", "--add-dir", "../shared", "./docs", "my dir", "/abs/x", "~/notes", "~"], cwd))
+      .toEqual(["--add-dir", "/r/main/shared", "/r/main/api/docs", "/r/main/api/my dir", "/abs/x", "~/notes", "~"]);
+    expect(keepArgs(["claude", "--plugin-dir=plugins/../tools/", "--plugin-dir", "/p"], cwd)).toEqual(["--plugin-dir", "/r/main/api/tools", "--plugin-dir", "/p"]);
+    expect(keepArgs(["claude", "--mcp-config", "mcp.json", '{"mcpServers":{}}', "--settings", ' {"model": "opus"}'], cwd))
+      .toEqual(["--mcp-config", "/r/main/api/mcp.json", '{"mcpServers":{}}', "--settings", ' {"model": "opus"}']);
+    expect(keepArgs(["claude", "--settings=../s.json", "--model", "../opus"], cwd)).toEqual(["--settings", "/r/main/s.json", "--model", "../opus"]);
+    expect(keepArgs(["claude", "--add-dir", "../../../x"], "/r")).toEqual(["--add-dir", "/x"]);
+    expect(keepArgs(["claude", "--add-dir", "../shared"])).toEqual(["--add-dir", "../shared"]);
+    expect(keepArgs(["claude", "--add-dir", "x"], "/r/it's")).toEqual([]);
+  });
   test("resumes the session with the moved note last", () => {
     expect(resumeArgv({ session: "abc-1", args: ["--model", "opus"], note: "N" })).toEqual(["claude", "--resume", "abc-1", "--model", "opus", "--append-system-prompt", "N"]);
     expect(resumeArgv({ session: "../x", args: [], note: "N" })).toBeNull();
