@@ -58,11 +58,17 @@ export function make(): Node {
   });
 }
 
+function recorded(kind: string, path: string): Node {
+  const node = make();
+  node.calls.push([kind, [path]]);
+  return node;
+}
+
 export const herdr: Record<string, (...args: never[]) => unknown> = {};
 
 const HERDR = ["exec", "notify", "props", "updates", "spaces", "panes", "run", "openOverlay", "theme", "shared", "setShared", "watchFolder", "window", "nextCommand", "layout", "agents", "readTextFile", "home", "terminals", "focused", "appHome", "closeOverlay"];
 
-mock.module("gpui-kit", () => ({ View: class {}, div: make, svg: () => make(), image: () => make() }));
+mock.module("gpui-kit", () => ({ View: class {}, div: make, svg: (path: string) => recorded("svg", path), image: (path: string) => recorded("image", path) }));
 export class FakeInput {
   text: string;
   placeholder?: string;
