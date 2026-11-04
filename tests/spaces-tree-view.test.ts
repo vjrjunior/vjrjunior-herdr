@@ -38,6 +38,7 @@ beforeEach(() => {
 });
 
 const { default: SpacesTree } = await import("../mods/spaces-tree/main.js");
+const { DRAG_GRACE } = await import("../mods/spaces-tree/tree.js");
 
 const common = "/r/app/.git";
 const cx = { timer: { every() {} }, spawn() {}, notify() {} };
@@ -314,11 +315,11 @@ describe("tab drops", () => {
   const REQUEST = "move-tab.request";
   const drag = (from = "m") => ({ tab: "t1", space: from, at: Date.now() });
 
-  function dropSetup() {
-    app.spaces = [space("m"), space("x", { active: true }), space("w")];
+  function dropSetup(extra = false) {
+    app.spaces = [space("m"), space("x", { active: true }), space("w"), ...(extra ? [space("e")] : [])];
     const view = new SpacesTree();
     view.init({}, cx);
-    view.lastPlaces = { m: "/r/app", x: "/x", w: "/w/app/two" };
+    view.lastPlaces = { m: "/r/app", x: "/x", w: "/w/app/two", ...(extra ? { e: "/r/app" } : {}) };
     view.looks = { "/r/app": { top: "/r/app", common }, "/x": null, "/w/app/two": { top: "/w/app/two", common } };
     view.repos = { [common]: { common, name: "app", checkouts: three, refs: {} } };
     return view;
@@ -379,8 +380,42 @@ describe("tab drops", () => {
     expect(app.shared[REQUEST]).toBeUndefined();
 
     app.shared[DRAG] = drag();
-    const list = find(view.render(), (node) => node.calls.some(([name]) => name === "overflow_y_scrollbar")) as Node;
-    fire([list], "down:left");
+    const root = view.render();
+    fire([root, root.kids[0] as Node], "down:left");
+    expect(app.shared[DRAG]).toBeNull();
+  });
+
+  test("a drop on an extra space of the main checkout asks for the move into that space", () => {
+    const view = dropSetup(true);
+    app.shared[DRAG] = drag("w");
+    fire(at(view, "head-e"), "up:left");
+    expect(app.shared[REQUEST]).toMatchObject({ tab: "t1", space: "w", to: "/r/app", toSpace: "e" });
+    expect(app.shared[DRAG]).toBeNull();
+  });
+
+  test("a press on a row's chevron that slides off onto the row asks nothing", () => {
+    const view = dropSetup();
+    app.shared[DRAG] = { ...drag("w"), at: Date.now() - 5000 };
+    fire(at(view, `fold-${common}`), "down:left");
+    fire(at(view, `head-${common}`), "up:left");
+    expect(app.shared[REQUEST]).toBeUndefined();
+  });
+
+  test("a press outside the tree forgets a drag older than 300 ms and keeps a younger one", () => {
+    const view = dropSetup();
+    const out = () => {
+      for (const handler of view.render().handlers.down_out ?? []) handler({}, cx);
+    };
+    expect(DRAG_GRACE).toBe(300);
+    app.shared[DRAG] = { ...drag(), at: Date.now() - DRAG_GRACE - 50 };
+    out();
+    expect(app.shared[DRAG]).toBeNull();
+    const fresh = drag();
+    app.shared[DRAG] = fresh;
+    out();
+    expect(app.shared[DRAG]).toEqual(fresh);
+    app.shared[DRAG] = { tab: "t1", space: "m" };
+    out();
     expect(app.shared[DRAG]).toBeNull();
   });
 

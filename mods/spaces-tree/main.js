@@ -8,6 +8,7 @@ import {
   buildTree,
   canOpen,
   counts,
+  DRAG_GRACE,
   dropTarget,
   duePlaces,
   foldedTail,
@@ -240,6 +241,11 @@ export default class SpacesTree extends View {
     if (shared(DRAG) != null) setShared(DRAG, null);
   }
 
+  forgetOldDrag() {
+    const drag = shared(DRAG);
+    if (drag != null && !(Date.now() - drag.at <= DRAG_GRACE)) setShared(DRAG, null);
+  }
+
   dropFor(entry, row) {
     return dropTarget(entry, row, row.space ? this.looks[this.lastPlaces[row.space.id]] : null);
   }
@@ -338,7 +344,7 @@ export default class SpacesTree extends View {
   }
 
   iconButton(id, name, tooltip, action, t) {
-    return iconButton(id, { icon: name, tooltip, color: t.unknown, size: CONTROL.tiny, iconSize: ICON_SIZE.md, bordered: false, stop: true, onClick: action }, t);
+    return iconButton(id, { icon: name, tooltip, color: t.unknown, size: CONTROL.tiny, iconSize: ICON_SIZE.md, bordered: false, stop: true, onPress: () => this.endDrag(), onClick: action }, t);
   }
 
   name(row, t) {
@@ -614,6 +620,8 @@ export default class SpacesTree extends View {
       .min_h(0)
       .bg(t.chrome)
       .text_size(13)
+      .on_mouse_down("left", () => this.endDrag())
+      .on_mouse_down_out(() => this.forgetOldDrag())
       .child(this.header(t, narrow))
       .child(
         v_flex()
@@ -623,7 +631,6 @@ export default class SpacesTree extends View {
           .pb(14)
           .overflow_y_scrollbar()
           .mode("always")
-          .on_mouse_down("left", () => this.endDrag())
           .on_mouse_up("left", (_e, cx) => {
             this.pressed = null;
             this.over = null;

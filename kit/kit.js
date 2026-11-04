@@ -84,7 +84,7 @@ export function button(id, { label, icon: iconName, variant = "outline", color, 
     .when(hint != null, (el) => el.child(div().text_size(TEXT.sm).text_color(t.unknown).child(hint)));
 }
 
-export function iconButton(id, { icon: iconName, tooltip, color, size = CONTROL.square, iconSize = ICON_SIZE.lg, bordered = true, stop = false, onClick }, t) {
+export function iconButton(id, { icon: iconName, tooltip, color, size = CONTROL.square, iconSize = ICON_SIZE.lg, bordered = true, stop = false, onPress, onClick }, t) {
   return div()
     .id(id)
     .size(size)
@@ -96,7 +96,12 @@ export function iconButton(id, { icon: iconName, tooltip, color, size = CONTROL.
     .when(bordered, (el) => el.border_1().border_color(t.input))
     .hover((s) => s.bg(t.hover))
     .when(tooltip != null, (el) => el.tooltip(tooltip))
-    .when(stop, (el) => el.on_mouse_down("left", (_e, cx) => cx.stop_propagation()))
+    .when(stop || onPress != null, (el) =>
+      el.on_mouse_down("left", (_e, cx) => {
+        onPress?.(cx);
+        if (stop) cx.stop_propagation();
+      }),
+    )
     .on_click((_e, cx) => {
       if (stop) cx.stop_propagation();
       onClick?.(cx);

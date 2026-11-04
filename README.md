@@ -151,7 +151,7 @@ It reads Herdr's live data (spaces, panes, terminals), `~/.claude/sessions/<pid>
 
 It refuses, with a toast that says why, when Claude is working or waiting for you, when anything other than Claude, an idle shell or a mod runs in a pane (the toast names the program), when Claude has sub-agents, or when the tab is on another machine or not in a git repo. Claude's own background processes end with it.
 
-The transcript stays under the first folder's project in `~/.claude/projects/`, so `claude --resume <id>` works anywhere, but the worktree's own `/resume` picker may not list the conversation. A tab let go anywhere but the tab bar or the Spaces tree, over a terminal say, stays in the drag for up to 30 s: rows that would take it light up under the pointer until a click in the tab bar or the Spaces tree ends it, and a click on a row only opens that row. [`mods/move-tab/RECIPE.md`](mods/move-tab/RECIPE.md) describes it in full.
+The transcript stays under the first folder's project in `~/.claude/projects/`, so `claude --resume <id>` works anywhere, but the worktree's own `/resume` picker may not list the conversation. A tab let go anywhere but the tab bar or the Spaces tree, over a terminal say, stays in the drag until the next press, for at most 30 s: until then, rows that would take it light up under the pointer. Any press anywhere ends a drag older than 300 ms, so a later click on a row only opens that row, and a later drag never drops the old tab. [`mods/move-tab/RECIPE.md`](mods/move-tab/RECIPE.md) describes it in full.
 
 ## Kit
 

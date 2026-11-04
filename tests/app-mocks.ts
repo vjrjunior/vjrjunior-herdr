@@ -38,6 +38,9 @@ export class Node {
   on_mouse_up(button: string, handler: Handler) {
     return this.listen(`up:${button}`, handler);
   }
+  on_mouse_down_out(handler: Handler) {
+    return this.listen("down_out", handler);
+  }
   on_mouse_move(handler: Handler) {
     return this.listen("move", handler);
   }

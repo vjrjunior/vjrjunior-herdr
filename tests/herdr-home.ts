@@ -73,6 +73,7 @@ export default class Tabs extends View {
     const space = spaces().find(p => p.active);
     const item = (c, i) => h_flex().id(\`tab-\${c.id}\`)
         .on_mouse_down("left", (e, cx) => { cx.stop_propagation(); this.pressed = i; if (e.click_count === 2) run("tab.rename", { id: c.id }); });
+    const release = (c, i) => { const from = this.pressed; this.pressed = null; if (from !== null && from !== i) run("tab.move", { id: c.id }); };
     return h_flex().rounded(7)
       .on_mouse_up("left", () => { this.pressed = null; })
       .child(button("tab-new", "+", () => openOverlay({ mod: "new-menu", kind: "popup", width: 250, height: 512 })))

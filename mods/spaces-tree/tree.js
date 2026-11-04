@@ -196,6 +196,7 @@ export function liveFolds(folded, repos) {
 }
 
 export const DRAG_TTL = 30000;
+export const DRAG_GRACE = 300;
 
 export function dropTarget(entry, row, look) {
   if (entry.kind === "repo") return row.path ? { path: row.path, common: entry.key } : null;

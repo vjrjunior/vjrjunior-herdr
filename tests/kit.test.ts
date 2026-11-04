@@ -139,6 +139,22 @@ test("toneColor maps a tone to its theme color", () => {
   expect(toneColor(undefined, t)).toBe("t.unknown");
 });
 
+test("an icon button runs onPress on its press, before it stops the press", () => {
+  const order: string[] = [];
+  const press = (node: Node) => {
+    for (const handler of node.handlers["down:left"] ?? []) handler({}, { stop_propagation: () => order.push("stop") });
+  };
+  press(iconButton("s", { icon: "x", stop: true, onPress: () => order.push("press"), onClick() {} }, t));
+  expect(order).toEqual(["press", "stop"]);
+  order.length = 0;
+  press(iconButton("p", { icon: "x", onPress: () => order.push("press"), onClick() {} }, t));
+  expect(order).toEqual(["press"]);
+  order.length = 0;
+  press(iconButton("o", { icon: "x", stop: true, onClick() {} }, t));
+  expect(order).toEqual(["stop"]);
+  expect(iconButton("n", { icon: "x", onClick() {} }, t).handlers["down:left"]).toBeUndefined();
+});
+
 test("an icon button without a tooltip makes no tooltip call", () => {
   const node = iconButton("i", { icon: "x", onClick() {} }, t);
   expect(own(node, "tooltip")).toEqual([]);

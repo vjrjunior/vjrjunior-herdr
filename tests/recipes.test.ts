@@ -414,6 +414,17 @@ describe("move-tab", () => {
     }
   });
 
+  test("a tab reorders only while the bar's own drag is set", () => {
+    for (const [generated, tabs] of [
+      [generateDesk(), "vjr-tabs"],
+      [generateSquare(), "vjr-square-tabs"],
+    ] as const) {
+      const text = generated.mods[tabs]?.["main.js"] ?? "";
+      expect(text).toContain('const from = shared("move-tab.drag") ? this.pressed : null; this.pressed = null;');
+      expect(text).not.toContain("const from = this.pressed;");
+    }
+  });
+
   test("a tab bar that changed fails the move-tab recipe", () => {
     const home = tempDir();
     makeHerdrHome(home);
@@ -422,6 +433,7 @@ describe("move-tab", () => {
       'import { spaces, panes, run, openOverlay, theme, window, shared, layout, settings } from "herdr";',
       '.on_mouse_down("left", (e, cx) => { cx.stop_propagation(); this.pressed = i;',
       '.on_mouse_up("left", () => { this.pressed = null; })',
+      "const from = this.pressed; this.pressed = null;",
     ]) {
       expect(tabs).toContain(anchor);
       expect(() => generateDesk({ "mods/tabs/main.js": tabs.replace(anchor, "") })).toThrow(/recipe move-tab:/);
