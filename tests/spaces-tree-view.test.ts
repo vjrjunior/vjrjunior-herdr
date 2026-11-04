@@ -401,10 +401,16 @@ describe("tab drops", () => {
     expect(app.shared[REQUEST]).toBeUndefined();
   });
 
-  test("a press outside the tree forgets a drag older than 300 ms and keeps a younger one", () => {
+  test("a press outside the header, the list's scrollbar included, forgets a drag older than 300 ms and keeps a younger one", () => {
     const view = dropSetup();
+    const root = view.render();
+    const [header, list] = root.kids as Node[];
+    expect(list.calls.some(([name]) => name === "overflow_y_scrollbar")).toBe(true);
+    expect(header.calls.some(([name]) => name === "overflow_y_scrollbar")).toBe(false);
+    expect(header.handlers.down_out).toHaveLength(1);
+    expect(root.handlers.down_out).toBeUndefined();
     const out = () => {
-      for (const handler of view.render().handlers.down_out ?? []) handler({}, cx);
+      for (const handler of (view.render().kids[0] as Node).handlers.down_out ?? []) handler({}, cx);
     };
     expect(DRAG_GRACE).toBe(300);
     app.shared[DRAG] = { ...drag(), at: Date.now() - DRAG_GRACE - 50 };
@@ -417,6 +423,21 @@ describe("tab drops", () => {
     app.shared[DRAG] = { tab: "t1", space: "m" };
     out();
     expect(app.shared[DRAG]).toBeNull();
+  });
+
+  test("the narrow rail's header forgets a stale drag and keeps a fresh one", () => {
+    herdr.layout = () => ({ id: "root", children: [{ id: "sidebar", size: { px: 60 } }] });
+    const view = dropSetup();
+    const out = () => {
+      for (const handler of (view.render().kids[0] as Node).handlers.down_out ?? []) handler({}, cx);
+    };
+    app.shared[DRAG] = { ...drag(), at: Date.now() - DRAG_GRACE - 50 };
+    out();
+    expect(app.shared[DRAG]).toBeNull();
+    const fresh = drag();
+    app.shared[DRAG] = fresh;
+    out();
+    expect(app.shared[DRAG]).toEqual(fresh);
   });
 
   describe("highlight", () => {

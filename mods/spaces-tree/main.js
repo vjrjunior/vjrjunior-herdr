@@ -621,8 +621,7 @@ export default class SpacesTree extends View {
       .bg(t.chrome)
       .text_size(13)
       .on_mouse_down("left", () => this.endDrag())
-      .on_mouse_down_out(() => this.forgetOldDrag())
-      .child(this.header(t, narrow))
+      .child(this.header(t, narrow).on_mouse_down_out(() => this.forgetOldDrag()))
       .child(
         v_flex()
           .flex_1()
