@@ -4,7 +4,7 @@ import { join } from "node:path";
 import type { Node } from "./app-mocks";
 import "./app-mocks";
 
-const { BRAND, ICONS, button, chip, iconButton, iconPath, stepNode } = await import("../kit/kit.js");
+const { ICONS, button, chip, iconButton, iconPath, stepNode } = await import("../kit/kit.js");
 
 const repo = join(import.meta.dir, "..");
 const t = new Proxy({}, { get: (_x, p) => (typeof p === "string" ? `t.${p}` : undefined) }) as any;
@@ -57,10 +57,10 @@ test("a todo step is an empty input ring", () => {
 });
 
 test("an icon button has its tooltip and a colored icon", () => {
-  const node = iconButton("b", { icon: "zed", tooltip: "Zed", color: BRAND.zed, onClick() {} }, t);
+  const node = iconButton("b", { icon: "zed", tooltip: "Zed", color: "t.accent", onClick() {} }, t);
   expect(calls(node, "tooltip")).toContainEqual(["Zed"]);
   expect(svgs(node)).toEqual(["mods/kit/icons/zed.svg"]);
-  expect(calls(node, "text_color")).toContainEqual([BRAND.zed]);
+  expect(calls(node, "text_color")).toContainEqual(["t.accent"]);
 });
 
 test("a solid button uses the accent, an outline button the input border", () => {
@@ -85,9 +85,19 @@ test("a chip draws its mark before the text", () => {
   expect(node.kids).toHaveLength(1);
 });
 
-test("kit.js has no hex color outside BRAND", () => {
+test("a button's icon takes iconColor while the label keeps the text color", () => {
+  const node = button("b", { label: "Zed", icon: "zed", iconColor: "t.muted", onClick() {} }, t);
+  const iconNode = node.kids.find((k) => k.calls.some(([c]) => c === "svg")) as Node;
+  expect(own(iconNode, "text_color")).toEqual([["t.muted"]]);
+  expect(own(node, "text_color")).toEqual([["t.foreground"]]);
+  const plain = button("b", { label: "Zed", icon: "zed", onClick() {} }, t);
+  const plainIcon = plain.kids.find((k) => k.calls.some(([c]) => c === "svg")) as Node;
+  expect(own(plainIcon, "text_color")).toEqual([["t.foreground"]]);
+});
+
+test("kit.js has no hex color", () => {
   const source = readFileSync(join(repo, "kit/kit.js"), "utf8");
-  expect([...source.matchAll(/#[0-9a-fA-F]{3,8}\b/g)].map((m) => m[0]).sort()).toEqual(["#4A9EFF", "#7B68EE"]);
+  expect([...source.matchAll(/#[0-9a-fA-F]{3,8}\b/g)].map((m) => m[0]).sort()).toEqual([]);
 });
 
 const ADOPTERS = [

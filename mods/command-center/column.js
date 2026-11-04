@@ -1,6 +1,6 @@
 import { div, image } from "gpui-kit";
 import { Input, TextView, h_flex, v_flex } from "gpui-base";
-import { BRAND, CONTROL, ICON_SIZE, button, card, chip, heading, icon, iconButton, line, link, pill, statusDot, stepNode } from "../../kit/kit.js";
+import { CONTROL, ICON_SIZE, button, card, chip, heading, icon, iconButton, line, link, pill, statusDot, stepNode } from "../../kit/kit.js";
 import { answerStep, laneSummary, PROFILES, profileOf, rollup, stepNotes, viewFor } from "./logic.js";
 
 const STEPS = ["Task", "AC", "Ship", "Evidence", "PR", "Merge", "Clear"];
@@ -62,13 +62,13 @@ function identity(view, lane, t) {
     .child(div().text_size(11).text_color(t.unknown).truncate().child(`${lane.branch ?? "detached"} → ${task.base}`))
     .child(
       h_flex()
-        .pt(3)
+        .pt(8)
         .gap(6)
         .flex_wrap()
-        .when(Boolean(task.url), (el) => el.child(iconButton("link-task", { icon: "clickup", tooltip: "ClickUp", color: BRAND.clickup, onClick: () => view.open(task.url) }, t)))
-        .when(hasPr(lane), (el) => el.child(iconButton("link-pr", { icon: "github", tooltip: `PR #${lane.pr.number}`, color: t.foreground, onClick: () => view.open(lane.pr.url) }, t)))
-        .child(iconButton("link-file", { icon: "eye", tooltip: "VJR-TASK.md", color: t.accent, onClick: () => view.readTaskFile(lane) }, t))
-        .child(iconButton("link-zed", { icon: "zed", tooltip: "Zed", color: BRAND.zed, onClick: () => view.zed(lane.path) }, t)),
+        .when(Boolean(task.url), (el) => el.child(button("link-task", { label: "ClickUp", icon: "clickup", iconColor: t.muted, onClick: () => view.open(task.url) }, t)))
+        .when(hasPr(lane), (el) => el.child(button("link-pr", { label: `PR #${lane.pr.number}`, icon: "github", iconColor: t.muted, onClick: () => view.open(lane.pr.url) }, t)))
+        .child(button("link-file", { label: "VJR-TASK.md", icon: "eye", iconColor: t.muted, onClick: () => view.readTaskFile(lane) }, t))
+        .child(button("link-zed", { label: "Zed", icon: "zed", iconColor: t.muted, onClick: () => view.zed(lane.path) }, t)),
     )
     .when(Boolean(lane.sessionShared), (el) => el.child(div().pt(4).text_size(11).text_color(t.working).child("Two tasks name this session; neither follows it")));
 }

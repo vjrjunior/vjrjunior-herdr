@@ -1,7 +1,7 @@
 import { View, div } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
 import { theme } from "herdr";
-import { BRAND, ICONS, TEXT, button, card, chip, heading, icon, iconButton, line, link, pill, stepNode, statusDot } from "../../kit/kit.js";
+import { ICONS, TEXT, button, card, chip, heading, icon, iconButton, line, link, pill, stepNode, statusDot } from "../../kit/kit.js";
 
 const STATUSES = ["working", "blocked", "done", "idle", "unknown"];
 const STEPS = ["done", "current", "bad", "todo"];
@@ -28,8 +28,8 @@ export default class Kit extends View {
     const iconButtons = row()
       .child(iconButton("kit-ib-bordered", { icon: "eye", tooltip: "Bordered", onClick: noop }, t))
       .child(iconButton("kit-ib-plain", { icon: "terminal", tooltip: "Plain", bordered: false, onClick: noop }, t))
-      .child(iconButton("kit-ib-clickup", { icon: "clickup", tooltip: "ClickUp", color: BRAND.clickup, onClick: noop }, t))
-      .child(iconButton("kit-ib-zed", { icon: "zed", tooltip: "Zed", color: BRAND.zed, bordered: false, onClick: noop }, t));
+      .child(iconButton("kit-ib-clickup", { icon: "clickup", tooltip: "ClickUp", onClick: noop }, t))
+      .child(iconButton("kit-ib-zed", { icon: "zed", tooltip: "Zed", bordered: false, onClick: noop }, t));
     const links = row()
       .child(link("kit-l-plain", { label: "A link", onClick: noop }, t))
       .child(link("kit-l-icon", { label: "An external link", icon: "external-link", onClick: noop }, t));

@@ -957,21 +957,24 @@ describe("timeline and identity", () => {
     expect(gutter.calls).toContainEqual(["w", [18]]);
   });
 
-  test("the identity row is four icon buttons with their names as tooltips", () => {
+  test("the task links are named buttons with gray icons", () => {
     const root = column([{ ...BASE_LANE, pr: { number: 42, url: "https://github.com/acme/app/pull/42", state: "OPEN" } }]).render();
     const rows = [
-      ["link-task", "ClickUp", "clickup", "#7B68EE"],
-      ["link-pr", "PR #42", "github", "t.foreground"],
-      ["link-file", "VJR-TASK.md", "eye", "t.accent"],
-      ["link-zed", "Zed", "zed", "#4A9EFF"],
+      ["link-task", "ClickUp", "clickup"],
+      ["link-pr", "PR #42", "github"],
+      ["link-file", "VJR-TASK.md", "eye"],
+      ["link-zed", "Zed", "zed"],
     ];
-    for (const [id, tip, name, color] of rows) {
+    for (const [id, label, name] of rows) {
       const node = pathTo(root, id)?.at(-1) as Node;
-      expect(called(node, "tooltip")).toEqual([[tip]]);
+      expect(texts(node)).toContain(label);
       expect(svgs(node)).toEqual([`mods/kit/icons/${name}.svg`]);
-      expect(called(node, "text_color")).toContainEqual([color]);
-      expect(texts(node)).toEqual([]);
+      const iconNode = walk(node).find((n) => n.calls.some(([c, a]) => c === "svg" && a[0] === `mods/kit/icons/${name}.svg`)) as Node;
+      expect(iconNode.calls).toContainEqual(["text_color", ["t.muted"]]);
+      expect(called(node, "tooltip")).toEqual([]);
     }
+    const row = pathTo(root, "link-task")?.at(-2) as Node;
+    expect(row.calls).toContainEqual(["pt", [8]]);
   });
 
   test("the PR and ClickUp buttons show only when the task has them", () => {

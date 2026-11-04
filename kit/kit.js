@@ -6,7 +6,6 @@ export const CONTROL = { tiny: 18, small: 22, regular: 24, square: 26, row: 28, 
 export const TEXT = { xs: 10.5, sm: 11, md: 11.5, base: 12, lg: 12.5, xl: 13, title: 13.5 };
 export const RADIUS = { chip: 3, pill: 4, control: 5, card: 6, row: 8, block: 10, round: 9 };
 export const ICON_SIZE = { sm: 11, md: 12, lg: 14 };
-export const BRAND = { clickup: "#7B68EE", zed: "#4A9EFF" };
 export const ICONS = [
   "arrow-left",
   "check",
@@ -59,7 +58,7 @@ export function stepNode(state, t) {
   return box.border(1.5).border_color(t.input);
 }
 
-export function button(id, { label, icon: iconName, variant = "outline", color, height = CONTROL.regular, full = false, disabled = false, hint, onClick }, t) {
+export function button(id, { label, icon: iconName, variant = "outline", color, iconColor, height = CONTROL.regular, full = false, disabled = false, hint, onClick }, t) {
   const solid = variant === "solid" && !disabled;
   const textColor = disabled ? t.unknown : solid ? t.accent_foreground : (color ?? t.foreground);
   return h_flex()
@@ -78,7 +77,7 @@ export function button(id, { label, icon: iconName, variant = "outline", color, 
     .when(!disabled && variant === "dashed", (el) => el.border_dashed())
     .when(full, (el) => el.w_full().justify_center())
     .on_click((_e, cx) => onClick?.(cx))
-    .when(iconName != null, (el) => el.child(icon(iconName, { size: ICON_SIZE.md, color: textColor })))
+    .when(iconName != null, (el) => el.child(icon(iconName, { size: ICON_SIZE.md, color: iconColor ?? textColor })))
     .when(label != null, (el) => el.child(label))
     .when(hint != null, (el) => el.child(div().text_color(t.unknown).child(hint)));
 }

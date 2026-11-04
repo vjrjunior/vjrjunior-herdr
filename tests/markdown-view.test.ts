@@ -259,7 +259,8 @@ describe("links and buttons", () => {
     expect(execs).toContainEqual(["zed", [FILE]]);
   });
 
-  test("the header's buttons are icons with tooltips", async () => {
+  test("the header's Zed is a named button with a gray icon and Reload an icon with a tooltip", async () => {
+    herdr.theme = () => new Proxy({}, { get: (_x, p) => (typeof p === "string" ? `t.${p}` : undefined) });
     files["/Users/me/w/app/docs/plan.md"] = "# The plan";
     const { view, cx } = await open();
     linkHandler(view)("../docs/plan.md", cx);
@@ -268,9 +269,10 @@ describe("links and buttons", () => {
     const svgs = (node: Node): string[] => [...node.calls.filter(([n]) => n === "svg").map(([, a]) => a[0] as string), ...node.kids.flatMap(svgs)];
     const at = (id: string) => find(root, (item) => item.key === id) as Node;
     const zed = at("md-zed");
-    expect(zed.calls).toContainEqual(["tooltip", ["Zed"]]);
+    expect(texts(zed)).toContain("Zed");
     expect(svgs(zed)).toEqual(["mods/kit/icons/zed.svg"]);
-    expect(find(zed, (item) => item.calls.some(([n, a]) => n === "text_color" && a[0] === "#4A9EFF"))).not.toBeNull();
+    const zedIcon = find(zed, (item) => item.calls.some(([n, a]) => n === "svg" && a[0] === "mods/kit/icons/zed.svg")) as Node;
+    expect(zedIcon.calls).toContainEqual(["text_color", ["t.muted"]]);
     const reload = at("md-reload");
     expect(reload.calls).toContainEqual(["tooltip", ["Reload"]]);
     expect(svgs(reload)).toEqual(["mods/kit/icons/rotate-cw.svg"]);

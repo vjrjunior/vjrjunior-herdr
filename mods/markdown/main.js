@@ -1,7 +1,7 @@
 import { View, div } from "gpui-kit";
 import { h_flex, TextView, v_flex } from "gpui-base";
 import { exec, home, props, readTextFile, theme, watchFolder } from "herdr";
-import { BRAND, button, iconButton } from "../../kit/kit.js";
+import { button, iconButton } from "../../kit/kit.js";
 import { folderOf, linkTarget, nameOf, shortFolder, stripFrontMatter } from "./logic.js";
 
 function message(text, t) {
@@ -100,7 +100,7 @@ export default class Markdown extends View {
       .child(div().flex_1().min_w(0).overflow_hidden().whitespace_nowrap().text_ellipsis_start().text_size(11).text_color(t.dim).child(file ? shortFolder(folderOf(file), home()) : ""))
       .when(Boolean(file), (el) =>
         el
-          .child(iconButton("md-zed", { icon: "zed", tooltip: "Zed", color: BRAND.zed, onClick: () => exec("zed", [file]).catch(() => {}) }, t))
+          .child(button("md-zed", { label: "Zed", icon: "zed", iconColor: t.muted, onClick: () => exec("zed", [file]).catch(() => {}) }, t))
           .child(
             iconButton(
               "md-reload",
