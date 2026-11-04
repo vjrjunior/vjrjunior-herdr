@@ -312,11 +312,13 @@ describe("moveTab", () => {
     expect(notice.level).toBe("success");
   });
 
-  test("the success notice says background work ended", async () => {
+  test("the success notice names the target and says background work ended", async () => {
     const w = world();
     w.spaces[0].tabs[0] = tabInfo("tb1", 1, "fix login", true);
     const { notice } = await move(w);
-    expect(notice).toEqual({ title: "Moved the tab", body: "fix login is now in feat/x. Anything Claude ran in the background ended with it.", level: "success", timeout: 4000 });
+    expect(notice).toEqual({ title: "Moved to feat/x", body: "Anything Claude ran in the background ended.", level: "success", timeout: 4000 });
+    const detached = await move(world({ worktrees: "worktree /r/main\nbranch refs/heads/main\n\nworktree /r/wt\ndetached\n" }));
+    expect(detached.notice.title).toBe("Moved to wt");
   });
 
   test("keeps a named tab's name", async () => {
@@ -330,7 +332,7 @@ describe("moveTab", () => {
     const shell = (changes: any = {}) => world({ infos: { t1: shellInfo(20, "/r/main/src") }, sessions: {}, ...changes });
     const matched = await move(shell({ folders: ["/r/wt/src"] }));
     expect(matched.acts[0]).toEqual({ name: "tab.new", args: { space: "s2", folder: "/r/wt/src" } });
-    expect(matched.notice.body).toBe("The tab is now in feat/x.");
+    expect(matched.notice).toEqual({ title: "Moved to feat/x", level: "success", timeout: 4000 });
     expect((await move(shell())).acts[0].args).toEqual({ space: "s2", folder: "/r/wt" });
     const spaced = world({
       infos: { t1: shellInfo(20, "/r/máin dir/a b") },

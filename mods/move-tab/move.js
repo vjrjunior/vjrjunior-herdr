@@ -90,7 +90,8 @@ async function move(request, io, run) {
     if (part.kind === "claude") run.started.add(part);
   }
 
-  run.moved = `${name ?? "The tab"} is now in ${target.branch ?? base(target.path)}`;
+  const place = target.branch ?? base(target.path);
+  run.moved = `${name ?? "The tab"} is now in ${place}`;
   if (extra) await io.act("tab.close", { id: extra, confirmed: true });
   const old = io.spaces().find((candidate) => candidate.id === space.id);
   if (old?.tabs.some((candidate) => candidate.id === tab.id)) {
@@ -99,8 +100,8 @@ async function move(request, io, run) {
   }
   await io.act("space.select", { id: into });
   await io.act("tab.select", { id: made[0].tab });
-  const background = run.ended.length > 0 ? " Anything Claude ran in the background ended with it." : "";
-  return { title: "Moved the tab", body: `${run.moved}.${background}`, level: "success", timeout: 4000 };
+  const notice = { title: `Moved to ${place}`, level: "success", timeout: 4000 };
+  return run.ended.length > 0 ? { ...notice, body: "Anything Claude ran in the background ended." } : notice;
 }
 
 async function readPane(block, where, io) {
