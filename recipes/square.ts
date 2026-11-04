@@ -15,7 +15,7 @@ const POPUP_ROOTS: Record<string, number> = {
   "command-center": 1,
 };
 const FRAMELESS = ["picker", "machine-add", "menu", "palette"];
-const OWN_MODS = ["git-graph", "spaces-tree", "comeback", "command-center", "markdown"];
+const OWN_MODS = ["git-graph", "spaces-tree", "comeback", "command-center", "markdown", "kit"];
 
 function squareCorner(_match: string, side?: string): string {
   return side === "_full" ? ".rounded(0)" : `.rounded${side ?? ""}(0)`;
@@ -33,6 +33,7 @@ export const square: Recipe = {
     { name: "comeback", from: "repo" },
     { name: "command-center", from: "repo" },
     { name: "markdown", from: "repo" },
+    { name: "kit", from: "repo" },
   ],
   apply({ copies, layout, replacements }) {
     const all = Object.values(copies);

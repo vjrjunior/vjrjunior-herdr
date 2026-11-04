@@ -46,12 +46,12 @@ function modsIn(node: unknown): string[] {
 const graphChild = (generated: ReturnType<typeof generate>) => findNode(JSON.parse(generated.layoutText), "panel-body")?.children.at(-1);
 
 describe("variants", () => {
-  test("vjr-desk copies the palette, the status bar, the tab bar, the spaces tree, comeback, the command center and the markdown viewer", () => {
-    expect(Object.keys(generateDesk().mods).sort()).toEqual(["vjr-comeback", "vjr-command-center", "vjr-markdown", "vjr-palette", "vjr-spaces-tree", "vjr-tabs", "vjr-workspace-status"]);
+  test("vjr-desk copies the palette, the status bar, the tab bar, the spaces tree, comeback, the command center, the kit and the markdown viewer", () => {
+    expect(Object.keys(generateDesk().mods).sort()).toEqual(["vjr-comeback", "vjr-command-center", "vjr-kit", "vjr-markdown", "vjr-palette", "vjr-spaces-tree", "vjr-tabs", "vjr-workspace-status"]);
   });
 
-  test("vjr-desk-square copies twenty mods", () => {
-    expect(Object.keys(generateSquare().mods)).toHaveLength(20);
+  test("vjr-desk-square copies twenty-one mods", () => {
+    expect(Object.keys(generateSquare().mods)).toHaveLength(21);
   });
 
   test("vjr-desk keeps the shipped mods elsewhere", () => {
@@ -131,6 +131,21 @@ describe("git-graph-panel", () => {
 
   test("a tab bar that changed fails the recipe", () => {
     expect(() => generateDesk({ "mods/tabs/main.js": "changed" })).toThrow(/recipe git-graph-panel:/);
+  });
+});
+
+describe("kit", () => {
+  test("both layouts install the kit", () => {
+    expect(Object.keys(generateDesk().mods)).toContain("vjr-kit");
+    expect(Object.keys(generateSquare().mods)).toContain("vjr-square-kit");
+  });
+
+  test("the square layout's kit has only square corners", () => {
+    const mods = generateSquare().mods;
+    const files = [mods["vjr-square-kit"]?.["main.js"] ?? "", ...Object.entries(mods).filter(([name]) => name.startsWith("vjr-square-")).map(([, f]) => f["kit.js"] ?? "")];
+    const rounded = files.flatMap((text) => text.match(/\.rounded(_[a-z]+)?\([^()]*\)/g) ?? []);
+    expect(rounded.length).toBeGreaterThan(0);
+    for (const call of rounded) expect(call).toMatch(/\.rounded(_[a-z]+)?\(0\)/);
   });
 });
 

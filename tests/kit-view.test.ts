@@ -1,0 +1,42 @@
+import { beforeEach, expect, test } from "bun:test";
+import { herdr, type Node } from "./app-mocks";
+
+const { ICONS } = await import("../kit/kit.js");
+const { default: Kit } = await import("../mods/kit/main.js");
+
+const walk = (node: Node): Node[] => [node, ...node.kids.flatMap(walk)];
+const find = (node: Node, key: string) => walk(node).find((n) => n.key === key) as Node;
+const texts = (node: Node) => walk(node).flatMap((n) => n.texts);
+const svgs = (node: Node) => walk(node).flatMap((n) => n.calls.filter(([c]) => c === "svg").map(([, args]) => args[0]));
+
+beforeEach(() => {
+  herdr.theme = () => new Proxy({}, { get: (_x, p) => (typeof p === "string" ? `t.${p}` : undefined) });
+});
+
+function render() {
+  return new Kit().render({ notify() {} }) as Node;
+}
+
+test("the gallery shows every section", () => {
+  const root = render();
+  for (const id of ["buttons", "icon-buttons", "links", "chips", "pill", "lines", "dots", "steps", "icons"]) {
+    expect(find(root, `kit-${id}`)).toBeDefined();
+  }
+});
+
+test("the gallery draws every icon with its name", () => {
+  const section = find(render(), "kit-icons");
+  const drawn = svgs(section);
+  for (const name of ICONS) {
+    expect(drawn).toContain(`mods/kit/icons/${name}.svg`);
+    expect(texts(section)).toContain(name);
+  }
+  expect(drawn).toHaveLength(ICONS.length);
+});
+
+test("the gallery shows each step state", () => {
+  const section = find(render(), "kit-steps");
+  const borders = walk(section).flatMap((n) => n.calls.filter(([c]) => c === "border_color").map(([, args]) => args[0]));
+  expect(borders).toEqual(["t.accent", "t.blocked", "t.input"]);
+  expect(svgs(section)).toEqual(["mods/kit/icons/check-heavy.svg", "mods/kit/icons/exclamation.svg"]);
+});
