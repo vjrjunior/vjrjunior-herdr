@@ -49,7 +49,8 @@ export default class MoveTab extends View {
     const folder = placeOf({ tabs: [{ id: this.tab }], folder: space.folder }, panes());
     const text = folder ? await appIo(cx).worktrees(folder) : null;
     if (!text) return [];
-    return targetsFor({ checkouts: parseWorktrees(text), spaces: spaces(), panes: panes(), from: { space: space.id } });
+    const local = spaces().filter((candidate) => candidate.machine == null);
+    return targetsFor({ checkouts: parseWorktrees(text), spaces: local, panes: panes(), from: { space: space.id } });
   }
 
   pick(index) {

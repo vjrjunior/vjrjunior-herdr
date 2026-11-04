@@ -162,6 +162,19 @@ describe("move-tab popup", () => {
     expect(own(list, "overflow_y_scrollbar")).toEqual([[]]);
   });
 
+  test("the popup lists only this machine's spaces", async () => {
+    const local = herdr.spaces as () => Record<string, unknown>[];
+    const localPanes = herdr.panes as () => Record<string, unknown>[];
+    herdr.spaces = () => [...local(), { id: "s3", name: "far", folder: "/r/wt/alpha", machine: "vps", tabs: [{ id: "tb3", name: "1", named: false }] }];
+    herdr.panes = () => [...localPanes(), { pane: "p3", tab: "tb3", terminal: "vps/t3", cwd: "/r/wt/alpha" }];
+    const { view, cx } = await popup();
+    const root = view.render(cx);
+    expect([0, 1, 2].map((i) => texts(byKey(root, `target-${i}`) as Node))).toEqual([["live", "feat/live · open"], ["alpha"], ["zeta"]]);
+    expect(byKey(root, "target-3")).toBeNull();
+    click(view, cx, "target-1");
+    expect(app.shared[KEY]).toMatchObject({ to: "/r/wt/alpha", toSpace: null });
+  });
+
   test("a closed worktree whose label is its branch shows it once", async () => {
     const { view, cx } = await popup();
     const root = view.render(cx);
