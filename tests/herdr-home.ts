@@ -91,6 +91,10 @@ export default class Tabs extends View {
   "mods/workspace-status/main.js": script(`    return div().rounded(3).on_click(() => run("app.palette"));`),
   "mods/pane/main.js": script("    return div().rounded(4);"),
   "mods/menu/main.js": script(`    const tree = () => openOverlay({ mod: "worktree", kind: "dialog", width: 440, height: 260, props: {} });
+    const items = [
+        ["Close", "tab.close", { id: tg.id }],
+    ];
+    const icon = command === "worktree" ? "git-branch" : "terminal";
     if (it[1] === "worktree") tree();
     else run(it[1], it[2]);
     return v_flex().bg(t.popover).rounded(7);`),

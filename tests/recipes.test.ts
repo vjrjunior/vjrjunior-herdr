@@ -46,12 +46,12 @@ function modsIn(node: unknown): string[] {
 const graphChild = (generated: ReturnType<typeof generate>) => findNode(JSON.parse(generated.layoutText), "panel-body")?.children.at(-1);
 
 describe("variants", () => {
-  test("vjr-desk copies the palette, the status bar, the tab bar, the spaces tree, comeback, the command center, the kit and the markdown viewer", () => {
-    expect(Object.keys(generateDesk().mods).sort()).toEqual(["vjr-comeback", "vjr-command-center", "vjr-kit", "vjr-markdown", "vjr-palette", "vjr-spaces-tree", "vjr-tabs", "vjr-workspace-status"]);
+  test("vjr-desk copies the palette, the status bar, the tab bar, the spaces tree, comeback, the command center, the kit and the markdown viewer, the menu and the move-tab popup", () => {
+    expect(Object.keys(generateDesk().mods).sort()).toEqual(["vjr-comeback", "vjr-command-center", "vjr-kit", "vjr-markdown", "vjr-menu", "vjr-move-tab", "vjr-palette", "vjr-spaces-tree", "vjr-tabs", "vjr-workspace-status"]);
   });
 
-  test("vjr-desk-square copies twenty-one mods", () => {
-    expect(Object.keys(generateSquare().mods)).toHaveLength(21);
+  test("vjr-desk-square copies twenty-two mods", () => {
+    expect(Object.keys(generateSquare().mods)).toHaveLength(22);
   });
 
   test("vjr-desk keeps the shipped mods elsewhere", () => {
@@ -227,7 +227,13 @@ describe("square", () => {
   });
 
   test("a context menu that changed still generates", () => {
-    const menu = 'export default class Mod { render() { return v_flex().bg(t.popover).rounded(7); } }';
+    const menu = [
+      'export default class Mod { render() {',
+      '        ["Close", "tab.close", { id: tg.id }],',
+      '    const icon = command === "worktree" ? "git-branch" : "terminal";',
+      '    if (it[1] === "worktree") tree();',
+      '    return v_flex().bg(t.popover).rounded(7); } }',
+    ].join("\n");
     expect(() => generateSquare({ "mods/menu/main.js": menu })).not.toThrow();
   });
 
@@ -334,6 +340,41 @@ describe("markdown viewer", () => {
     const squared = generateSquare().mods["vjr-square-markdown"]?.["kit.js"] ?? "";
     expect(squared).toContain(".rounded(0)");
     expect(squared).not.toContain(".rounded(RADIUS");
+  });
+});
+
+describe("move-tab", () => {
+  test("both layouts put Move to… in the tab menu", () => {
+    for (const [generated, copy] of [
+      [generateDesk(), "vjr-menu"],
+      [generateSquare(), "vjr-square-menu"],
+    ] as const) {
+      const menu = generated.mods[copy]?.["main.js"] ?? "";
+      expect(menu).toContain('["Move to…", "move-tab", { tab: tg.id, space: tg.space }],\n        ["Close", "tab.close", { id: tg.id }],');
+      expect(menu).toContain('command === "worktree" || command === "move-tab" ? "git-branch"');
+    }
+  });
+
+  test("the menu opens the layout's own popup", () => {
+    expect(generateDesk().mods["vjr-menu"]?.["main.js"]).toContain('if (it[1] === "move-tab") openOverlay({ mod: "vjr-move-tab", kind: "popup", width: 300, height: 320, props: it[2] });\n    else if (it[1] === "worktree")');
+    expect(generateSquare().mods["vjr-square-menu"]?.["main.js"]).toContain('if (it[1] === "move-tab") openOverlay({ mod: "vjr-square-move-tab", kind: "popup", frame: "none", width: 300, height: 320, props: it[2] });');
+  });
+
+  test("both layouts float the worker", () => {
+    for (const [generated, copy] of [
+      [generateDesk(), "vjr-move-tab"],
+      [generateSquare(), "vjr-square-move-tab"],
+    ] as const) {
+      expect(JSON.parse(generated.layoutText).floating).toContainEqual({ id: "move-tab", content: { mod: copy, props: { role: "worker" } }, edge: "left", align: "end" });
+    }
+  });
+
+  test("the square popup has a border", () => {
+    expect(generateSquare().mods["vjr-square-move-tab"]?.["main.js"]).toContain(".bg(t.popover).border_1().border_color(t.border)");
+  });
+
+  test("a menu that changed fails the recipe", () => {
+    expect(() => generateDesk({ "mods/menu/main.js": "export default class Mod { render() { return div(); } }" })).toThrow(/recipe move-tab/);
   });
 });
 
