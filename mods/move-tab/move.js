@@ -105,7 +105,7 @@ async function move(request, io, run) {
   await io.act("space.select", { id: into });
   await io.act("tab.select", { id: made[0].tab });
   const notice = { title: `Moved to ${run.place}`, level: "success", timeout: 4000 };
-  return run.ended.length > 0 ? { ...notice, body: "Anything Claude ran in the background ended." } : notice;
+  return run.ended.length > 0 ? { ...notice, body: "Claude's background jobs ended." } : notice;
 }
 
 async function readPane(block, where, io) {

@@ -375,7 +375,7 @@ describe("moveTab", () => {
     const w = world();
     w.spaces[0].tabs[0] = tabInfo("tb1", 1, "fix login", true);
     const { notice } = await move(w);
-    expect(notice).toEqual({ title: "Moved to feat/x", body: "Anything Claude ran in the background ended.", level: "success", timeout: 4000 });
+    expect(notice).toEqual({ title: "Moved to feat/x", body: "Claude's background jobs ended.", level: "success", timeout: 4000 });
     const detached = await move(world({ worktrees: "worktree /r/main\nbranch refs/heads/main\n\nworktree /r/wt\ndetached\n" }));
     expect(detached.notice.title).toBe("Moved to wt");
   });

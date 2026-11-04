@@ -16,7 +16,7 @@ A tab belongs to the space it was opened in. When work starts in one checkout of
   3. worktrees with no space yet, by branch name, detailed with the branch.
   Every space open in the tab's repo on this machine is a row, extra spaces in the same checkout included, except the tab's own space. A space on another machine is never a row, even when its folder has the same path as a checkout here. A main checkout's open space is detailed `main checkout · open`; only its row with no space says plain `main checkout`.
 - **Drop rows:** while a tab dragged from the tab bar is over a Spaces tree row that takes it, the row gets a 1px `accent` border (`.border_1().border_color(t.accent)`) that follows the row's own corners: radius 8 on graph rows in `vjr-desk`, none on block rows, and square everywhere in `vjr-desk-square`. Other rows look as usual.
-- **After the move:** a toast titled `Moved to <branch or folder name>`, with the body `Anything Claude ran in the background ended.` when a Claude was ended and no body otherwise; level success, 4 s. The target space and the moved tab are selected. In the old space the tab is gone, and when it was the space's only tab the space has a new tab with a shell in its checkout's root, so the space keeps its name and color.
+- **After the move:** a toast titled `Moved to <branch or folder name>`, with the body `Claude's background jobs ended.` when a Claude was ended and no body otherwise; level success, 4 s. The target space and the moved tab are selected. In the old space the tab is gone, and when it was the space's only tab the space has a new tab with a shell in its checkout's root, so the space keeps its name and color.
 - **When it can't:** a warning toast, `Can't move this tab`, with the reason (see Watch out), and nothing changes.
 - The worker, a floating block, draws an empty `div()`.
 
@@ -77,7 +77,7 @@ A tab belongs to the space it was opened in. When work starts in one checkout of
   - `The tab is already there.`
   - `The tab is gone.`
   - `Another move is running.`
-- **Claude's background processes end with it** (shells it started in the background, its MCP servers), as when Claude exits on its own. They can't be told from the MCP servers, so they don't block a move. The success toast says so in its body, `Anything Claude ran in the background ended.`, and puts the place in its title, so both fit on the toast's one line.
+- **Claude's background processes end with it** (shells it started in the background, its MCP servers), as when Claude exits on its own. They can't be told from the MCP servers, so they don't block a move. The success toast says so in its body, `Claude's background jobs ended.`, and puts the place in its title, so both fit on the toast's one line.
 - **The toast shows one line.** A failure notice puts the resume command in its body, which gets cut, so its click action resumes the conversation in a new tab of the old space. That tab is the way back; the command in the body is for copying.
 - **A move cut off** by a layout switch or an app restart is not run again and gives no toast: the worker's task is cancelled and the session id goes with it. If Claude had ended, the old tab shows a shell where it was, and Claude's own `/resume` in the old folder lists the conversation.
 - **Splits keep their shape, not their sizes.** The row and column tree is reproduced from Herdr's document; every split is made at Herdr's default size.
