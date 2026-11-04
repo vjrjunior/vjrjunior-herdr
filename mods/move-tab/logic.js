@@ -135,7 +135,8 @@ export function movedNote({ from, fromBranch, to, toBranch }) {
 
 export function resumeArgv({ session, args, note }) {
   if (typeof session !== "string" || !SESSION.test(session)) return null;
-  return ["claude", "--resume", session, ...args, "--append-system-prompt", note];
+  const argv = ["claude", "--resume", session, ...args];
+  return note ? [...argv, "--append-system-prompt", note] : argv;
 }
 
 export function tabTree(stdout, tab) {

@@ -5,21 +5,25 @@ export const POLL = 250;
 const PANE_WAIT = 2000;
 
 export async function moveTab(request, io) {
-  const run = { claudes: [], started: new Set() };
+  const run = { home: null, ended: [], started: new Set(), moved: null };
   let notice;
   try {
     notice = await move(request, io, run);
   } catch (error) {
-    notice = failed(sentence(error.message), run.claudes.filter((claude) => !run.started.has(claude)));
+    const message = bare(error?.message ?? String(error));
+    notice = run.moved ? { title: "Moved the tab", body: `${run.moved}, but ${message}.`, level: "warning" } : failed(`${message}.`, run);
   }
-  io.notify(notice);
-  return { moved: notice.level === "success" };
+  try {
+    io.notify(notice);
+  } catch {}
+  return { moved: run.moved !== null };
 }
 
 async function move(request, io, run) {
   const space = io.spaces().find((candidate) => candidate.tabs.some((tab) => tab.id === request.tab));
   if (!space) return refused(REASONS.gone());
   if (space.machine != null) return refused(REASONS.remote());
+  run.home = space.id;
   const tab = space.tabs.find((candidate) => candidate.id === request.tab);
   const root = await io.tree(tab.id);
   const blocks = leaves(root);
@@ -41,7 +45,7 @@ async function move(request, io, run) {
   if (!target) return refused(REASONS.target());
   if (request.toSpace === space.id || (request.toSpace == null && target === source)) return refused(REASONS.same());
 
-  const note = movedNote({ from: source.path, fromBranch: source.branch, to: target.path, toBranch: target.branch });
+  const note = target.path === source.path ? null : movedNote({ from: source.path, fromBranch: source.branch, to: target.path, toBranch: target.branch });
   for (const part of parts) {
     if (part.kind === "mod") continue;
     const folder = matchingFolder(part.cwd, source.path, target.path);
@@ -51,13 +55,15 @@ async function move(request, io, run) {
     if (!part.launch.argv) return refused(REASONS.session(part.where));
   }
 
-  const claudes = parts.filter((part) => part.kind === "claude");
-  run.claudes = claudes;
-  for (const claude of claudes) {
-    if (!(await ended(claude.pid, io))) return failed(`Claude didn't end in ${END_WAIT / 1000} seconds, so the tab stayed.`, claudes);
+  for (const claude of parts.filter((part) => part.kind === "claude")) {
+    const now = await readPane(claude.block, claude.where, io);
+    const reason = now.reason ?? (now.pid === claude.pid && now.session === claude.session ? null : REASONS.session(claude.where));
+    if (reason) return run.ended.length > 0 ? failed(reason, run) : refused(reason);
+    if (!(await ended(claude.pid, io))) return failed(`Claude in ${claude.where} didn't exit, so nothing moved.`, run);
+    run.ended.push(claude);
   }
 
-  const live = io.spaces();
+  const live = io.spaces().filter((candidate) => candidate.machine == null);
   let into = live.find((candidate) => candidate.id === request.toSpace)?.id;
   into ??= live.find((candidate) => candidate.id !== space.id && within(candidate, io.panes(), checkouts, target))?.id;
   let extra = null;
@@ -84,13 +90,17 @@ async function move(request, io, run) {
     if (part.kind === "claude") run.started.add(part);
   }
 
+  run.moved = `${name ?? "The tab"} is now in ${target.branch ?? base(target.path)}`;
   if (extra) await io.act("tab.close", { id: extra, confirmed: true });
-  if (io.spaces().find((candidate) => candidate.id === space.id)?.tabs.length === 1) await io.act("tab.new", { space: space.id, folder: source.path });
-  await io.act("tab.close", { id: tab.id, confirmed: true });
+  const old = io.spaces().find((candidate) => candidate.id === space.id);
+  if (old?.tabs.some((candidate) => candidate.id === tab.id)) {
+    if (old.tabs.length === 1) await io.act("tab.new", { space: space.id, folder: source.path });
+    await io.act("tab.close", { id: tab.id, confirmed: true });
+  }
   await io.act("space.select", { id: into });
   await io.act("tab.select", { id: made[0].tab });
-  const background = claudes.length > 0 ? " Anything Claude ran in the background ended with it." : "";
-  return { title: "Moved the tab", body: `${name ?? "The tab"} is now in ${target.branch ?? base(target.path)}.${background}`, level: "success", timeout: 4000 };
+  const background = run.ended.length > 0 ? " Anything Claude ran in the background ended with it." : "";
+  return { title: "Moved the tab", body: `${run.moved}.${background}`, level: "success", timeout: 4000 };
 }
 
 async function readPane(block, where, io) {
@@ -105,10 +115,10 @@ async function readPane(block, where, io) {
     const pid = info.foreground.pid;
     const found = await io.session(pid);
     if (!found) return { reason: REASONS.session(where) };
-    return { kind: "claude", where, pid, session: found.session, cwd: found.cwd, args: keepArgs(info.foreground.argv ?? []) };
+    return { kind: "claude", block, where, pid, session: found.session, cwd: found.cwd, args: keepArgs(info.foreground.argv ?? []) };
   }
   if (atShell(info)) return { kind: "shell", where, cwd: info.cwd ?? info.foreground?.cwd ?? null };
-  const pane = io.panes().find((candidate) => candidate.pane === block.id);
+  const pane = io.panes().find((candidate) => candidate.terminal === address);
   return { reason: REASONS.busy(pane?.program?.name ?? base(info.foreground.argv?.[0] ?? ""), where) };
 }
 
@@ -142,11 +152,19 @@ function refused(body) {
   return { title: "Can't move this tab", body, level: "warning" };
 }
 
-function failed(message, claudes) {
-  const commands = claudes.map((claude) => resumeCommand({ cwd: claude.cwd, session: claude.session, args: claude.args }) ?? `claude --resume ${claude.session}`);
-  return { title: "Couldn't move the tab", body: commands.length > 0 ? `${message} To resume Claude by hand: ${commands.join("; ")}` : message, level: "error" };
+function failed(message, run) {
+  const offered = run.ended.filter((claude) => !run.started.has(claude));
+  const notice = { title: "Couldn't move the tab", body: message, level: "error" };
+  if (offered.length === 0) return notice;
+  const commands = offered.map((claude) => resumeCommand({ cwd: claude.cwd, session: claude.session, args: claude.args }) ?? `claude --resume ${claude.session}`);
+  const [first] = offered;
+  return {
+    ...notice,
+    body: `${message} To resume Claude by hand: ${commands.join("; ")}`,
+    action: { name: "tab.new", args: { space: run.home, folder: first.cwd, argv: resumeArgv({ session: first.session, args: first.args, note: null }) } },
+  };
 }
 
-function sentence(text) {
-  return /[.!?]$/.test(text) ? text : `${text}.`;
+function bare(text) {
+  return text.replace(/[.!?]+$/, "");
 }

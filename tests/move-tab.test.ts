@@ -13,6 +13,10 @@ describe("move-tab logic", () => {
     expect(resumeArgv({ session: "abc-1", args: ["--model", "opus"], note: "N" })).toEqual(["claude", "--resume", "abc-1", "--model", "opus", "--append-system-prompt", "N"]);
     expect(resumeArgv({ session: "../x", args: [], note: "N" })).toBeNull();
   });
+  test("resumes without a note when there is none", () => {
+    expect(resumeArgv({ session: "abc-1", args: ["--model", "opus"], note: null })).toEqual(["claude", "--resume", "abc-1", "--model", "opus"]);
+    expect(resumeArgv({ session: "abc-1", args: [], note: "" })).toEqual(["claude", "--resume", "abc-1"]);
+  });
   test("maps a folder into the other checkout", () => {
     expect(matchingFolder("/r/main/src/app", "/r/main", "/r/wt")).toBe("/r/wt/src/app");
     expect(matchingFolder("/r/main", "/r/main", "/r/wt")).toBe("/r/wt");

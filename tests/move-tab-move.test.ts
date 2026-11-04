@@ -3,13 +3,24 @@ import { movedNote, resumeArgv } from "../mods/move-tab/logic.js";
 import { moveTab } from "../mods/move-tab/move.js";
 
 const WORKTREES = "worktree /r/main\nbranch refs/heads/main\n\nworktree /r/wt\nbranch refs/heads/feat/x\n";
-const ARGV = resumeArgv({ session: "new-id", args: ["--model", "opus"], note: movedNote({ from: "/r/main", fromBranch: "main", to: "/r/wt", toBranch: "feat/x" }) });
+const NOTE = movedNote({ from: "/r/main", fromBranch: "main", to: "/r/wt", toBranch: "feat/x" });
+const ARGV = resumeArgv({ session: "new-id", args: ["--model", "opus"], note: NOTE });
 const RESUME = "cd /r/main && claude --resume new-id --model opus";
+const SECOND = "cd /r/main/api && claude --resume two-id --effort high";
+const FIRST_ACTION = { name: "tab.new", args: { space: "s1", folder: "/r/main", argv: ["claude", "--resume", "new-id", "--model", "opus"] } };
+const SECOND_ACTION = { name: "tab.new", args: { space: "s1", folder: "/r/main/api", argv: ["claude", "--resume", "two-id", "--effort", "high"] } };
+const REQUEST = { id: "r1", tab: "tb1", space: "s1", to: "/r/wt", toSpace: "s2", at: 0 };
 
 const claudeInfo = (state = "idle") => ({
   pid: 10,
   cwd: "/r/main",
   foreground: { pid: 11, argv: ["claude", "--resume", "old-id", "--model", "opus"], cwd: "/r/main", name: "2.1.318" },
+  status: { app: "claude-code", state },
+});
+const secondInfo = (state = "idle") => ({
+  pid: 20,
+  cwd: "/r/main/api",
+  foreground: { pid: 21, argv: ["claude", "--effort", "high"], cwd: "/r/main/api", name: "2.1.318" },
   status: { app: "claude-code", state },
 });
 const shellInfo = (pid: number, cwd: string) => ({ pid, cwd, foreground: { pid, argv: ["-zsh"], cwd, name: "zsh" } });
@@ -20,26 +31,41 @@ const tabInfo = (id: string, index: number, name = String(index), named = false)
 function world(changes: any = {}) {
   return {
     spaces: [
-      { id: "s1", name: "main", named: false, folder: "/r/main", machine: null, tabs: [tabInfo("tb1", 1), tabInfo("tb2", 2)] },
-      { id: "s2", name: "wt", named: false, folder: "/r/wt", machine: null, tabs: [tabInfo("tb3", 1)] },
+      { id: "s1", name: "main", named: false, folder: "/r/main", machine: null as string | null, tabs: [tabInfo("tb1", 1), tabInfo("tb2", 2)] },
+      { id: "s2", name: "wt", named: false, folder: "/r/wt", machine: null as string | null, tabs: [tabInfo("tb3", 1)] },
     ],
-    panes: [pane("p1", "t1", "tb1", "/r/main", "Claude Code"), pane("p3", "t3", "tb3", "/r/wt", "Shell")],
+    panes: [pane("p1", "t1", "tb1", "/r/main", "Claude Code"), pane("p3", "t3", "tb3", "/r/wt", "Shell")] as any[],
     terminals: [] as any[],
     infos: { t1: claudeInfo() } as Record<string, any>,
     sessions: { 11: { session: "new-id", cwd: "/r/main" } } as Record<number, any>,
     worktrees: WORKTREES,
     trees: { tb1: { type: "row", children: [block("p1", "t1")] } } as Record<string, any>,
     folders: [] as string[],
-    stubborn: false,
+    stubborn: [] as number[],
     fail: {} as Record<string, string>,
+    throwRaw: false,
+    notifyThrows: false,
+    onSignal: null as ((w: any) => void) | null,
     ...changes,
   };
+}
+
+function twoClaudes(changes: any = {}) {
+  const w = world({
+    infos: { t1: claudeInfo(), t2: secondInfo() },
+    trees: { tb1: { type: "row", children: [block("p1", "t1"), block("p2", "t2")] } },
+    ...changes,
+  });
+  w.sessions[21] = { session: "two-id", cwd: "/r/main/api" };
+  w.panes.push(pane("p2", "t2", "tb1", "/r/main/api", "Claude Code"));
+  return w;
 }
 
 function fakeIo(w: any) {
   const log: string[] = [];
   const notices: any[] = [];
   const polls: Record<number, number> = {};
+  const reads: Record<string, number> = {};
   let clock = 0;
   let next = 10;
   let focused: string | null = null;
@@ -50,7 +76,13 @@ function fakeIo(w: any) {
     spaces: () => w.spaces,
     panes: () => w.panes,
     terminals: () => w.terminals,
-    get: async (address: string) => w.infos[address] ?? null,
+    get: async (address: string) => {
+      const value = w.infos[address];
+      if (!Array.isArray(value)) return value ?? null;
+      const read = reads[address] ?? 0;
+      reads[address] = read + 1;
+      return value[Math.min(read, value.length - 1)];
+    },
     session: async (pid: number) => w.sessions[pid] ?? null,
     worktrees: async (_folder: string) => w.worktrees,
     tree: async (tab: string) => w.trees[tab] ?? null,
@@ -58,15 +90,16 @@ function fakeIo(w: any) {
     signal: async (pid: number) => {
       log.push(`signal ${pid}`);
       polls[pid] = 0;
+      w.onSignal?.(w);
     },
     alive: async (pid: number) => {
-      const value = w.stubborn || !(pid in polls) || polls[pid]++ === 0;
+      const value = w.stubborn.includes(pid) || !(pid in polls) || polls[pid]++ === 0;
       log.push(`alive ${pid} → ${value}`);
       return value;
     },
     act: async (name: string, args: any) => {
       log.push(`act ${name} ${JSON.stringify(args)}`);
-      if (w.fail[name]) throw new Error(w.fail[name]);
+      if (name in w.fail) throw w.throwRaw ? w.fail[name] : new Error(w.fail[name]);
       if (name === "space.new") {
         const id = next++;
         w.panes.push(pane(`p${id}`, `t${id}`, `tb${id}`, args.folder, "Shell"));
@@ -97,6 +130,7 @@ function fakeIo(w: any) {
     now: () => clock,
     notify: (notice: any) => {
       notices.push(notice);
+      if (w.notifyThrows) throw new Error("the toast broke");
     },
   };
 }
@@ -110,7 +144,7 @@ function actsOf(log: string[]) {
 
 async function move(w: any, request: any = {}) {
   const io = fakeIo(w);
-  const result = await moveTab({ id: "r1", tab: "tb1", space: "s1", to: "/r/wt", toSpace: "s2", at: 0, ...request }, io);
+  const result = await moveTab({ ...REQUEST, ...request }, io);
   expect(io.notices).toHaveLength(1);
   return { io, result, notice: io.notices[0], acts: actsOf(io.log) };
 }
@@ -128,6 +162,17 @@ describe("moveTab", () => {
     expect(result).toEqual({ moved: true });
   });
 
+  test("ends every Claude before the first one resumes", async () => {
+    const { io, result, acts } = await move(twoClaudes());
+    const resumed = io.log.findIndex((line) => line.startsWith("act ") && line.includes('"--resume"'));
+    expect(io.log.indexOf("alive 11 → false")).toBeGreaterThanOrEqual(0);
+    expect(io.log.indexOf("alive 11 → false")).toBeLessThan(resumed);
+    expect(io.log.indexOf("alive 21 → false")).toBeGreaterThanOrEqual(0);
+    expect(io.log.indexOf("alive 21 → false")).toBeLessThan(resumed);
+    expect(acts[2]).toEqual({ name: "terminal.open", args: { place: "right", folder: "/r/wt", argv: resumeArgv({ session: "two-id", args: ["--effort", "high"], note: NOTE }) } });
+    expect(result).toEqual({ moved: true });
+  });
+
   test("refuses a working Claude and changes nothing", async () => {
     const { io, result, notice } = await move(world({ infos: { t1: claudeInfo("working") } }));
     expect(io.log).toEqual([]);
@@ -138,7 +183,7 @@ describe("moveTab", () => {
   test("names the program of a busy pane", async () => {
     const w = world({
       infos: { t1: claudeInfo(), t2: { pid: 20, cwd: "/r/main", foreground: { pid: 21, argv: ["node", "vite"], cwd: "/r/main", name: "node" } } },
-      trees: { tb1: { type: "row", children: [block("p1", "t1"), block("p2", "t2")] } },
+      trees: { tb1: { type: "row", children: [block("p1", "t1"), block("b2", "t2")] } },
     });
     w.panes.push(pane("p2", "t2", "tb1", "/r/main", "Vite"));
     const { io, notice } = await move(w);
@@ -152,6 +197,28 @@ describe("moveTab", () => {
     expect(notice.body).toBe("Claude has sub-agents running in this tab.");
     const { result } = await move(world({ terminals: [{ address: "t7", parent: "t1", state: "exited" }] }));
     expect(result).toEqual({ moved: true });
+  });
+
+  test("checks each Claude again right before ending it", async () => {
+    const working = await move(world({ infos: { t1: [claudeInfo(), claudeInfo("working")] } }));
+    expect(working.io.log).toEqual([]);
+    expect(working.notice).toEqual({ title: "Can't move this tab", body: "Claude is working in this tab. Move it when the turn ends.", level: "warning" });
+    const restarted = claudeInfo();
+    restarted.foreground.pid = 12;
+    const w = world({ infos: { t1: [claudeInfo(), restarted] } });
+    w.sessions[12] = { session: "new-id", cwd: "/r/main" };
+    const changed = await move(w);
+    expect(changed.io.log).toEqual([]);
+    expect(changed.notice.body).toBe("Couldn't find Claude's conversation in this tab.");
+  });
+
+  test("a Claude that gets busy while another ends offers only the ended one", async () => {
+    const { io, notice, result } = await move(twoClaudes({ infos: { t1: claudeInfo(), t2: [secondInfo(), secondInfo("blocked")] } }));
+    expect(io.log).toContain("alive 11 → false");
+    expect(io.log).not.toContain("signal 21");
+    expect(actsOf(io.log)).toEqual([]);
+    expect(notice).toEqual({ title: "Couldn't move the tab", body: `Claude is waiting for you in pane 2. To resume Claude by hand: ${RESUME}`, level: "error", action: FIRST_ACTION });
+    expect(result).toEqual({ moved: false });
   });
 
   test("refuses its own space and a gone checkout", async () => {
@@ -173,12 +240,20 @@ describe("moveTab", () => {
   });
 
   test("a Claude that won't exit stops the move", async () => {
-    const { io, result, notice } = await move(world({ stubborn: true }));
+    const { io, result, notice } = await move(world({ stubborn: [11] }));
     expect(io.log[0]).toBe("signal 11");
     expect(io.log.slice(1).every((line) => line === "alive 11 → true")).toBe(true);
-    expect(notice.level).toBe("error");
-    expect(notice.body).toContain(RESUME);
+    expect(notice).toEqual({ title: "Couldn't move the tab", body: "Claude in this tab didn't exit, so nothing moved.", level: "error" });
     expect(io.now()).toBeGreaterThanOrEqual(10000);
+    expect(result).toEqual({ moved: false });
+  });
+
+  test("a second Claude that won't exit offers only the first one's conversation", async () => {
+    const { io, notice, result } = await move(twoClaudes({ stubborn: [21] }));
+    expect(io.log).toContain("alive 11 → false");
+    expect(io.log).toContain("signal 21");
+    expect(actsOf(io.log)).toEqual([]);
+    expect(notice).toEqual({ title: "Couldn't move the tab", body: `Claude in pane 2 didn't exit, so nothing moved. To resume Claude by hand: ${RESUME}`, level: "error", action: FIRST_ACTION });
     expect(result).toEqual({ moved: false });
   });
 
@@ -200,6 +275,22 @@ describe("moveTab", () => {
     expect(acts.some((act) => act.name === "space.new")).toBe(false);
   });
 
+  test("only lands in spaces on this machine", async () => {
+    const w = world();
+    w.spaces[1].machine = "vps";
+    const { acts } = await move(w);
+    expect(acts[0]).toEqual({ name: "space.new", args: { folder: "/r/wt" } });
+  });
+
+  test("a move inside one checkout resumes Claude without a moved note", async () => {
+    const w = world();
+    w.spaces.push({ id: "s4", name: "main 2", named: false, folder: "/r/main", machine: null, tabs: [tabInfo("tb4", 1)] });
+    w.panes.push(pane("p4", "t4", "tb4", "/r/main", "Shell"));
+    const { acts, result } = await move(w, { to: "/r/main", toSpace: "s4" });
+    expect(acts[0]).toEqual({ name: "tab.new", args: { space: "s4", folder: "/r/main", argv: ["claude", "--resume", "new-id", "--model", "opus"] } });
+    expect(result).toEqual({ moved: true });
+  });
+
   test("gives the old space a shell when the tab was its only one", async () => {
     const w = world();
     w.spaces[0].tabs = [tabInfo("tb1", 1)];
@@ -211,6 +302,14 @@ describe("moveTab", () => {
       { name: "space.select", args: { id: "s2" } },
       { name: "tab.select", args: { id: "tb10" } },
     ]);
+  });
+
+  test("skips closing an old tab that left with its Claude", async () => {
+    const w = world({ onSignal: (current: any) => (current.spaces[0].tabs = [tabInfo("tb2", 2)]) });
+    const { acts, result, notice } = await move(w);
+    expect(acts.map((act) => act.name)).toEqual(["tab.new", "space.select", "tab.select"]);
+    expect(result).toEqual({ moved: true });
+    expect(notice.level).toBe("success");
   });
 
   test("the success notice says background work ended", async () => {
@@ -270,6 +369,30 @@ describe("moveTab", () => {
     expect(notice.level).toBe("error");
     expect(notice.body.startsWith("boom.")).toBe(true);
     expect(notice.body).toContain(RESUME);
+    expect(notice.action).toEqual(FIRST_ACTION);
     expect(result).toEqual({ moved: false });
+  });
+
+  test("a build that fails after one Claude started offers only the other", async () => {
+    const { result, notice, acts } = await move(twoClaudes({ fail: { "terminal.open": "boom" } }));
+    expect(acts.map((act) => act.name)).toEqual(["tab.new", "pane.focus", "terminal.open"]);
+    expect(notice.body).toBe(`boom. To resume Claude by hand: ${SECOND}`);
+    expect(notice.body).not.toContain("new-id");
+    expect(notice.action).toEqual(SECOND_ACTION);
+    expect(result).toEqual({ moved: false });
+  });
+
+  test("a failure after the new tab is built still reports the move", async () => {
+    const { result, notice } = await move(world({ fail: { "tab.close": "no such tab" } }));
+    expect(result).toEqual({ moved: true });
+    expect(notice).toEqual({ title: "Moved the tab", body: "The tab is now in feat/x, but no such tab.", level: "warning" });
+  });
+
+  test("no error escapes the move", async () => {
+    const raw = await move(world({ fail: { "tab.new": "boom" }, throwRaw: true }));
+    expect(raw.notice.body.startsWith("boom.")).toBe(true);
+    const io = fakeIo(world({ notifyThrows: true }));
+    expect(await moveTab(REQUEST, io)).toEqual({ moved: true });
+    expect(io.notices).toHaveLength(1);
   });
 });
