@@ -53,7 +53,7 @@ Every feature ships in `vjr-desk` and `vjr-desk-square`, built from the same rec
 
 ## UI
 
-The mods in this repo draw their UI with the kit in `kit/kit.js`: its components, its icons in `kit/icons/` and its tokens. A mod imports it as `../../kit/kit.js`; `bun run apply-layout` copies it into each installed mod. Colors come from `theme()` by name; never hex values. Icons are SVG files, never font glyphs. A new component goes into the kit as soon as a second mod would draw the same thing; a piece only one mod needs stays in that mod. `vjr-kit` (`vjr-square-kit`) shows every component: open it with `herdr-app do pane.split --direction right --mod vjr-kit`.
+The mods in this repo draw their UI with the kit in `kit/kit.js`: its components, its icons in `kit/icons/` and its tokens. A mod imports it as `../../kit/kit.js`; `bun run apply-layout` copies it into each installed mod. Colors come from `theme()` by name, never hex values; the only exception is the Spaces tree's avatar palette. Icons are SVG files, never font glyphs. A new component goes into the kit as soon as a second mod would draw the same thing; a piece only one mod needs stays in that mod. `vjr-kit` (`vjr-square-kit`) shows every component: open it with `herdr-app do pane.split --direction right --mod vjr-kit`.
 
 ## Done
 
