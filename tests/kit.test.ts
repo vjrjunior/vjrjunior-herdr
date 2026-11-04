@@ -98,7 +98,7 @@ const ADOPTERS = [
   "mods/spaces-tree/main.js",
   "mods/markdown/main.js",
 ];
-const PENDING = new Set(["mods/command-center/logic.js", "mods/spaces-tree/main.js", "mods/markdown/main.js"]);
+const PENDING = new Set(["mods/markdown/main.js"]);
 
 for (const file of ADOPTERS) {
   if (PENDING.has(file)) test.todo(`${file} draws no glyphs`);

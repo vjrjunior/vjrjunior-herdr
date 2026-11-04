@@ -217,25 +217,65 @@ describe("head rows", () => {
   });
 });
 
-describe("command center chips", () => {
-  test("a worktree row shows its command center chip", () => {
+describe("command center lane line", () => {
+  const row = (view: { render(): Node }) => pathTo(view.render(), "kid-/w/app/one")?.at(-1) as Node;
+  const find = (node: Node, text: string): Node | null => {
+    if (node.texts.includes(text)) return node;
+    for (const kid of node.kids) {
+      const found = find(kid, text);
+      if (found) return found;
+    }
+    return null;
+  };
+  const withLane = (lane: Record<string, unknown>) => {
     const view = setup();
-    app.shared["command-center.lanes"] = { "/w/app/one": { chip: "PR ●", tone: "work" } };
-    const row = pathTo(view.render(), "kid-/w/app/one")?.at(-1) as Node;
-    expect(texts(row)).toContain("PR ●");
+    app.shared["command-center.lanes"] = { "/w/app/one": lane };
+    return view;
+  };
+
+  test("a worktree row with a lane shows its step and why under its name", () => {
+    const node = row(withLane({ chip: "AC 3/5", tone: "blocked", why: "vjr-ac asks M4" }));
+    expect(node.calls).toContainEqual(["h", [42]]);
+    expect(texts(node)).toContain("AC 3/5");
+    expect(texts(node)).toContain("· vjr-ac asks M4");
+    expect(find(node, "AC 3/5")?.calls).toContainEqual(["text_color", ["#505050"]]);
   });
 
-  test("without command center data the row has no chip", () => {
-    const view = setup();
-    const row = pathTo(view.render(), "kid-/w/app/one")?.at(-1) as Node;
-    expect(texts(row)).not.toContain("PR ●");
+  test("a row without a lane stays one 28 px line", () => {
+    const node = row(setup());
+    expect(node.calls).toContainEqual(["h", [28]]);
+    expect(node.calls).not.toContainEqual(["h", [42]]);
   });
 
-  test("the chip shows in the blocks style too", () => {
-    const view = setup();
+  test("a lane without a why shows only its step", () => {
+    const node = row(withLane({ chip: "PR open", tone: "work" }));
+    expect(texts(node)).toContain("PR open");
+    expect(texts(node).filter((text) => text.startsWith("·"))).toEqual([]);
+  });
+
+  test("both lines of a lane row truncate", () => {
+    const node = row(withLane({ chip: "AC 3/5", tone: "blocked", why: "vjr-ac asks M4" }));
+    const name = find(node, "one") as Node;
+    expect(name.calls.some(([call]) => call === "truncate")).toBe(true);
+    const sub = node.kids.flatMap((kid) => [kid, ...kid.kids]).find((kid) => kid.calls.some(([call, args]) => call === "h" && args[0] === 14) && kid.calls.some(([call]) => call === "text_size")) as Node;
+    expect(sub.calls.some(([call]) => call === "truncate")).toBe(true);
+  });
+
+  test("the lane line shows in the blocks style too", () => {
+    const view = withLane({ chip: "Ready", tone: "done", why: "ready to merge" });
     app.shared["spaces.style"] = "blocks";
-    app.shared["command-center.lanes"] = { "/w/app/one": { chip: "Ready", tone: "done" } };
-    const row = pathTo(view.render(), "kid-/w/app/one")?.at(-1) as Node;
-    expect(texts(row)).toContain("Ready");
+    const node = row(view);
+    expect(texts(node)).toContain("Ready");
+    expect(texts(node)).toContain("· ready to merge");
+    expect(node.calls).toContainEqual(["h", [42]]);
+  });
+
+  test("the rail runs past a two-line row", () => {
+    const view = withLane({ chip: "AC 3/5", tone: "blocked", why: "x" });
+    app.spaces = [space("m"), space("x", { active: true })];
+    view.repos[common].checkouts.push({ path: "/w/app/two", branch: "two", main: false });
+    const node = row(view);
+    const rail = node.kids.find((kid) => kid.calls.some(([call, args]) => call === "top" && args[0] === 14) && kid.calls.some(([call, args]) => call === "h" && args[0] === 28));
+    expect(rail).toBeDefined();
   });
 });

@@ -311,15 +311,23 @@ describe("alerts and badge", () => {
 describe("chips", () => {
   const chip = (l: any) => chipOf(l, stepsOf(l));
   test("chips follow the first unfinished step", () => {
-    expect(chip(lane())).toEqual({ chip: "Task", tone: "idle" });
-    expect(chip(lane({ skill: waitingAc }))).toEqual({ chip: "AC", tone: "work" });
-    expect(chip(lane({ verified: "aaaaaaa", lastCode: "bbbbbbb" }))).toEqual({ chip: "AC stale", tone: "bad" });
-    expect(chip(lane({ verified: "58197b4" }))).toEqual({ chip: "AC ✓", tone: "done" });
-    expect(chip(lane({ verified: "58197b4", skill: { family: "ship", skill: "ship", waiting: false, active: true } }))).toEqual({ chip: "Ship", tone: "work" });
-    expect(chip(lane({ evidence: current(), pr: pr({ statusCheckRollup: [check("test", null, "IN_PROGRESS")] }) }))).toEqual({ chip: "PR ●", tone: "work" });
-    expect(chip(lane({ evidence: current(), pr: pr({ reviewDecision: "CHANGES_REQUESTED" }) }))).toEqual({ chip: "PR ✕", tone: "bad" });
-    expect(chip(lane({ evidence: current(), pr: pr({ reviewDecision: "APPROVED", statusCheckRollup: [check("test", "SUCCESS")] }) }))).toEqual({ chip: "Ready", tone: "done" });
-    expect(chip(lane({ evidence: current(), pr: pr({ state: "MERGED" }) }))).toEqual({ chip: "Merged", tone: "done" });
+    expect(chip(lane())).toMatchObject({ chip: "Task", tone: "idle" });
+    expect(chip(lane({ skill: waitingAc }))).toMatchObject({ chip: "AC" });
+    expect(chip(lane({ verified: "aaaaaaa", lastCode: "bbbbbbb" }))).toMatchObject({ chip: "AC stale" });
+    expect(chip(lane({ verified: "58197b4" }))).toMatchObject({ chip: "AC done" });
+    expect(chip(lane({ verified: "58197b4", skill: { family: "ship", skill: "ship", waiting: false, active: true } }))).toMatchObject({ chip: "Ship", tone: "working" });
+    expect(chip(lane({ evidence: current(), pr: pr({ statusCheckRollup: [check("test", null, "IN_PROGRESS")] }) }))).toMatchObject({ chip: "PR open", tone: "working" });
+    expect(chip(lane({ evidence: current(), pr: pr({ reviewDecision: "CHANGES_REQUESTED" }) }))).toMatchObject({ chip: "PR failed", tone: "blocked", why: "changes requested" });
+    expect(chip(lane({ evidence: current(), pr: pr({ reviewDecision: "APPROVED", statusCheckRollup: [check("test", "SUCCESS")] }) }))).toMatchObject({ chip: "Ready", tone: "done" });
+    expect(chip(lane({ evidence: current(), pr: pr({ state: "MERGED" }) }))).toMatchObject({ chip: "Merged", tone: "done", why: "merged · clean up" });
+  });
+
+  test("a lane waiting on the person is blocked in its chip too", () => {
+    const l = lane({ task: parseTask(fixture("vjr-task-manual.md")), skill: { family: "ac", skill: "vjr-ac", waiting: true, active: true } });
+    const found = chip(l);
+    expect(found.tone).toBe("blocked");
+    expect(found.why).toBe(laneSummary(l).why);
+    expect(found.why).toBe("vjr-ac asks D02");
   });
 });
 
@@ -360,7 +368,7 @@ describe("review fixes", () => {
   test("a merged PR finishes AC, Ship and Evidence and goes straight to pp-clear", () => {
     const merged = lane({ verified: "aaaaaaa", lastCode: "bbbbbbb", evidence: evidence({ "ship.json": "stale", "screenshots.md": "stale" }), pr: pr({ state: "MERGED" }) });
     expect(stepsOf(merged)).toEqual(["done", "done", "done", "done", "done", "done", "next"]);
-    expect(chipOf(merged, stepsOf(merged))).toEqual({ chip: "Merged", tone: "done" });
+    expect(chipOf(merged, stepsOf(merged))).toMatchObject({ chip: "Merged", tone: "done" });
     expect(nextStep(merged).text).toBe("/pp-clear 42");
   });
 
@@ -428,7 +436,7 @@ describe("manual checks", () => {
 
   test("a running AC with manual checks counts the passed ones", () => {
     const l = withChecks();
-    expect(chipOf(l, stepsOf(l))).toEqual({ chip: "AC 1/4", tone: "work" });
+    expect(chipOf(l, stepsOf(l))).toMatchObject({ chip: "AC 1/4", tone: "blocked", why: "vjr-ac asks D02" });
   });
 });
 

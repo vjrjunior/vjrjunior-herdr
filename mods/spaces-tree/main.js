@@ -1,4 +1,4 @@
-import { View, div, svg } from "gpui-kit";
+import { View, div } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { spaces, panes, run, openOverlay, exec, theme, shared, setShared, watchFolder, window, nextCommand, layout } from "herdr";
 import {
@@ -18,6 +18,7 @@ import {
   readLook,
   repoName,
 } from "./tree.js";
+import { CONTROL, ICON_SIZE, TEXT, iconButton, statusDot } from "../../kit/kit.js";
 
 const WAIT = 1500;
 const RAIL = 16.25;
@@ -25,10 +26,9 @@ const HEAD = 36;
 const TALL = 44;
 const AVATAR = 18;
 const SUB = 14;
+const LANE = 42;
 const MARK = { ansi6: "#22a99a", ansi3: "#e3814f", ansi4: "#5b8def", ansi5: "#8b7cf6", ansi2: "#3fae6a", ansi1: "#d9649a" };
-const icon = (name) => `mods/workspace-chrome/${name}.svg`;
 const NARROW = 160;
-const glyph = (status) => (status === "blocked" || status === "done" ? "●" : "·");
 
 function findNode(node, id) {
   if (node?.id === id) return node;
@@ -273,27 +273,11 @@ export default class SpacesTree extends View {
   }
 
   statusDot(status, t) {
-    return div().size(7).flex_none().rounded(4).bg(t[status] ?? t.unknown);
+    return statusDot(t[status] ?? t.unknown);
   }
 
   iconButton(id, name, tooltip, action, t) {
-    return div()
-      .id(id)
-      .size(18)
-      .flex_none()
-      .flex()
-      .items_center()
-      .justify_center()
-      .rounded(4)
-      .text_color(t.unknown)
-      .hover((s) => s.bg(t.hover).text_color(t.foreground))
-      .tooltip(tooltip)
-      .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
-      .on_click((_e, cx) => {
-        cx.stop_propagation();
-        action();
-      })
-      .child(svg(icon(name)).size(12));
+    return iconButton(id, { icon: name, tooltip, color: t.unknown, size: CONTROL.tiny, iconSize: ICON_SIZE.md, bordered: false, stop: true, onClick: action }, t);
   }
 
   name(row, t) {
@@ -312,11 +296,21 @@ export default class SpacesTree extends View {
       .child(text);
   }
 
-  stageChip(row, t) {
+  laneLine(row, t) {
     const found = row.path ? (shared("command-center.lanes") ?? {})[row.path] : null;
     if (!found?.chip) return null;
-    const color = { done: t.done, work: t.working, bad: t.blocked }[found.tone] ?? t.unknown;
-    return h_flex().flex_none().h(16).px(5).items_center().text_size(10.5).border_1().border_color(color).text_color(color).rounded(3).child(found.chip);
+    const color = { blocked: t.blocked, working: t.working, done: t.done }[found.tone] ?? t.unknown;
+    const sub = h_flex()
+      .h(SUB)
+      .flex_none()
+      .min_w(0)
+      .items_center()
+      .gap(4)
+      .truncate()
+      .text_size(TEXT.sm)
+      .child(div().flex_none().text_color(color).child(found.chip))
+      .when(Boolean(found.why), (el) => el.child(div().text_color(t.muted).child(`· ${found.why}`)));
+    return { height: LANE, sub };
   }
 
   note(text, t) {
@@ -421,27 +415,33 @@ export default class SpacesTree extends View {
         .hover((s) => s.bg(t.hover))
         .on_click(() => this.open(row))
         .child(div().text_color(active ? t.foreground : t.muted).child(String(all.findIndex((space) => space.id === row.space.id) + 1)))
-        .child(div().text_color(t[row.status] ?? t.unknown).child(glyph(row.status)));
+        .when(row.status === "blocked" || row.status === "done", (el) => el.child(statusDot(t[row.status], { size: 5 })));
     });
+  }
+
+  kidLines(row, lane, t) {
+    const line = h_flex().h(AVATAR).flex_none().gap(8).items_center().child(this.name(row, t)).when(Boolean(counts(row)), (el) => el.child(this.note(counts(row), t)));
+    return lane ? [line, lane.sub] : [line];
   }
 
   graphKid(row, t, rail, last) {
     const selected = Boolean(row.space?.active);
-    return h_flex()
+    const lane = this.laneLine(row, t);
+    const height = lane?.height ?? 28;
+    return v_flex()
       .id(`kid-${row.key}`)
       .relative()
-      .h(28)
+      .h(height)
       .flex_none()
       .pl(46)
       .pr(8)
-      .gap(8)
-      .items_center()
+      .justify_center()
       .rounded(8)
       .when(selected, (el) => el.bg(t.selected))
       .when(!selected, (el) => el.hover((s) => s.bg(t.hover)))
       .on_click(() => this.open(row))
       .when(Boolean(row.space), (el) => el.on_mouse_down("right", () => this.menu(row.space)))
-      .when(!last, (el) => el.child(div().absolute().left(RAIL).top(14).w(1.5).h(14).bg(rail)))
+      .when(!last, (el) => el.child(div().absolute().left(RAIL).top(14).w(1.5).h(height - 14).bg(rail)))
       .child(div().absolute().left(RAIL).top(0).h(14).w(13).border_l(1.5).border_b(1.5).border_color(rail).rounded_bl(9))
       .child(
         div()
@@ -453,9 +453,7 @@ export default class SpacesTree extends View {
           .when(row.open, (el) => el.bg(t[row.status] ?? t.dim))
           .when(!row.open, (el) => el.border(1.5).border_color(rail)),
       )
-      .child(this.name(row, t))
-      .when(Boolean(this.stageChip(row, t)), (el) => el.child(this.stageChip(row, t)))
-      .when(Boolean(counts(row)), (el) => el.child(this.note(counts(row), t)));
+      .children(this.kidLines(row, lane, t));
   }
 
   graphEntry(entry, t) {
@@ -467,23 +465,22 @@ export default class SpacesTree extends View {
 
   blockKid(row, t) {
     const selected = Boolean(row.space?.active);
-    return h_flex()
+    const lane = this.laneLine(row, t);
+    const height = lane?.height ?? 28;
+    return v_flex()
       .id(`kid-${row.key}`)
       .relative()
-      .h(28)
+      .h(height)
       .flex_none()
       .pl(36)
       .pr(10)
-      .gap(8)
-      .items_center()
+      .justify_center()
       .when(selected, (el) => el.bg(t.selected))
       .when(!selected, (el) => el.hover((s) => s.bg(t.hover)))
       .on_click(() => this.open(row))
       .when(Boolean(row.space), (el) => el.on_mouse_down("right", () => this.menu(row.space)))
-      .when(row.open && Boolean(row.status), (el) => el.child(this.bar(row.status, t, 28)))
-      .child(this.name(row, t))
-      .when(Boolean(this.stageChip(row, t)), (el) => el.child(this.stageChip(row, t)))
-      .when(Boolean(counts(row)), (el) => el.child(this.note(counts(row), t)));
+      .when(row.open && Boolean(row.status), (el) => el.child(this.bar(row.status, t, height)))
+      .children(this.kidLines(row, lane, t));
   }
 
   blockEntry(entry, t) {

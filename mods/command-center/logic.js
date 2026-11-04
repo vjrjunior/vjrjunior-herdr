@@ -267,20 +267,25 @@ export function noteOf(lane) {
   return `${lane.sinceVerified} code commit${lane.sinceVerified === 1 ? "" : "s"} since vjr-ac`;
 }
 
-export function chipOf(lane, steps) {
+function chipText(lane, steps) {
   const first = steps.findIndex((step) => step !== "done");
   const state = steps[first];
   if (first === 1) {
     const manual = lane.task?.manual ?? [];
-    if (state === "run") return { chip: manual.length ? `AC ${manual.filter((check) => check.state === "passed").length}/${manual.length}` : "AC", tone: "work" };
-    if (state === "bad") return { chip: "AC stale", tone: "bad" };
-    return { chip: "Task", tone: "idle" };
+    if (state === "run") return manual.length ? `AC ${manual.filter((check) => check.state === "passed").length}/${manual.length}` : "AC";
+    if (state === "bad") return "AC stale";
+    return "Task";
   }
-  if (first === 2 && state === "next") return { chip: "AC ✓", tone: "done" };
-  if (first === 2 || first === 3 || (first === 4 && state === "todo")) return { chip: "Ship", tone: state === "bad" ? "bad" : "work" };
-  if (first === 4) return state === "bad" ? { chip: "PR ✕", tone: "bad" } : { chip: "PR ●", tone: "work" };
-  if (first === 5) return { chip: "Ready", tone: "done" };
-  return { chip: "Merged", tone: "done" };
+  if (first === 2 && state === "next") return "AC done";
+  if (first === 2 || first === 3 || (first === 4 && state === "todo")) return "Ship";
+  if (first === 4) return state === "bad" ? "PR failed" : "PR open";
+  if (first === 5) return "Ready";
+  return "Merged";
+}
+
+export function chipOf(lane, steps) {
+  const { tone, why } = laneSummary({ ...lane, steps });
+  return { chip: chipText(lane, steps), tone, why: why ?? null };
 }
 
 function shellWord(value) {
