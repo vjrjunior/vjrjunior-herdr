@@ -195,6 +195,18 @@ describe("references", () => {
   test("translates replacements to the copy names", () => {
     expect(setup().generate().replacements).toEqual({ "app.palette": "mod.open:test-palette" });
   });
+
+  test("translates recipe keys to the copy names", () => {
+    const withKey: Recipe = {
+      name: "key",
+      mods: [{ name: "picker", from: "mods" }],
+      apply(context) {
+        context.keys["cmd-shift-m"] = "picker";
+      },
+    };
+    expect(setup().generate().keys).toEqual({});
+    expect(setup().generate(variantWith(withKey)).keys).toEqual({ "cmd-shift-m": "mod.open:test-picker" });
+  });
 });
 
 describe("layout", () => {

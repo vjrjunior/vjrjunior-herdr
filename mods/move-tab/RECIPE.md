@@ -1,10 +1,10 @@
 # Move tab
 
-A tab belongs to the space it was opened in. When work starts in one checkout of a repo and continues in another (a worktree, say), Move tab sends the tab there with its Claude Code conversation resumed. Right-click a tab, pick `Move to…`, pick a checkout, and a moment later the same conversation runs in that checkout's folder, in its space, with the old space left behind. Nothing to install besides this folder: no hooks, no shell startup edits.
+A tab belongs to the space it was opened in. When work starts in one checkout of a repo and continues in another (a worktree, say), Move tab sends the tab there with its Claude Code conversation resumed. Right-click a tab and pick `Move to…` (or press `cmd-shift-m` for the focused tab), pick a checkout, and a moment later the same conversation runs in that checkout's folder, in its space, with the old space left behind. Nothing to install besides this folder: no hooks, no shell startup edits.
 
 ## What you see
 
-- **Menu item:** a `Move to…` row with the `git-branch` icon in the tab's right-click menu, just above `Close`. It is part of a copy of Herdr's `menu`, since the shipped one is read-only.
+- **Menu item:** a `Move to…` row with the `git-branch` icon in the tab's right-click menu, just above `Close`, with `cmd-shift-m` on its right like the other items' keys. It is part of a copy of Herdr's `menu`, since the shipped one is read-only.
 - **Popup:** opens next to the menu, 300 x 320 px, `popover` background, 5px padding, 2px between rows.
   - A `Move to` heading (the kit's `heading`).
   - One row per target, in a scrollable list: 8px side padding, 8px gap, radius `RADIUS.control`, minimum height `CONTROL.large`. Each row has a `git-branch` icon in `muted`, the label in `foreground` and, when it differs from the label, a second line at the kit's small size in `muted`.
@@ -21,6 +21,7 @@ A tab belongs to the space it was opened in. When work starts in one checkout of
 
 ## How it behaves
 
+- **The key.** `cmd-shift-m` opens the popup for the focused tab in both layouts. `mod.open` gives the popup no `tab` in its props, so it takes `focused()`'s `tab` and `space`; a `tab` in its props, as the menu passes, wins. With no focused tab it draws nothing. The menu finds the key in `keys()` by its action, `mod.open:vjr-move-tab` (`mod.open:vjr-square-move-tab`), so it shows whatever key `keys.json` binds to that action.
 - **Asking.** The popup writes a request to shared state under `move-tab.request`: `{ id, tab, space, to, toSpace, at }` (`to` is the target checkout's path, `toSpace` the target space or `null`). It closes at once. The worker copy sees the request, clears it, drops it when it is older than 10 s, and runs the move. Only one move runs at a time; a second request gets the warning `Another move is running.`
 - **What moves, per pane of the tab:**
   - **Claude Code:** its process is ended with `kill -TERM`, then it is resumed in the matching folder with `claude --resume <session id>`, the options it started with and, when the checkout changes, `--append-system-prompt` with a note: `This session moved from <old> (branch <name>) to <new> (branch <name>). Work in <new> from now on; files under <old> belong to another checkout.` (`detached HEAD` stands for a missing branch.) Claude is told its folder changed, and the conversation takes no extra turn.
@@ -39,17 +40,19 @@ A tab belongs to the space it was opened in. When work starts in one checkout of
 
 ## Built from
 
-- `mod.json`: `{ "place": "none", "title": "Move tab" }`.
+- `mod.json`: `{ "place": "none", "title": "Move tab", "overlay": { "kind": "popup", "width": 300, "height": 320 } }`. The overlay is how `mod.open` opens it from the key: a popup at the menu's size.
 - **The recipe** (`recipes/move-tab.ts`), in both layouts:
   - copies `mods/move-tab/` and Herdr's `menu`;
   - adds to the menu's `tab` case `["Move to…", "move-tab", { tab: tg.id, space: tg.space }]` before `Close`;
   - makes choosing it run `openOverlay({ mod: "move-tab", kind: "popup", width: 300, height: 320, props: it[2] })`, and gives it the `git-branch` icon;
-  - adds a floating block to the root, `{ "id": "move-tab", "content": { "mod": "move-tab", "props": { "role": "worker" } }, "edge": "left", "align": "end" }`.
-- **Installed names:** `vjr-move-tab` and `vjr-menu` in `vjr-desk`; `vjr-square-move-tab` and `vjr-square-menu` in `vjr-desk-square`. The square copy is also listed in `recipes/square.ts` in `mods` and `OWN_MODS`, so its corners are squared and its popup is frameless with a 1px border.
+  - adds a floating block to the root, `{ "id": "move-tab", "content": { "mod": "move-tab", "props": { "role": "worker" } }, "edge": "left", "align": "end" }`;
+  - sets `keys["cmd-shift-m"] = "move-tab"`. `apply-layout` writes it as `"cmd-shift-m": "mod.open:vjr-move-tab"` in `keys.json`'s `layout:vjr-desk` section and `"mod.open:vjr-square-move-tab"` in `layout:vjr-desk-square`, on top of the keys derived from `global`;
+  - puts `const MOVE_TAB = { name: "move-tab" };` before the menu's `function menuIcon(command) {` (the generator prefixes the name), and makes the first line of its `function shortcut(name, args) {` read ``if (name === "move-tab") return keys().find((b) => b.action === `mod.open:${MOVE_TAB.name}`)?.keys ?? "";``.
+- **Installed names:** `vjr-move-tab` and `vjr-menu` in `vjr-desk`; `vjr-square-move-tab` and `vjr-square-menu` in `vjr-desk-square`. The square copy is also listed in `recipes/square.ts` in `mods` and `OWN_MODS`, so its corners are squared and its popup is frameless with a 1px border, and in `FRAMELESS`, so its `mod.json` overlay gets `frame: "none"` and the popup the key opens is frameless too.
 - `logic.js`: pure functions, no imports. `REASONS`, `base`, `parseWorktrees`, `checkoutOf`, `matchingFolder`, `parseSession`, `isShell`, `quote`, `keepArgs`, `resumeCommand`, `atShell`, `isClaude`, `movedNote`, `resumeArgv`, `tabTree`, `leaves`, `splitSteps`, `placeOf`, `targetsFor`.
 - `move.js`: `moveTab(request, io)`, the order above, with every effect behind `io` so it is tested with a fake.
 - `io.js`: the real `io`. Programs: `git worktree list --porcelain`, `hc get <t> --json`, `sh -c 'printf "%s\n" "$1" | hc connect'` with `doc.get {name: "herdr-app"}` (the `sh` is only there to pipe into `hc connect`, which has no `doc` command), `test -d`, `ps -p`, `kill -TERM`, and `herdr-app do <command> '<json>'` for every change, so each command reports what it made or its error. It reads `~/.claude/sessions/<pid>.json` with `readTextFile`.
-- `main.js`: the View. Role `worker` (from `props.role`) takes requests; any other role is the popup. `herdr`: `closeOverlay`, `notify`, `panes`, `props`, `setShared`, `shared`, `spaces`, `theme`. `io.js` imports `exec`, `home`, `notify`, `panes`, `readTextFile`, `spaces` and `terminals`. The kit: `heading`, `icon`, `CONTROL`, `RADIUS`, `TEXT`.
+- `main.js`: the View. Role `worker` (from `props.role`) takes requests; any other role is the popup. `herdr`: `closeOverlay`, `focused`, `notify`, `panes`, `props`, `setShared`, `shared`, `spaces`, `theme`. `io.js` imports `exec`, `home`, `notify`, `panes`, `readTextFile`, `spaces` and `terminals`. The kit: `heading`, `icon`, `CONTROL`, `RADIUS`, `TEXT`.
 - It never writes Herdr's document (`doc.set`), never reaches the network, and runs no program besides those above and the resumed `claude`.
 
 ## Watch out
@@ -79,11 +82,13 @@ A tab belongs to the space it was opened in. When work starts in one checkout of
 - Local spaces only. A tab can't be dragged onto a space yet; the right-click menu is the only way.
 - Herdr's `run()` returns nothing inside a mod, which is why every change goes through `herdr-app do`.
 - `pane.split` takes no folder, so a split terminal is made with `terminal.open {place, folder}` after focusing the pane to split.
+- `apply-layout` rewrites both layout sections of `keys.json` on every run, so `cmd-shift-m` changed there by hand comes back. Change it in `recipes/move-tab.ts`.
 
 ## Done when
 
 - `herdr-app check` passes on the mod folder, and `bun test` passes.
-- Right-clicking a tab shows `Move to…` just above `Close`, and picking it opens the popup with the tab's repo's other checkouts and no row for the tab's own space.
+- Right-clicking a tab shows `Move to…` just above `Close`, with `cmd-shift-m` on its right, and picking it opens the popup with the tab's repo's other checkouts and no row for the tab's own space.
+- Pressing `cmd-shift-m` opens the same popup for the focused tab.
 - A Claude tab in the main checkout, moved to a worktree, shows up in that worktree's space with the same name. Asking Claude `pwd` answers the worktree, and the conversation continues.
 - The main checkout's space no longer has the tab. When it was the only one, the space has a tab with a shell at the checkout's root.
 - A tab with `python3 -m http.server 8765` running refuses with `Python is running in this tab.` (the name Herdr shows for the program), and nothing changes.

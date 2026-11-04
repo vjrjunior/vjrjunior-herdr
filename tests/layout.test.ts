@@ -97,10 +97,22 @@ describe("apply", () => {
 
     apply();
 
-    expect(keys()["layout:vjr-desk"]).toEqual({ "cmd-shift-p": "mod.open:vjr-palette" });
+    expect(keys()["layout:vjr-desk"]).toEqual({ "cmd-shift-p": "mod.open:vjr-palette", "cmd-shift-m": "mod.open:vjr-move-tab" });
     expect(keys()["layout:vjr-desk-square"]["cmd-,"]).toBe("mod.open:vjr-square-settings");
     expect(keys()["layout:vjr-desk-square"]["cmd-/"]).toBe("mod.open:vjr-square-help");
     expect(keys()["layout:vjr-desk-square"]["cmd-p"]).toBe("mod.open:vjr-square-picker");
+    expect(keys()["layout:vjr-desk-square"]["cmd-shift-m"]).toBe("mod.open:vjr-square-move-tab");
+  });
+
+  test("a recipe's key wins over a global key the layout replaces", () => {
+    const { home, apply, keys } = setup();
+    const table = keys();
+    writeFileSync(join(home, "keys.json"), JSON.stringify({ ...table, global: { ...table.global, "cmd-shift-m": "app.help" } }));
+
+    apply();
+
+    expect(keys()["layout:vjr-desk-square"]["cmd-shift-m"]).toBe("mod.open:vjr-square-move-tab");
+    expect(keys()["layout:vjr-desk-square"]["cmd-/"]).toBe("mod.open:vjr-square-help");
   });
 
   test("keeps the rest of keys.json", () => {

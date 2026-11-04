@@ -5,6 +5,7 @@ export type RecipeContext = {
   copies: Record<string, Copy>;
   layout: LayoutNode;
   replacements: Record<string, string>;
+  keys: Record<string, string>;
   variant: Variant;
 };
 export type Recipe = { name: string; mods: ModSource[]; apply(context: RecipeContext): void };

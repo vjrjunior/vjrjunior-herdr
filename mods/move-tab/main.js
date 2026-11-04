@@ -1,6 +1,6 @@
 import { View, div } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
-import { closeOverlay, notify, panes, props, setShared, shared, spaces, theme } from "herdr";
+import { closeOverlay, focused, notify, panes, props, setShared, shared, spaces, theme } from "herdr";
 import { CONTROL, RADIUS, TEXT, heading, icon } from "../../kit/kit.js";
 import { appIo } from "./io.js";
 import { REASONS, parseWorktrees, placeOf, targetsFor } from "./logic.js";
@@ -20,8 +20,9 @@ export default class MoveTab extends View {
     this.role = own.role === "worker" ? "worker" : "popup";
     this.seen = null;
     this.running = false;
-    this.tab = typeof own.tab === "string" ? own.tab : null;
-    this.space = typeof own.space === "string" ? own.space : null;
+    const from = typeof own.tab === "string" ? own : (focused() ?? {});
+    this.tab = typeof from.tab === "string" ? from.tab : null;
+    this.space = typeof from.space === "string" ? from.space : null;
     this.overlay = own.overlay ?? null;
     this.at = 0;
     this.targets = null;

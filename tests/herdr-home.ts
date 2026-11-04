@@ -95,6 +95,12 @@ export default class Tabs extends View {
         ["Close", "tab.close", { id: tg.id }],
     ];
     const icon = command === "worktree" ? "git-branch" : "terminal";
+    function menuIcon(command) {
+      return icon;
+    }
+    function shortcut(name, args) {
+      return "";
+    }
     if (it[1] === "worktree") tree();
     else run(it[1], it[2]);
     return v_flex().bg(t.popover).rounded(7);`),

@@ -28,7 +28,8 @@ beforeEach(() => {
   answer = (call) => (call.command === "git" ? ok(PORCELAIN) : { code: 1, stdout: "", stderr: "" });
   Object.assign(herdr, {
     props: () => given,
-    theme: () => new Proxy({}, { get: (_target, prop) => (typeof prop === "string" ? `t.${prop}` : undefined) }),
+    focused: () => null,
+    theme:() => new Proxy({}, { get: (_target, prop) => (typeof prop === "string" ? `t.${prop}` : undefined) }),
     spaces: () => [
       { id: "s1", name: "main", folder: "/r/main", machine: null, tabs: [{ id: "tb1", name: "1", named: false }] },
       { id: "s2", name: "live", folder: "/r/wt/live", machine: null, tabs: [{ id: "tb2", name: "1", named: false }] },
@@ -229,7 +230,27 @@ describe("move-tab popup", () => {
     expect(shown).not.toContain("Looking for checkouts…");
   });
 
-  test("without props the popup draws nothing and asks nothing", async () => {
+  test("opened by its key, the popup moves the focused tab", async () => {
+    given = { overlay: "o9" };
+    herdr.focused = () => ({ space: "s1", tab: "tb1", pane: "p1", terminal: "t1", shown: "p1", agent: null, cwd: "/r/main/src" });
+    const { view, cx } = await popup();
+    const root = view.render(cx);
+    expect(texts(byKey(root, "target-0") as Node)[0]).toBe("live");
+    expect(app.execs).toEqual([{ command: "git", args: ["worktree", "list", "--porcelain"], cwd: "/r/main/src" }]);
+    expect(cx.focused).toBe(1);
+    click(view, cx, "target-0");
+    expect(app.shared[KEY]).toMatchObject({ tab: "tb1", space: "s1", to: "/r/wt/live", toSpace: "s2" });
+    expect(app.closed).toEqual(["o9"]);
+  });
+
+  test("a tab in its props wins over the focused one", async () => {
+    herdr.focused = () => ({ space: "s2", tab: "tb2", pane: "p2", terminal: "t2", shown: "p2", agent: null, cwd: "/r/wt/live" });
+    const { view, cx } = await popup();
+    click(view, cx, "target-0");
+    expect(app.shared[KEY]).toMatchObject({ tab: "tb1", space: "s1", to: "/r/wt/live" });
+  });
+
+  test("without props or a focused tab the popup draws nothing and asks nothing", async () => {
     given = {};
     herdr.props = () => undefined;
     const { view, cx } = await popup();

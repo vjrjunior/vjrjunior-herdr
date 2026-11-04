@@ -15,7 +15,7 @@ const POPUP_ROOTS: Record<string, number> = {
   "command-center": 1,
   "move-tab": 1,
 };
-const FRAMELESS = ["picker", "machine-add", "menu", "palette"];
+const FRAMELESS = ["picker", "machine-add", "menu", "palette", "move-tab"];
 const OWN_MODS = ["git-graph", "spaces-tree", "comeback", "command-center", "markdown", "kit", "move-tab"];
 
 function squareCorner(_match: string, side?: string): string {

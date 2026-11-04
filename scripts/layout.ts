@@ -143,7 +143,7 @@ function refuseForeign(paths: string[], recorded: string[], home: string): void 
 
 function keySections(table: KeyTable, generated: Generated[]): KeyTable {
   const global = table.global ?? {};
-  return Object.fromEntries(generated.map((variant) => [`layout:${variant.layout}`, deriveSection(global, variant.replacements)]));
+  return Object.fromEntries(generated.map((variant) => [`layout:${variant.layout}`, { ...deriveSection(global, variant.replacements), ...variant.keys }]));
 }
 
 function checkMods(build: string, mods: string[]): void {

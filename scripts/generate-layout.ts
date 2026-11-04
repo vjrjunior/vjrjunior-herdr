@@ -8,6 +8,7 @@ export type Generated = {
   layoutText: string;
   mods: Record<string, Record<string, string>>;
   replacements: Record<string, string>;
+  keys: Record<string, string>;
 };
 
 const REFERENCE = /(\bmod:\s*"|\{\s*name:\s*")([a-z-]+)"/g;
@@ -114,7 +115,8 @@ export function generateVariant(variant: Variant, options: GenerateOptions): Gen
     copies[source.name] ??= readCopy(source, options);
   }
   const replacements: Record<string, string> = {};
-  applyRecipes(variant, { copies, layout, replacements, variant });
+  const keys: Record<string, string> = {};
+  applyRecipes(variant, { copies, layout, replacements, keys, variant });
   for (const copy of Object.values(copies)) {
     if (copy.files["kit.js"] !== undefined && !Object.hasOwn(copies, "kit")) throw new RecipeError(`${copy.name} uses the kit, but ${variant.layout} has no kit`);
   }
@@ -125,5 +127,6 @@ export function generateVariant(variant: Variant, options: GenerateOptions): Gen
     layoutText: `${JSON.stringify(finishLayout(layout, variant, options), null, 2)}\n`,
     mods: Object.fromEntries(Object.values(copies).map((copy) => [`${variant.prefix}${copy.name}`, modFiles(copy, options.version)])),
     replacements: Object.fromEntries(Object.entries(replacements).map(([action, mod]) => [action, `mod.open:${variant.prefix}${mod}`])),
+    keys: Object.fromEntries(Object.entries(keys).map(([key, mod]) => [key, `mod.open:${variant.prefix}${mod}`])),
   };
 }

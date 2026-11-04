@@ -231,6 +231,8 @@ describe("square", () => {
       'export default class Mod { render() {',
       '        ["Close", "tab.close", { id: tg.id }],',
       '    const icon = command === "worktree" ? "git-branch" : "terminal";',
+      'function menuIcon(command) {',
+      'function shortcut(name, args) {',
       '    if (it[1] === "worktree") tree();',
       '    return v_flex().bg(t.popover).rounded(7); } }',
     ].join("\n");
@@ -371,6 +373,27 @@ describe("move-tab", () => {
 
   test("the square popup has a border", () => {
     expect(generateSquare().mods["vjr-square-move-tab"]?.["main.js"]).toContain(".bg(t.popover).border_1().border_color(t.border)");
+  });
+
+  test("cmd-shift-m opens each layout's own popup", () => {
+    expect(generateDesk().keys).toEqual({ "cmd-shift-m": "mod.open:vjr-move-tab" });
+    expect(generateSquare().keys).toEqual({ "cmd-shift-m": "mod.open:vjr-square-move-tab" });
+  });
+
+  test("the menu shows the key bound to the layout's own popup", () => {
+    for (const [generated, menu, popup] of [
+      [generateDesk(), "vjr-menu", "vjr-move-tab"],
+      [generateSquare(), "vjr-square-menu", "vjr-square-move-tab"],
+    ] as const) {
+      const text = generated.mods[menu]?.["main.js"] ?? "";
+      expect(text).toContain(`const MOVE_TAB = { name: "${popup}" };\n\nfunction menuIcon(command) {`);
+      expect(text).toContain('function shortcut(name, args) {\n  if (name === "move-tab") return keys().find((b) => b.action === `mod.open:${MOVE_TAB.name}`)?.keys ?? "";\n');
+    }
+  });
+
+  test("the key opens the popup at the menu's size, frameless in the square layout", () => {
+    expect(JSON.parse(generateDesk().mods["vjr-move-tab"]?.["mod.json"] ?? "{}").overlay).toEqual({ kind: "popup", width: 300, height: 320 });
+    expect(meta(generateSquare(), "move-tab").overlay).toEqual({ kind: "popup", width: 300, height: 320, frame: "none" });
   });
 
   test("a menu that changed fails the recipe", () => {
