@@ -1,5 +1,5 @@
 import { appendFileSync, closeSync, cpSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync, writeSync } from "node:fs";
-import { basename, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { LEFT_ROUNDED, REPLACED, VARIANTS } from "../recipes/variants";
 import { type Generated, generateVariant } from "./generate-layout";
 import { deriveSection, type KeyTable, keysText, readKeys, withoutSections, withSections } from "./layout-keys";
@@ -116,7 +116,10 @@ function writeBuild(build: string, generated: Generated[]): void {
   for (const variant of generated) {
     for (const [mod, files] of Object.entries(variant.mods)) {
       mkdirSync(join(build, mod), { recursive: true });
-      for (const [file, text] of Object.entries(files)) writeFileSync(join(build, mod, file), text);
+      for (const [file, text] of Object.entries(files)) {
+        mkdirSync(dirname(join(build, mod, file)), { recursive: true });
+        writeFileSync(join(build, mod, file), text);
+      }
     }
   }
   const notAppWritten = (source: string) => !APP_WRITTEN.includes(basename(source));

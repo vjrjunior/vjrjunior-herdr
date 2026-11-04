@@ -18,7 +18,7 @@ export function removeTempDirs(): void {
 
 export function copyRepo(): string {
   const root = tempDir();
-  for (const part of ["palette", "scripts", "themes", "targets", "recipes", "mods", "layouts"]) {
+  for (const part of ["palette", "scripts", "themes", "targets", "recipes", "mods", "layouts", "kit"]) {
     if (existsSync(join(repo, part))) cpSync(join(repo, part), join(root, part), { recursive: true });
   }
   return root;

@@ -18,6 +18,27 @@ function sourceFolder(source: ModSource, options: GenerateOptions): string {
   return join(options.home, source.from, source.name);
 }
 
+const KIT_IMPORT = "../../kit/kit.js";
+const KIT_SPECIFIER = /(["'`])([^"'`\n]*kit\/kit\.js)\1/g;
+
+function installKit(source: ModSource, options: GenerateOptions, files: Record<string, string>): void {
+  let uses = false;
+  for (const [file, text] of Object.entries(files)) {
+    for (const match of text.matchAll(KIT_SPECIFIER)) {
+      if (match[2] !== KIT_IMPORT) throw new RecipeError(`${source.name}/${file}: import the kit as "${KIT_IMPORT}"`);
+    }
+    if (text.includes(`"${KIT_IMPORT}"`)) {
+      files[file] = text.replaceAll(`"${KIT_IMPORT}"`, '"./kit.js"');
+      uses = true;
+    }
+  }
+  if (uses) files["kit.js"] = readFileSync(join(options.repo, "kit/kit.js"), "utf8");
+  if (source.name === "kit") {
+    const icons = join(options.repo, "kit/icons");
+    for (const icon of readdirSync(icons).filter((name) => name.endsWith(".svg"))) files[`icons/${icon}`] = readFileSync(join(icons, icon), "utf8");
+  }
+}
+
 function readCopy(source: ModSource, options: GenerateOptions): Copy {
   const folder = sourceFolder(source, options);
   if (!existsSync(join(folder, "main.js"))) throw new RecipeError(`mod ${source.name} not found in ${folder}`);
@@ -25,6 +46,7 @@ function readCopy(source: ModSource, options: GenerateOptions): Copy {
   for (const name of readdirSync(folder)) {
     if (name.endsWith(".js")) files[name] = readFileSync(join(folder, name), "utf8");
   }
+  if (source.from === "repo") installKit(source, options, files);
   return { name: source.name, files, meta: JSON.parse(readFileSync(join(folder, "mod.json"), "utf8")) };
 }
 
@@ -92,6 +114,9 @@ export function generateVariant(variant: Variant, options: GenerateOptions): Gen
   }
   const replacements: Record<string, string> = {};
   applyRecipes(variant, { copies, layout, replacements, variant });
+  for (const copy of Object.values(copies)) {
+    if (copy.files["kit.js"] !== undefined && !Object.hasOwn(copies, "kit")) throw new RecipeError(`${copy.name} uses the kit, but ${variant.layout} has no kit`);
+  }
   rewireFiles(copies, variant.prefix);
   rewireLayout(layout, copies, variant.prefix);
   return {

@@ -72,6 +72,8 @@ describe("apply", () => {
     }
   });
 
+  test.todo("apply installs the kit's icons in both layouts");
+
   test("stores absolute paths for the sync mod", () => {
     const { root, apply, syncProps } = setup();
 

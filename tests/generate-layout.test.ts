@@ -25,6 +25,9 @@ const recipe: Recipe = {
   },
 };
 
+const withKit: Recipe = { name: "kit", mods: [{ name: "kit", from: "repo" }], apply() {} };
+const userRecipe: Recipe = { name: "user", mods: [{ name: "user", from: "repo" }], apply() {} };
+
 const broken: Recipe = {
   name: "broken",
   mods: [{ name: "tabs", from: "mods" }],
@@ -43,6 +46,15 @@ function setup(overrides: Record<string, string> = {}) {
   writeFileSync(join(repo, "mods/git-graph/main.js"), "export default class Graph {}\n");
   writeFileSync(join(repo, "mods/git-graph/graph.js"), "export const graph = 1;\n");
   writeFileSync(join(repo, "mods/git-graph/mod.json"), '{ "place": "none" }\n');
+  const kitImport = 'import { KIT } from "../../kit/kit.js";\n';
+  mkdirSync(join(repo, "kit/icons"), { recursive: true });
+  writeFileSync(join(repo, "kit/kit.js"), 'export const KIT = { name: "kit" };\n');
+  writeFileSync(join(repo, "kit/icons/eye.svg"), '<svg xmlns="http://www.w3.org/2000/svg"></svg>\n');
+  for (const name of ["kit", "user"]) {
+    mkdirSync(join(repo, "mods", name), { recursive: true });
+    writeFileSync(join(repo, "mods", name, "main.js"), `${kitImport}export default class Mod {}\n`);
+    writeFileSync(join(repo, "mods", name, "mod.json"), '{ "place": "none" }\n');
+  }
   const generate = (variant = variantWith(recipe)) => generateVariant(variant, { home, version: "0.1.10", repo, bun: "/bin/bun" });
   return { home, repo, generate };
 }
@@ -80,6 +92,35 @@ describe("copies", () => {
     const { home, generate } = setup();
     rmSync(join(home, "mods/tabs"), { recursive: true });
     expect(() => generate()).toThrow(/tabs/);
+  });
+});
+
+describe("the kit", () => {
+  const modsOf = (...recipes: Recipe[]) => setup().generate(variantWith(...recipes)).mods;
+
+  test("a repo mod that imports the kit gets its own copy of it", () => {
+    const mods = modsOf(withKit, userRecipe);
+    expect(mods["test-user"]?.["main.js"]).toContain('from "./kit.js"');
+    expect(mods["test-user"]?.["main.js"]).not.toContain("../../kit/kit.js");
+    expect(mods["test-user"]?.["kit.js"]).toContain('{ name: "test-kit" }');
+  });
+
+  test("the kit mod carries the icons", () => {
+    expect(modsOf(withKit, userRecipe)["test-kit"]?.["icons/eye.svg"]).toContain("<svg");
+  });
+
+  test("a mod without the kit import gets no kit", () => {
+    expect(modsOf(withKit, userRecipe, recipe)["test-git-graph"]?.["kit.js"]).toBeUndefined();
+  });
+
+  test("a mod that uses the kit in a layout without the kit refuses", () => {
+    expect(() => setup().generate(variantWith(userRecipe))).toThrow("user uses the kit, but test-desk has no kit");
+  });
+
+  test("a kit import by another path refuses", () => {
+    const { repo, generate } = setup();
+    writeFileSync(join(repo, "mods/user/main.js"), 'import { KIT } from "../kit/kit.js";\nexport default class Mod {}\n');
+    expect(() => generate(variantWith(withKit, userRecipe))).toThrow('import the kit as "../../kit/kit.js"');
   });
 });
 
