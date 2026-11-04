@@ -14,7 +14,7 @@ A tab belongs to the space it was opened in. When work starts in one checkout of
   1. the main checkout: its space if it has one, else a row named after its folder;
   2. spaces open in a worktree, labelled with the space's name and detailed `<branch> · open`;
   3. worktrees with no space yet, by branch name, detailed with the branch.
-  Every space open in the tab's repo is a row, extra spaces in the same checkout included, except the tab's own space. A main checkout's rows are detailed `main checkout`.
+  Every space open in the tab's repo is a row, extra spaces in the same checkout included, except the tab's own space. A main checkout's open space is detailed `main checkout · open`; only its row with no space says plain `main checkout`.
 - **After the move:** a toast, `Moved the tab`, body `<tab name or "The tab"> is now in <branch or folder name>.`, plus ` Anything Claude ran in the background ended with it.` when a Claude was ended; level success, 4 s. The target space and the moved tab are selected. In the old space the tab is gone, and when it was the space's only tab the space has a new tab with a shell in its checkout's root, so the space keeps its name and color.
 - **When it can't:** a warning toast, `Can't move this tab`, with the reason (see Watch out), and nothing changes.
 - The worker, a floating block, draws an empty `div()`.
@@ -29,13 +29,13 @@ A tab belongs to the space it was opened in. When work starts in one checkout of
 - **Matching folder.** The terminal's folder relative to its checkout's root, applied to the target's root (`main/src/app` becomes `worktree/src/app`). When that folder doesn't exist in the target (`test -d`), the target's root.
 - **Which conversation.** The Claude's foreground pid names `~/.claude/sessions/<pid>.json`, which holds the live `sessionId` (it follows `/clear` and `/resume`). The options kept are `--dangerously-skip-permissions`, `--permission-mode <v>`, `--model <v>`, `--add-dir <dir…>`, `--verbose`, `--agent <v>`, `--effort <v>`, `--settings <v>`, `--mcp-config <v…>`, `--strict-mcp-config` and `--plugin-dir <v>`, also as `--opt=value`. Any other option is dropped, and so is one whose value holds a single quote, a backslash or a control character. A session id is used only when it is letters, digits and dashes.
 - **Order.**
-  1. Every pane is read before anything is touched: the tab's tree from Herdr's document, then each terminal with `hc get <t> --json`. Any refusal stops here.
+  1. Every pane is read before anything is touched: the tab's tree from Herdr's document, then each terminal with `hc get <t> --json`. A pane that can't move (working, blocked, busy, sub-agents, no session) refuses here. The checkout checks come next: no source checkout, a target that is gone, or the tab already there.
   2. The checkouts come from `git worktree list --porcelain` in the tab's folder. The target and the source must both be among them.
   3. Each Claude is read once more (same pid, same session), signalled, and polled with `ps -p` every 250 ms until its process is gone, up to 10 s. The shell stays, since the Claude was its child.
   4. The target space is the requested one, else any open space of the target checkout, else a new one with `space.new {folder}` (its first tab is closed later).
   5. The new tab is made with `tab.new {space, folder, argv?, name?}` (or `mod`, `props` for a mod pane), named only when the old one had a name. The other panes follow the old tab's splits: `pane.focus` on the pane to split, then `terminal.open {place, folder, argv?}`, or `pane.split {direction, pane, mod, props}` for a mod pane.
   6. If the old tab was its space's only tab, `tab.new {space, folder}` gives the space a shell tab in its checkout's root. Then `tab.close {id, confirmed: true}` closes the old tab, and `space.select` and `tab.select` show the new one.
-- **If something fails.** Before any Claude ended, the move is refused or fails and nothing changed. After one ended, a `Couldn't move the tab` error toast says why and gives `cd <folder> && claude --resume <id> <options>` for each Claude that wasn't started again. Its click action opens a new tab in the old space that resumes the first of them. After the new tab exists, a failure to close the old one gives a warning, `Moved the tab`, `<name> is now in <target>, but <reason>.`
+- **If something fails.** Before any Claude ended, the move is refused or fails and nothing changed, except that a failure after `space.new` can leave a new, empty space behind. After one ended, a `Couldn't move the tab` error toast says why and gives `cd <folder> && claude --resume <id> <options>` for each Claude that wasn't started again. Its click action opens a new tab in the old space that resumes the first of them. After the new tab exists, a failure to close the old one gives a warning, `Moved the tab`, `<name> is now in <target>, but <reason>.`
 
 ## Built from
 
@@ -46,10 +46,10 @@ A tab belongs to the space it was opened in. When work starts in one checkout of
   - makes choosing it run `openOverlay({ mod: "move-tab", kind: "popup", width: 300, height: 320, props: it[2] })`, and gives it the `git-branch` icon;
   - adds a floating block to the root, `{ "id": "move-tab", "content": { "mod": "move-tab", "props": { "role": "worker" } }, "edge": "left", "align": "end" }`.
 - **Installed names:** `vjr-move-tab` and `vjr-menu` in `vjr-desk`; `vjr-square-move-tab` and `vjr-square-menu` in `vjr-desk-square`. The square copy is also listed in `recipes/square.ts` in `mods` and `OWN_MODS`, so its corners are squared and its popup is frameless with a 1px border.
-- `logic.js`: pure functions, no imports. `REASONS`, `parseWorktrees`, `checkoutOf`, `matchingFolder`, `parseSession`, `isShell`, `quote`, `keepArgs`, `resumeCommand`, `atShell`, `isClaude`, `movedNote`, `resumeArgv`, `tabTree`, `leaves`, `splitSteps`, `placeOf`, `targetsFor`.
+- `logic.js`: pure functions, no imports. `REASONS`, `base`, `parseWorktrees`, `checkoutOf`, `matchingFolder`, `parseSession`, `isShell`, `quote`, `keepArgs`, `resumeCommand`, `atShell`, `isClaude`, `movedNote`, `resumeArgv`, `tabTree`, `leaves`, `splitSteps`, `placeOf`, `targetsFor`.
 - `move.js`: `moveTab(request, io)`, the order above, with every effect behind `io` so it is tested with a fake.
 - `io.js`: the real `io`. Programs: `git worktree list --porcelain`, `hc get <t> --json`, `sh -c 'printf "%s\n" "$1" | hc connect'` with `doc.get {name: "herdr-app"}` (the `sh` is only there to pipe into `hc connect`, which has no `doc` command), `test -d`, `ps -p`, `kill -TERM`, and `herdr-app do <command> '<json>'` for every change, so each command reports what it made or its error. It reads `~/.claude/sessions/<pid>.json` with `readTextFile`.
-- `main.js`: the View. Role `worker` (from `props.role`) takes requests; any other role is the popup. `herdr`: `spaces`, `panes`, `terminals`, `shared`, `setShared`, `props`, `notify`, `closeOverlay`, `exec`, `home`, `readTextFile`, `theme`. The kit: `heading`, `icon`, `CONTROL`, `RADIUS`, `TEXT`.
+- `main.js`: the View. Role `worker` (from `props.role`) takes requests; any other role is the popup. `herdr`: `closeOverlay`, `notify`, `panes`, `props`, `setShared`, `shared`, `spaces`, `theme`. `io.js` imports `exec`, `home`, `notify`, `panes`, `readTextFile`, `spaces` and `terminals`. The kit: `heading`, `icon`, `CONTROL`, `RADIUS`, `TEXT`.
 - It never writes Herdr's document (`doc.set`), never reaches the network, and runs no program besides those above and the resumed `claude`.
 
 ## Watch out
@@ -61,7 +61,7 @@ A tab belongs to the space it was opened in. When work starts in one checkout of
   - `Claude has sub-agents running in <where>.` (live terminals whose `parent` is that Claude).
   - `Couldn't find Claude's conversation in <where>.` (no `~/.claude/sessions/<pid>.json`, or the id isn't safe to type, or the Claude changed since the check).
   - `Tabs on other machines can't move yet.`
-  - `This tab isn't in a git repo.` (also when the repo has no other checkout: the popup then says `No other checkout of this repo.`)
+  - `This tab isn't in a git repo.` (no checkout of the tab's folder was found). A repo with no other checkout just shows `No other checkout of this repo.` in the popup, with no request and no toast.
   - `That checkout is gone.`
   - `The tab is already there.`
   - `The tab is gone.`

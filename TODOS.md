@@ -104,7 +104,7 @@
 
 **Why:** The selection moves past the bottom edge and the person can't see which row Enter will pick.
 
-**Context:** `mods/move-tab/main.js` keeps the selection in `this.at` and draws the rows in an `overflow_y_scrollbar()` list. The kit's d.ts shows what a scroll handle offers.
+**Context:** `mods/move-tab/main.js` keeps the selection in `this.at` and draws the rows in an `overflow_y_scrollbar()` list. `~/.config/herdr-app/gpui-kit.d.ts` shows what a scroll handle offers.
 
 **Effort:** S
 **Priority:** P3

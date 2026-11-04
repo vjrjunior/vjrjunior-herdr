@@ -47,7 +47,7 @@ Nothing here is a frozen copy of Herdr. `recipes/` holds small edits, and `scrip
 - **`list-vjr-theme`:** copies `frame/palette` and `workspace-status`, adds `vjr` to the palette's theme list and opens the copy from `keys.json` and the status bar.
 - **`git-graph-panel`:** copies `tabs`, adds the Graph button and `"graph"` to the enabled panels, and adds `{ "id": "graph", "type": "block", "content": { "mod": "git-graph" } }` to the `panel-body` stack.
 - **`spaces-tree`:** points the `spaces` block at `mods/spaces-tree/`, which every layout copies.
-- **`square`:** copies 14 more mods, sets every `.rounded*()` to 0, passes `frame: "none"` to the popups that have a copy, adds a border to their roots, sets `pane.radius` to 0 and sets `terminal_menu`.
+- **`square`:** copies the other mods the layout draws with (the shipped ones, `settings` and this repo's own), sets every `.rounded*()` to 0, passes `frame: "none"` to the popups that have a copy, adds a border to their roots, sets `pane.radius` to 0 and sets `terminal_menu`.
 - `mods/vjr-sync/`: an invisible floating mod. It compares `updates().app.version` with the version in its props and runs `scripts/layout.ts apply` when they differ, with `exec` and an absolute path to `bun`.
 - `mods/git-graph/`: [herdr-git-graph](https://github.com/rabeeh-ta/herdr-git-graph) by Rabeeh T A, MIT, at commit `1cfcff3`, unmodified. It runs `git` in the focused repository, reads the folders open in other panes ahead of time, also on other machines, and reaches the network only through git on Fetch, Push and when deleting a remote branch.
 - `mods/spaces-tree/`: this repo's own Spaces mod, written against Herdr's public mod API. It reads `git worktree list` and `git for-each-ref` per repository, watches each repository's git folder, keeps `space.colors` for the other mods that draw space avatars, and stores `spaces.style` and `spaces.folded` in shared state.
@@ -60,7 +60,7 @@ Nothing here is a frozen copy of Herdr. `recipes/` holds small edits, and `scrip
 - **`markdown`:** copies `mods/markdown/` and changes nothing in the layout: the person opens it as a pane.
 - `mods/markdown/`: this repo's own mod. It reads the file in its props with `readTextFile`, watches its folder with `watchFolder` and keeps only the newest read, and runs `open` and `zed`.
 - **`kit`:** copies `mods/kit/`, a gallery that shows every component and icon of the kit; the person opens it as a pane with `herdr-app do pane.split --direction right --mod vjr-kit` (`vjr-square-kit`).
-- `kit/kit.js` and `kit/icons/`: the UI kit that the Command Center, the Spaces tree and the Markdown viewer draw with. `mods/kit/` is its gallery, opened by the person with `herdr-app do pane.split --direction right --mod vjr-kit` (`vjr-square-kit`).
+- `kit/kit.js` and `kit/icons/`: the UI kit that the Command Center, the Spaces tree, the Markdown viewer and Move tab draw with. `mods/kit/` is its gallery, opened by the person with `herdr-app do pane.split --direction right --mod vjr-kit` (`vjr-square-kit`).
 - `themes/vjr.json`: generated from `palette/vjr.toml`.
 - `keys.json`: `layout:vjr-desk` and `layout:vjr-desk-square` sections, derived from the `global` section.
 
