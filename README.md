@@ -141,7 +141,7 @@ In the square layout the mod is `vjr-square-markdown`. The pane reads the file a
 
 ## Kit
 
-`kit/kit.js` is the UI kit of this repo's mods: tokens (sizes, text, radii, brand colors), components (`button`, `iconButton`, `link`, `chip`, `pill`, `card`, `heading`, `line`, `mark`, `statusDot`, `stepNode`, `icon`) and the SVG icons in `kit/icons/`. A mod imports it as `../../kit/kit.js`, and `apply-layout` copies it, with the icons it uses, into each installed mod. Today the Command Center, the Spaces tree and the Markdown viewer use it.
+`kit/kit.js` is the UI kit of this repo's mods: tokens (sizes, text, radii, brand colors), components (`button`, `iconButton`, `link`, `chip`, `pill`, `card`, `heading`, `line`, `mark`, `statusDot`, `stepNode`, `icon`) and the SVG icons in `kit/icons/`. A mod imports it as `../../kit/kit.js`, and `apply-layout` copies `kit.js` into each installed mod that imports it. The icons are installed once per layout, in the `kit` mod's `icons/` folder, where the kit reads them. A layout whose mods use the kit must include the `kit` recipe; the generator refuses otherwise. Today the Command Center, the Spaces tree and the Markdown viewer use it.
 
 `mods/kit/` is a gallery that shows every component and icon. Open it beside the focused terminal:
 

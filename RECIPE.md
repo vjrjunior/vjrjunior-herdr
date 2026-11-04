@@ -76,8 +76,8 @@ Nothing here is a frozen copy of Herdr. `recipes/` holds small edits, and `scrip
 - The spinner is a round SVG and stays round.
 - The window's outer corners belong to macOS.
 - Keys are derived when `apply-layout` runs. Rerun it after changing a shortcut for the palette, Settings, help or search.
-- A mod imports the kit as `../../kit/kit.js` and nothing else; the generator refuses any other path to it. `apply-layout` rewrites the import to `./kit.js` and copies the file into the mod's installed folder.
-- Icon paths come from `KIT = { name: "kit" }` in `kit/kit.js`. The generator rewrites that name to `kit` or `square-kit` per layout, so a hand-written `mods/vjr-kit/` path in a mod would break in the square layout.
+- A mod imports the kit as `../../kit/kit.js` and nothing else; the generator refuses a different path to `kit/kit.js`. `apply-layout` rewrites the import to `./kit.js` and copies the file into the mod's installed folder.
+- Icon paths come from `KIT = { name: "kit" }` in `kit/kit.js`. The generator prepends the layout's prefix to that name, giving `vjr-kit` and `vjr-square-kit`, so a hand-written `mods/vjr-kit/` path in a mod would break in the square layout.
 - Name a theme differently from a layout: `themes/vjr.json` would otherwise belong to a layout called `vjr`.
 
 ## Done when
