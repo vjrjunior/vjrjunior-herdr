@@ -420,6 +420,10 @@ describe("watcher per checkout", () => {
   });
 });
 
+const walk = (node: Node): Node[] => [node, ...node.kids.flatMap(walk)];
+const called = (node: Node, name: string) => walk(node).flatMap((n) => n.calls.filter(([c]) => c === name).map(([, args]) => args));
+const svgs = (node: Node) => called(node, "svg").map(([path]) => path as string);
+
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 function pathTo(node: Node, key: string): Node[] | null {
@@ -586,7 +590,7 @@ describe("column", () => {
   test("the timeline names every step with what it did or will do", () => {
     focusedCwd = "/w/cup-1234";
     const shown = texts(column().render());
-    for (const label of ["Task ▸", "AC", "Ship", "Evidence", "PR", "Merge", "Clear"]) expect(shown).toContain(label);
+    for (const label of ["Task", "AC", "Ship", "Evidence", "PR", "Merge", "Clear"]) expect(shown).toContain(label);
     for (const note of ["1 done item", "next: /vjr-ac", "/pp-ship in a new tab", "no PR yet", "/pp-clear from main"]) expect(shown).toContain(note);
   });
 
@@ -596,7 +600,7 @@ describe("column", () => {
     expect(texts(view.render())).not.toContain("D01  The draft stays");
     press(view, "step-Task");
     expect(texts(view.render())).toContain("D01  The draft stays");
-    expect(texts(view.render())).toContain("Task ▾");
+    expect(svgs(pathTo(view.render(), "step-Task")?.at(-1) as Node)).toContain("mods/kit/icons/chevron-down.svg");
     press(view, "step-Task");
     expect(texts(view.render())).not.toContain("D01  The draft stays");
   });
@@ -878,5 +882,64 @@ describe("shot window", () => {
     expect(notified).toBe(1);
     expect(texts(view.render())).toContain("Saving");
     view.key("escape");
+  });
+});
+
+describe("timeline and identity", () => {
+  const named = new Proxy({}, { get: (_x, p) => (typeof p === "string" ? `t.${p}` : undefined) });
+
+  beforeEach(() => {
+    focusedCwd = "/w/cup-1234";
+    Object.assign(herdr, { theme: () => named });
+  });
+
+  test("done steps show a heavy check node and the current one an accent ring", () => {
+    const view = column([SHIPPED]);
+    const root = view.render();
+    expect(svgs(root).filter((path) => path === "mods/kit/icons/check-heavy.svg")).toHaveLength(6);
+    const nodes = walk(root).filter((n) => n.calls.some(([c, a]) => c === "rounded" && a[0] === 9));
+    expect(nodes.length).toBeGreaterThan(0);
+    for (const node of nodes) expect(node.texts).toEqual([]);
+  });
+
+  test("an expandable step shows a chevron that turns when opened", () => {
+    const view = column([{ ...BASE_LANE, steps: ["done", "next", "todo", "todo", "todo", "todo", "todo"] }]);
+    const head = () => pathTo(view.render(), "step-Task")?.at(-1) as Node;
+    expect(svgs(head())).toContain("mods/kit/icons/chevron-right.svg");
+    expect(texts(head()).join("")).not.toContain("▸");
+    press(view, "step-Task");
+    expect(svgs(head())).toContain("mods/kit/icons/chevron-down.svg");
+    expect(texts(head()).join("")).not.toContain("▾");
+  });
+
+  test("the step gutter is as wide as the node", () => {
+    const head = pathTo(column().render(), "step-Task");
+    const row = head?.at(-3) as Node;
+    const gutter = row.kids[0];
+    expect(gutter.calls).toContainEqual(["w", [18]]);
+  });
+
+  test("the identity row is four icon buttons with their names as tooltips", () => {
+    const root = column([{ ...BASE_LANE, pr: { number: 42, url: "https://github.com/acme/app/pull/42", state: "OPEN" } }]).render();
+    const rows = [
+      ["link-task", "ClickUp", "clickup", "#7B68EE"],
+      ["link-pr", "PR #42", "github", "t.foreground"],
+      ["link-file", "VJR-TASK.md", "eye", "t.accent"],
+      ["link-zed", "Zed", "zed", "#4A9EFF"],
+    ];
+    for (const [id, tip, name, color] of rows) {
+      const node = pathTo(root, id)?.at(-1) as Node;
+      expect(called(node, "tooltip")).toEqual([[tip]]);
+      expect(svgs(node)).toEqual([`mods/kit/icons/${name}.svg`]);
+      expect(called(node, "text_color")).toContainEqual([color]);
+      expect(texts(node)).toEqual([]);
+    }
+  });
+
+  test("the PR and ClickUp buttons show only when the task has them", () => {
+    const bare = pathTo(column([{ ...BASE_LANE, task: { ...BASE_LANE.task, url: null } }]).render(), "link-task");
+    expect(bare).toBeNull();
+    expect(pathTo(column().render(), "link-pr")).toBeNull();
+    expect(pathTo(column().render(), "link-task")).not.toBeNull();
   });
 });

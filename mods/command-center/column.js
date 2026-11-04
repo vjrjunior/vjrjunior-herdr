@@ -1,5 +1,6 @@
 import { div, image } from "gpui-kit";
 import { Input, TextView, h_flex, v_flex } from "gpui-base";
+import { BRAND, ICON_SIZE, icon, iconButton, stepNode } from "../../kit/kit.js";
 import { answerStep, laneSummary, PROFILES, profileOf, rollup, stepNotes, viewFor } from "./logic.js";
 
 const STEPS = ["Task", "AC", "Ship", "Evidence", "PR", "Merge", "Clear"];
@@ -111,12 +112,12 @@ function identity(view, lane, t) {
     .child(
       h_flex()
         .pt(3)
-        .gap(12)
+        .gap(6)
         .flex_wrap()
-        .when(Boolean(task.url), (el) => el.child(link("link-task", "ClickUp ↗", t, () => view.open(task.url))))
-        .when(hasPr(lane), (el) => el.child(link("link-pr", `PR #${lane.pr.number} ↗`, t, () => view.open(lane.pr.url))))
-        .child(link("link-file", "VJR-TASK.md ▸", t, () => view.readTaskFile(lane)))
-        .child(link("link-zed", "Zed ↗", t, () => view.zed(lane.path))),
+        .when(Boolean(task.url), (el) => el.child(iconButton("link-task", { icon: "clickup", tooltip: "ClickUp", color: BRAND.clickup, onClick: () => view.open(task.url) }, t)))
+        .when(hasPr(lane), (el) => el.child(iconButton("link-pr", { icon: "github", tooltip: `PR #${lane.pr.number}`, color: t.foreground, onClick: () => view.open(lane.pr.url) }, t)))
+        .child(iconButton("link-file", { icon: "eye", tooltip: "VJR-TASK.md", color: t.accent, onClick: () => view.readTaskFile(lane) }, t))
+        .child(iconButton("link-zed", { icon: "zed", tooltip: "Zed", color: BRAND.zed, onClick: () => view.zed(lane.path) }, t)),
     )
     .when(Boolean(lane.sessionShared), (el) => el.child(div().pt(4).text_size(11).text_color(t.working).child("Two tasks name this session; neither follows it")));
 }
@@ -366,26 +367,13 @@ function stepRow(view, lane, index, current, notes, t) {
   const done = state === "done";
   const expandable = done && (index === 0 || index === 3);
   const open = now || (expandable && view.isOpen(lane, name, current));
-  const ring = now ? (state === "bad" ? t.blocked : t.accent) : done ? t.done : t.dim;
-  const node = h_flex()
-    .flex_none()
-    .size(17)
-    .items_center()
-    .justify_center()
-    .rounded(9)
-    .border_1()
-    .border_color(ring)
-    .bg(done ? t.done : t.chrome)
-    .text_size(10)
-    .font_bold()
-    .text_color(done ? (t.accent_foreground ?? t.chrome) : ring)
-    .child(done ? "✓" : now && state === "bad" ? "!" : now ? "●" : "");
+  const node = stepNode(done ? "done" : now && state === "bad" ? "bad" : now ? "current" : "todo", t);
   const label = div()
     .flex_none()
     .text_size(12.5)
     .text_color(now ? t.foreground : done ? t.muted : t.dim)
     .when(now, (el) => el.font_bold())
-    .child(expandable ? `${name} ${open ? "▾" : "▸"}` : name);
+    .child(name);
   const note = div()
     .min_w(0)
     .truncate()
@@ -399,6 +387,7 @@ function stepRow(view, lane, index, current, notes, t) {
     .gap(10)
     .items_center()
     .child(label)
+    .when(expandable, (el) => el.child(icon(open ? "chevron-down" : "chevron-right", { size: ICON_SIZE.md, color: t.unknown })))
     .child(h_flex().flex_1().min_w(0).justify_end().child(note))
     .when(expandable, (el) => el.on_click((_e, cx) => view.toggle(lane, name, current, cx)));
   const rail = h_flex()
@@ -409,7 +398,7 @@ function stepRow(view, lane, index, current, notes, t) {
   return h_flex()
     .items_stretch()
     .gap(10)
-    .child(v_flex().flex_none().w(17).child(h_flex().h(20).items_center().child(node)).child(rail))
+    .child(v_flex().flex_none().w(18).child(h_flex().h(20).items_center().justify_center().child(node)).child(rail))
     .child(
       v_flex()
         .flex_1()
