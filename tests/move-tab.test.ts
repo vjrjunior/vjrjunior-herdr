@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { atShell, checkoutOf, isClaude, keepArgs, leaves, matchingFolder, movedNote, parseWorktrees, resumeArgv, splitSteps, tabTree, targetsFor } from "../mods/move-tab/logic.js";
+import { atShell, checkoutOf, isClaude, keepArgs, leaves, matchingFolder, movedNote, parseWorktrees, resumeArgv, runsSession, splitSteps, tabTree, targetsFor } from "../mods/move-tab/logic.js";
 
 describe("move-tab logic", () => {
   test("keeps the allowed flags and their values", () => {
@@ -37,6 +37,17 @@ describe("move-tab logic", () => {
     expect([atShell(shell), isClaude(shell)]).toEqual([true, false]);
     expect([atShell(claude), isClaude(claude)]).toEqual([false, true]);
     expect([atShell(vite), isClaude(vite)]).toEqual([false, false]);
+  });
+  test("finds a live terminal that resumes a session", () => {
+    const live = (over: Record<string, unknown>) => ({ address: "t9", state: "live", ...over });
+    expect(runsSession(live({ argv: ["claude", "--resume", "abc-1", "--model", "opus"] }), "abc-1")).toBe(true);
+    expect(runsSession(live({ argv: ["/bin/zsh", "-l"], foreground: { argv: ["claude", "--resume", "abc-1"] } }), "abc-1")).toBe(true);
+    expect(runsSession(live({ argv: ["zsh", "-i", "-c", "claude --resume abc-1 --model opus"] }), "abc-1")).toBe(true);
+    expect(runsSession(live({ argv: ["claude", "--resume", "abc-12"] }), "abc-1")).toBe(false);
+    expect(runsSession(live({ argv: ["claude", "abc-1"] }), "abc-1")).toBe(false);
+    expect(runsSession({ address: "t9", state: "exited", argv: ["claude", "--resume", "abc-1"] }, "abc-1")).toBe(false);
+    expect(runsSession(live({}), "abc-1")).toBe(false);
+    expect(runsSession(live({ argv: ["claude", "--resume", ".*"] }), ".*")).toBe(false);
   });
   test("writes the moved note", () => {
     expect(movedNote({ from: "/r/main", fromBranch: "main", to: "/r/wt", toBranch: null }))

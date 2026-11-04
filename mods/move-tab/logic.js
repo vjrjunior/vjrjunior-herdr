@@ -139,6 +139,12 @@ export function resumeArgv({ session, args, note }) {
   return note ? [...argv, "--append-system-prompt", note] : argv;
 }
 
+export function runsSession(terminal, session) {
+  if (terminal?.state !== "live" || typeof session !== "string" || !SESSION.test(session)) return false;
+  const resume = new RegExp(`(^|\\s)--resume\\s+${session}(\\s|$)`);
+  return [terminal.argv, terminal.foreground?.argv].some((argv) => Array.isArray(argv) && resume.test(argv.join(" ")));
+}
+
 export function tabTree(stdout, tab) {
   try {
     const spaces = JSON.parse(stdout)?.result?.value?.spaces;

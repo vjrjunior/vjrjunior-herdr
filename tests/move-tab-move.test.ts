@@ -43,6 +43,8 @@ function world(changes: any = {}) {
     folders: [] as string[],
     stubborn: [] as number[],
     fail: {} as Record<string, string>,
+    failAfter: {} as Record<string, string>,
+    listed: false,
     throwRaw: false,
     notifyThrows: false,
     onSignal: null as ((w: any) => void) | null,
@@ -100,29 +102,10 @@ function fakeIo(w: any) {
     act: async (name: string, args: any) => {
       log.push(`act ${name} ${JSON.stringify(args)}`);
       if (name in w.fail) throw w.throwRaw ? w.fail[name] : new Error(w.fail[name]);
-      if (name === "space.new") {
-        const id = next++;
-        w.panes.push(pane(`p${id}`, `t${id}`, `tb${id}`, args.folder, "Shell"));
-        return { space: `s${id}`, tab: `tb${id}`, terminal: `t${id}` };
-      }
-      if (name === "tab.new") {
-        const id = next++;
-        const terminal = args.mod ? undefined : `t${id}`;
-        w.panes.push({ pane: `p${id}`, terminal: terminal ?? null, tab: `tb${id}`, cwd: args.folder ?? null, program: { name: "Shell" } });
-        return { space: args.space, tab: `tb${id}`, terminal };
-      }
-      if (name === "pane.focus") focused = args.pane;
-      if (name === "terminal.open") {
-        const id = next++;
-        w.panes.push(pane(`p${id}`, `t${id}`, tabOf(focused), args.folder, "Shell"));
-        return { terminal: `t${id}` };
-      }
-      if (name === "pane.split") {
-        const id = next++;
-        w.panes.push({ pane: `p${id}`, terminal: null, mod: args.mod, tab: tabOf(args.pane), cwd: null, program: { name: args.mod } });
-        return { pane: `p${id}` };
-      }
-      return {};
+      const made = create(name, args);
+      if (!(name in w.failAfter)) return made;
+      if (w.listed) w.terminals.push({ address: made.terminal, state: "live", argv: ["/bin/zsh", "-l"], foreground: { argv: args.argv } });
+      throw new Error(w.failAfter[name]);
     },
     sleep: async (ms: number) => {
       clock += ms;
@@ -133,6 +116,32 @@ function fakeIo(w: any) {
       if (w.notifyThrows) throw new Error("the toast broke");
     },
   };
+
+  function create(name: string, args: any): any {
+    if (name === "space.new") {
+      const id = next++;
+      w.panes.push(pane(`p${id}`, `t${id}`, `tb${id}`, args.folder, "Shell"));
+      return { space: `s${id}`, tab: `tb${id}`, terminal: `t${id}` };
+    }
+    if (name === "tab.new") {
+      const id = next++;
+      const terminal = args.mod ? undefined : `t${id}`;
+      w.panes.push({ pane: `p${id}`, terminal: terminal ?? null, tab: `tb${id}`, cwd: args.folder ?? null, program: { name: "Shell" } });
+      return { space: args.space, tab: `tb${id}`, terminal };
+    }
+    if (name === "pane.focus") focused = args.pane;
+    if (name === "terminal.open") {
+      const id = next++;
+      w.panes.push(pane(`p${id}`, `t${id}`, tabOf(focused), args.folder, "Shell"));
+      return { terminal: `t${id}` };
+    }
+    if (name === "pane.split") {
+      const id = next++;
+      w.panes.push({ pane: `p${id}`, terminal: null, mod: args.mod, tab: tabOf(args.pane), cwd: null, program: { name: args.mod } });
+      return { pane: `p${id}` };
+    }
+    return {};
+  }
 }
 
 function actsOf(log: string[]) {
@@ -365,22 +374,45 @@ describe("moveTab", () => {
   });
 
   test("a failed act after Claude ended keeps the old tab", async () => {
-    const { io, result, notice, acts } = await move(world({ fail: { "tab.new": "boom" } }));
+    const w = world({ fail: { "space.new": "boom" } });
+    w.spaces = w.spaces.slice(0, 1);
+    w.panes = w.panes.slice(0, 1);
+    const { io, result, notice, acts } = await move(w, { toSpace: null });
     expect(io.log).toContain("signal 11");
-    expect(acts.map((act) => act.name)).toEqual(["tab.new"]);
-    expect(notice.level).toBe("error");
-    expect(notice.body.startsWith("boom.")).toBe(true);
-    expect(notice.body).toContain(RESUME);
-    expect(notice.action).toEqual(FIRST_ACTION);
+    expect(acts.map((act) => act.name)).toEqual(["space.new"]);
+    expect(notice).toEqual({ title: "Couldn't move the tab", body: `boom. To resume Claude by hand: ${RESUME}`, level: "error", action: FIRST_ACTION });
     expect(result).toEqual({ moved: false });
   });
 
   test("a build that fails after one Claude started offers only the other", async () => {
-    const { result, notice, acts } = await move(twoClaudes({ fail: { "terminal.open": "boom" } }));
-    expect(acts.map((act) => act.name)).toEqual(["tab.new", "pane.focus", "terminal.open"]);
+    const { result, notice, acts } = await move(twoClaudes({ fail: { "pane.focus": "boom" } }));
+    expect(acts.map((act) => act.name)).toEqual(["tab.new", "pane.focus"]);
     expect(notice.body).toBe(`boom. To resume Claude by hand: ${SECOND}`);
     expect(notice.body).not.toContain("new-id");
     expect(notice.action).toEqual(SECOND_ACTION);
+    expect(result).toEqual({ moved: false });
+  });
+
+  test("a Claude whose launch failed may be running, so it is never offered", async () => {
+    const thrown = await move(world({ fail: { "tab.new": "boom" } }));
+    expect(thrown.notice).toEqual({ title: "Couldn't move the tab", body: "boom. Claude from this tab may already be running in feat/x.", level: "error" });
+    expect(thrown.result).toEqual({ moved: false });
+
+    const made = await move(world({ failAfter: { "tab.new": "herdr-app do tab.new printed something unexpected" } }));
+    expect(made.io.panes().some((candidate: any) => candidate.tab === "tb10" && candidate.terminal === "t10")).toBe(true);
+    expect(made.notice).toEqual({ title: "Couldn't move the tab", body: "herdr-app do tab.new printed something unexpected. Claude from this tab may already be running in feat/x.", level: "error" });
+
+    const own = world({ fail: { "tab.new": "boom" }, terminals: [{ address: "t1", state: "live", argv: ["claude", "--resume", "new-id"] }] });
+    expect((await move(own)).notice.body).toBe("boom. Claude from this tab may already be running in feat/x.");
+
+    const split = await move(twoClaudes({ failAfter: { "terminal.open": "boom" } }));
+    expect(actsOf(split.io.log).map((act) => act.name)).toEqual(["tab.new", "pane.focus", "terminal.open"]);
+    expect(split.notice).toEqual({ title: "Couldn't move the tab", body: "boom. Claude from pane 2 may already be running in feat/x.", level: "error" });
+  });
+
+  test("a Claude seen running after its launch failed counts as started", async () => {
+    const { notice, result } = await move(world({ failAfter: { "tab.new": "boom" }, listed: true }));
+    expect(notice).toEqual({ title: "Couldn't move the tab", body: "boom.", level: "error" });
     expect(result).toEqual({ moved: false });
   });
 
