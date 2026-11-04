@@ -260,6 +260,10 @@ export default class SpacesTree extends View {
     return this.dropOver === row.key && Boolean(this.taking(target, row));
   }
 
+  hinting(target, row) {
+    return shared(DRAG)?.moving === true && Boolean(this.taking(target, row));
+  }
+
   dragOver(target, row, on, cx) {
     const over = on && this.taking(target, row) ? row.key : this.dropOver === row.key ? null : this.dropOver;
     if (over === this.dropOver) return;
@@ -281,6 +285,7 @@ export default class SpacesTree extends View {
   pointer(el, row, target, t, events = {}) {
     return el
       .when(this.dropping(target, row), (el) => el.border_1().border_color(t.accent))
+      .when(!this.dropping(target, row) && this.hinting(target, row), (el) => el.border_1().border_dashed().border_color(t.accent))
       .on_hover((on, cx) => {
         events.hover?.(on, cx);
         this.dragOver(target, row, on, cx);

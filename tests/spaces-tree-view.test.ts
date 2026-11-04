@@ -466,7 +466,9 @@ describe("tab drops", () => {
       herdr.theme = shared;
     });
     const rows = [`head-${common}`, "kid-w", "kid-/w/app/one", "head-x"];
-    const lit = (node: Node) => node.calls.some(([name]) => name === "border_1") && node.calls.some(([name, args]) => name === "border_color" && args[0] === "#accent");
+    const accent = (node: Node) => node.calls.some(([name]) => name === "border_1") && node.calls.some(([name, args]) => name === "border_color" && args[0] === "#accent");
+    const dashed = (node: Node) => node.calls.some(([name]) => name === "border_dashed");
+    const lit = (node: Node) => accent(node) && !dashed(node);
     const litRows = (view: { render(): Node }) => rows.filter((key) => lit(at(view, key).at(-1) as Node));
 
     test("only accepting rows highlight", () => {
@@ -486,6 +488,25 @@ describe("tab drops", () => {
       expect(litRows(view)).toEqual([]);
 
       for (const handler of (at(view, "kid-/w/app/one").at(-1) as Node).handlers.hover ?? []) handler(true, cx);
+      expect(litRows(view)).toEqual([]);
+    });
+
+    test("while a tab is being dragged, every row that would take it is dashed and the row under the pointer is solid", () => {
+      const view = dropSetup();
+      const dashedRows = () => rows.filter((key) => {
+        const node = at(view, key).at(-1) as Node;
+        return accent(node) && dashed(node);
+      });
+      app.shared[DRAG] = drag();
+      expect(dashedRows()).toEqual([]);
+      app.shared[DRAG] = { ...drag(), moving: true };
+      expect(dashedRows()).toEqual(["kid-w", "kid-/w/app/one"]);
+      expect(litRows(view)).toEqual([]);
+      for (const handler of (at(view, "kid-w").at(-1) as Node).handlers.hover ?? []) handler(true, cx);
+      expect(litRows(view)).toEqual(["kid-w"]);
+      expect(dashedRows()).toEqual(["kid-/w/app/one"]);
+      app.shared[DRAG] = null;
+      expect(dashedRows()).toEqual([]);
       expect(litRows(view)).toEqual([]);
     });
   });

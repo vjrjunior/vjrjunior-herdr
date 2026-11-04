@@ -408,9 +408,28 @@ describe("move-tab", () => {
       const text = generated.mods[tabs]?.["main.js"] ?? "";
       expect(text).toContain('import { spaces, panes, run, openOverlay, theme, window, shared, layout, settings, setShared } from "herdr";');
       expect(text).toContain(
-        '.on_mouse_down("left", (e, cx) => { cx.stop_propagation(); this.pressed = i; setShared("move-tab.drag", { tab: c.id, space: space.id, at: Date.now() });',
+        '.on_mouse_down("left", (e, cx) => { cx.stop_propagation(); this.pressed = i; this.from = e.position; setShared("move-tab.drag", { tab: c.id, space: space.id, at: Date.now() });',
       );
       expect(text).toContain('.on_mouse_up("left", () => { this.pressed = null; if (shared("move-tab.drag")) setShared("move-tab.drag", null); })');
+    }
+  });
+
+  test("the tab bar marks a drag once the pointer moves 4 px, fades the dragged tab and outlines the tab it would land on", () => {
+    for (const [generated, tabs] of [
+      [generateDesk(), "vjr-tabs"],
+      [generateSquare(), "vjr-square-tabs"],
+    ] as const) {
+      const text = generated.mods[tabs]?.["main.js"] ?? "";
+      expect(text).toContain(
+        '.on_mouse_move((e) => { const drag = shared("move-tab.drag"); if (this.pressed === null || !drag || drag.moving || !this.from) return; ' +
+          'if (Math.hypot(e.position.x - this.from.x, e.position.y - this.from.y) > 4) setShared("move-tab.drag", { ...drag, moving: true }); })',
+      );
+      expect(text).toContain('.when(shared("move-tab.drag")?.moving === true && shared("move-tab.drag")?.tab === c.id, (el) => el.opacity(0.45))');
+      expect(text).toContain('.when(shared("move-tab.drag")?.moving === true && shared("move-tab.drag")?.tab !== c.id && this.target === i, (el) => el.border_color(t.accent))');
+      expect(text).toContain('.on_hover((on, cx) => { if (on) this.target = i; else if (this.target === i) this.target = null; if (shared("move-tab.drag")?.moving) cx.notify(); })');
+      const look = text.indexOf(".when(shared(\"move-tab.drag\")?.moving === true && shared(\"move-tab.drag\")?.tab === c.id");
+      expect(look).toBeGreaterThan(-1);
+      expect(look).toBeLessThan(text.indexOf("this.pressed = i; this.from = e.position;"));
     }
   });
 
