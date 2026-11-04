@@ -137,3 +137,79 @@ export function resumeArgv({ session, args, note }) {
   if (typeof session !== "string" || !SESSION.test(session)) return null;
   return ["claude", "--resume", session, ...args, "--append-system-prompt", note];
 }
+
+export function tabTree(stdout, tab) {
+  try {
+    const spaces = JSON.parse(stdout)?.result?.value?.spaces;
+    if (!Array.isArray(spaces)) return null;
+    for (const space of spaces) {
+      const found = (space?.tabs ?? []).find((candidate) => candidate?.id === tab);
+      if (found) return found.root ?? null;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+export function leaves(node) {
+  if (!node) return [];
+  if (node.type === "block") return [node];
+  return (node.children ?? []).flatMap(leaves);
+}
+
+export function splitSteps(node) {
+  const steps = [{ leaf: 0, from: null, direction: null }];
+  const walk = (current, start) => {
+    if (current.type === "block") return;
+    const direction = current.type === "column" ? "down" : "right";
+    const children = current.children ?? [];
+    const firsts = [];
+    let offset = start;
+    for (const child of children) {
+      firsts.push(offset);
+      offset += leaves(child).length;
+    }
+    for (let i = 1; i < children.length; i++) steps.push({ leaf: firsts[i], from: firsts[i - 1], direction });
+    children.forEach((child, i) => walk(child, firsts[i]));
+  };
+  walk(node, 0);
+  return steps;
+}
+
+export function placeOf(space, panes) {
+  const tabs = new Set((space.tabs ?? []).map((tab) => tab.id));
+  const pane = panes.find((candidate) => tabs.has(candidate.tab) && candidate.cwd);
+  return pane?.cwd ?? space.folder ?? null;
+}
+
+export function targetsFor({ checkouts, spaces, panes, from }) {
+  const main = [];
+  const open = [];
+  const idle = [];
+  for (const checkout of checkouts) {
+    const here = spaces.filter((space) => {
+      const place = placeOf(space, panes);
+      return place !== null && checkoutOf(place, checkouts) === checkout;
+    });
+    const detail = checkout.main ? "main checkout" : checkout.branch;
+    const rows = here
+      .filter((space) => space.id !== from.space)
+      .map((space) => ({ key: space.id, path: checkout.path, label: space.name, detail: `${detail ?? base(checkout.path)} · open`, space: space.id }));
+    if (checkout.main) main.push(...rows);
+    else open.push(...rows);
+    if (here.length === 0) {
+      const row = {
+        key: checkout.path,
+        path: checkout.path,
+        label: checkout.main ? base(checkout.path) : (checkout.branch ?? base(checkout.path)),
+        detail: detail ?? base(checkout.path),
+        space: null,
+      };
+      if (checkout.main) main.push(row);
+      else idle.push(row);
+    }
+  }
+  idle.sort((a, b) => a.label.localeCompare(b.label));
+  return [...main, ...open, ...idle];
+}

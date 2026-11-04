@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { atShell, checkoutOf, isClaude, keepArgs, matchingFolder, movedNote, parseWorktrees, resumeArgv } from "../mods/move-tab/logic.js";
+import { atShell, checkoutOf, isClaude, keepArgs, leaves, matchingFolder, movedNote, parseWorktrees, resumeArgv, splitSteps, tabTree, targetsFor } from "../mods/move-tab/logic.js";
 
 describe("move-tab logic", () => {
   test("keeps the allowed flags and their values", () => {
@@ -37,5 +37,43 @@ describe("move-tab logic", () => {
   test("writes the moved note", () => {
     expect(movedNote({ from: "/r/main", fromBranch: "main", to: "/r/wt", toBranch: null }))
       .toBe("This session moved from /r/main (branch main) to /r/wt (detached HEAD). Work in /r/wt from now on; files under /r/main belong to another checkout.");
+  });
+  const block = (id: string) => ({ type: "block", id, content: { terminal: id } });
+  test("splits a lone pane into one step", () => {
+    expect(splitSteps({ type: "row", children: [block("a")] })).toEqual([{ leaf: 0, from: null, direction: null }]);
+  });
+  test("splits rows right and columns down, outer splits first", () => {
+    const tree = { type: "row", children: [block("a"), { type: "column", children: [block("b"), block("c")] }, block("d")] };
+    expect(leaves(tree).map((leaf) => leaf.id)).toEqual(["a", "b", "c", "d"]);
+    expect(splitSteps(tree)).toEqual([
+      { leaf: 0, from: null, direction: null },
+      { leaf: 1, from: 0, direction: "right" },
+      { leaf: 3, from: 1, direction: "right" },
+      { leaf: 2, from: 1, direction: "down" },
+    ]);
+  });
+  test("reads a tab's tree from doc.get", () => {
+    const out = JSON.stringify({ id: 1, result: { value: { spaces: [{ id: "s1", tabs: [{ id: "tb1", root: { type: "row", children: [block("t1")] } }] }] } } });
+    expect(leaves(tabTree(out, "tb1")!)[0].content).toEqual({ terminal: "t1" });
+    expect(tabTree(out, "tb9")).toBeNull();
+    expect(tabTree("not json", "tb1")).toBeNull();
+  });
+  test("lists open spaces first, then checkouts without one by branch", () => {
+    const checkouts = parseWorktrees("worktree /r/main\nbranch refs/heads/main\n\nworktree /r/wt/zeta\nbranch refs/heads/zeta\n\nworktree /r/wt/alpha\nbranch refs/heads/alpha\n\nworktree /r/wt/live\nbranch refs/heads/feat/live\n");
+    const spaces = [
+      { id: "s1", name: "main", folder: "/r/main", tabs: [{ id: "tb1" }] },
+      { id: "s2", name: "live", folder: "/r/wt/live", tabs: [{ id: "tb2" }] },
+    ];
+    const panes = [{ tab: "tb1", cwd: "/r/main/src" }, { tab: "tb2", cwd: "/r/wt/live" }];
+    expect(targetsFor({ checkouts, spaces, panes, from: { space: "s1" } }).map((t) => [t.label, t.detail, t.space])).toEqual([
+      ["live", "feat/live · open", "s2"],
+      ["alpha", "alpha", null],
+      ["zeta", "zeta", null],
+    ]);
+  });
+  test("offers the main checkout when it has no space", () => {
+    const checkouts = parseWorktrees("worktree /r/main\nbranch refs/heads/main\n\nworktree /r/wt/x\nbranch refs/heads/x\n");
+    const spaces = [{ id: "s2", name: "x", folder: "/r/wt/x", tabs: [{ id: "tb2" }] }];
+    expect(targetsFor({ checkouts, spaces, panes: [], from: { space: "s2" } }).map((t) => [t.label, t.detail, t.path])).toEqual([["main", "main checkout", "/r/main"]]);
   });
 });
