@@ -194,3 +194,16 @@ export function isFolded(folded, entry) {
 export function liveFolds(folded, repos) {
   return new Set([...folded].filter((key) => (repos[key]?.checkouts.length ?? 0) > 1));
 }
+
+export const DRAG_TTL = 30000;
+
+export function dropTarget(entry, row, look) {
+  if (entry.kind === "repo") return row.path ? { path: row.path, common: entry.key } : null;
+  return look?.top && look.common ? { path: look.top, common: look.common } : null;
+}
+
+export function accepts(drag, target, row, sourceCommon, time) {
+  if (!drag || typeof drag.tab !== "string" || typeof drag.space !== "string" || !Number.isFinite(drag.at)) return false;
+  if (!target || !sourceCommon || time - drag.at > DRAG_TTL) return false;
+  return row.space?.id !== drag.space && target.common === sourceCommon;
+}

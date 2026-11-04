@@ -2,11 +2,13 @@ import { View, div } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { spaces, panes, run, openOverlay, exec, theme, shared, setShared, watchFolder, window, nextCommand, layout } from "herdr";
 import {
+  accepts,
   assignColors,
   branchLabel,
   buildTree,
   canOpen,
   counts,
+  dropTarget,
   duePlaces,
   foldedTail,
   holdsActive,
@@ -29,6 +31,8 @@ const SUB = 14;
 const LANE = 42;
 const MARK = { ansi6: "#22a99a", ansi3: "#e3814f", ansi4: "#5b8def", ansi5: "#8b7cf6", ansi2: "#3fae6a", ansi1: "#d9649a" };
 const NARROW = 160;
+const DRAG = "move-tab.drag";
+const REQUEST = "move-tab.request";
 
 function findNode(node, id) {
   if (node?.id === id) return node;
@@ -59,6 +63,7 @@ export default class SpacesTree extends View {
     this.hovered = null;
     this.pressed = null;
     this.over = null;
+    this.dropOver = null;
     cx.timer.every(250, (cx) => this.tick(cx));
     cx.spawn(async (cx) => {
       for (;;) {
@@ -231,6 +236,62 @@ export default class SpacesTree extends View {
     run("space.new", { folder: row.path, machine: "" });
   }
 
+  endDrag() {
+    if (shared(DRAG) != null) setShared(DRAG, null);
+  }
+
+  dropFor(entry, row) {
+    return dropTarget(entry, row, row.space ? this.looks[this.lastPlaces[row.space.id]] : null);
+  }
+
+  taking(target, row) {
+    const drag = shared(DRAG);
+    const source = typeof drag?.space === "string" ? (this.looks[this.lastPlaces[drag.space]]?.common ?? null) : null;
+    return accepts(drag, target, row, source, Date.now()) ? drag : null;
+  }
+
+  dropping(target, row) {
+    return this.dropOver === row.key && Boolean(this.taking(target, row));
+  }
+
+  dragOver(target, row, on, cx) {
+    const over = on && this.taking(target, row) ? row.key : this.dropOver === row.key ? null : this.dropOver;
+    if (over === this.dropOver) return;
+    this.dropOver = over;
+    cx.notify();
+  }
+
+  drop(target, row) {
+    const drag = this.taking(target, row);
+    this.dropOver = null;
+    if (!drag) return false;
+    const time = Date.now();
+    setShared(REQUEST, { id: String(time), tab: drag.tab, space: drag.space, to: target.path, toSpace: row.space?.id ?? null, at: time });
+    setShared(DRAG, null);
+    return true;
+  }
+
+  pointer(el, row, target, t, events = {}) {
+    return el
+      .when(this.dropping(target, row), (el) => el.border_1().border_color(t.accent))
+      .on_hover((on, cx) => {
+        events.hover?.(on, cx);
+        this.dragOver(target, row, on, cx);
+      })
+      .on_mouse_move((_e, cx) => {
+        events.move?.(cx);
+        this.dragOver(target, row, true, cx);
+      })
+      .on_mouse_down("left", () => {
+        this.endDrag();
+        events.down?.();
+      })
+      .on_mouse_up("left", (_e, cx) => {
+        if (this.drop(target, row)) cx.notify();
+        else events.up?.(cx);
+      });
+  }
+
   menu(space) {
     openOverlay({ mod: "menu", kind: "popup", width: 200, height: 260, props: { tab: "space", target: { id: space.id } } });
   }
@@ -345,7 +406,7 @@ export default class SpacesTree extends View {
         el.child(this.iconButton(`fold-${entry.key}`, folded ? "chevron-right" : "chevron-down", folded ? "Unfold" : "Fold", () => this.toggleFold(entry.key), t)),
       );
     const bottom = (height - (branch ? AVATAR + 1 + SUB : AVATAR)) / 2 + AVATAR;
-    return (branch ? v_flex().justify_center().gap(1).child(line.h(AVATAR)).child(this.sub(branch, t)) : line)
+    const el = (branch ? v_flex().justify_center().gap(1).child(line.h(AVATAR)).child(this.sub(branch, t)) : line)
       .id(`head-${entry.key}`)
       .relative()
       .h(height)
@@ -354,15 +415,16 @@ export default class SpacesTree extends View {
       .when(!flat, (el) => el.rounded(8))
       .when(selected, (el) => el.bg(t.selected))
       .when(!selected, (el) => el.hover((s) => s.bg(t.hover)))
-      .on_hover((on, cx) => this.hover(entry.key, on, cx))
       .when(index < 0, (el) => el.on_click(() => this.open(row)))
-      .when(index >= 0, (el) => this.draggable(el, row, index, all, t))
+      .when(index >= 0, (el) => this.draggable(el, index, t))
       .when(Boolean(row.space), (el) => el.on_mouse_down("right", () => this.menu(row.space)))
       .when(Boolean(rail), (el) => el.child(div().absolute().left(RAIL).top(bottom).w(1.5).h(height - bottom).bg(rail)))
       .when(Boolean(status) && flat, (el) => el.child(this.bar(status, t, height)));
+    const events = { hover: (on, cx) => this.hover(entry.key, on, cx), ...(index >= 0 ? this.reorder(row, index, all) : {}) };
+    return this.pointer(el, row, this.dropFor(entry, row), t, events);
   }
 
-  draggable(el, row, index, all, t) {
+  draggable(el, index, t) {
     return el
       .when(this.pressed === index && this.over !== index, (el) => el.opacity(0.5))
       .when(this.pressed !== null && this.over === index && this.pressed !== index, (el) =>
@@ -376,20 +438,24 @@ export default class SpacesTree extends View {
             .when(this.pressed < index, (line) => line.bottom(0))
             .when(this.pressed > index, (line) => line.top(0)),
         ),
-      )
-      .on_mouse_down("left", () => {
+      );
+  }
+
+  reorder(row, index, all) {
+    return {
+      down: () => {
         this.pressed = index;
         this.over = index;
-      })
-      .on_mouse_move((_e, cx) => {
+      },
+      move: (cx) => {
         const source = all[this.pressed];
         const over = source && (source.machine ?? null) === (row.space.machine ?? null) ? index : null;
         if (this.pressed !== null && this.over !== over) {
           this.over = over;
           cx.notify();
         }
-      })
-      .on_mouse_up("left", (_e, cx) => {
+      },
+      up: (cx) => {
         const from = this.pressed;
         const over = this.over;
         this.pressed = null;
@@ -397,7 +463,8 @@ export default class SpacesTree extends View {
         if (from !== null && over === index && from !== index) run("space.move", { id: spaces()[from].id, index: index + 1 });
         else if (from === index) this.open(row);
         cx.notify();
-      });
+      },
+    };
   }
 
   compactRows(entries, t) {
@@ -413,6 +480,7 @@ export default class SpacesTree extends View {
         .gap(4)
         .when(active, (el) => el.bg(t.raised))
         .hover((s) => s.bg(t.hover))
+        .on_mouse_down("left", () => this.endDrag())
         .on_click(() => this.open(row))
         .child(div().text_color(active ? t.foreground : t.muted).child(String(all.findIndex((space) => space.id === row.space.id) + 1)))
         .when(row.status === "blocked" || row.status === "done", (el) => el.child(statusDot(t[row.status], { size: 5 })));
@@ -424,11 +492,11 @@ export default class SpacesTree extends View {
     return lane ? [line, lane.sub] : [line];
   }
 
-  graphKid(row, t, rail, last) {
+  graphKid(entry, row, t, rail, last) {
     const selected = Boolean(row.space?.active);
     const lane = this.laneLine(row, t);
     const height = lane?.height ?? 28;
-    return v_flex()
+    const el = v_flex()
       .id(`kid-${row.key}`)
       .relative()
       .h(height)
@@ -454,20 +522,21 @@ export default class SpacesTree extends View {
           .when(!row.open, (el) => el.border(1.5).border_color(rail)),
       )
       .children(this.kidLines(row, lane, t));
+    return this.pointer(el, row, this.dropFor(entry, row), t);
   }
 
   graphEntry(entry, t) {
     if (entry.kind === "plain") return [this.headRow(entry, entry.row, t, null)];
     const kids = isFolded(this.folded(), entry) ? [] : entry.kids;
     const rail = faded(this.fill(entry.main.space, t));
-    return [this.headRow(entry, entry.main, t, kids.length ? rail : null), ...kids.map((row, index) => this.graphKid(row, t, rail, index === kids.length - 1))];
+    return [this.headRow(entry, entry.main, t, kids.length ? rail : null), ...kids.map((row, index) => this.graphKid(entry, row, t, rail, index === kids.length - 1))];
   }
 
-  blockKid(row, t) {
+  blockKid(entry, row, t) {
     const selected = Boolean(row.space?.active);
     const lane = this.laneLine(row, t);
     const height = lane?.height ?? 28;
-    return v_flex()
+    const el = v_flex()
       .id(`kid-${row.key}`)
       .relative()
       .h(height)
@@ -481,6 +550,7 @@ export default class SpacesTree extends View {
       .when(Boolean(row.space), (el) => el.on_mouse_down("right", () => this.menu(row.space)))
       .when(row.open && Boolean(row.status), (el) => el.child(this.bar(row.status, t, height)))
       .children(this.kidLines(row, lane, t));
+    return this.pointer(el, row, this.dropFor(entry, row), t);
   }
 
   blockEntry(entry, t) {
@@ -497,7 +567,7 @@ export default class SpacesTree extends View {
       .rounded(10)
       .child(this.headRow(entry, row, t, null, true))
       .when(kids.length > 0, (el) => el.child(div().h(1).flex_none().bg(t.border)))
-      .children(kids.map((kid) => this.blockKid(kid, t)));
+      .children(kids.map((kid) => this.blockKid(entry, kid, t)));
   }
 
   header(t, narrow) {
@@ -553,9 +623,12 @@ export default class SpacesTree extends View {
           .pb(14)
           .overflow_y_scrollbar()
           .mode("always")
+          .on_mouse_down("left", () => this.endDrag())
           .on_mouse_up("left", (_e, cx) => {
             this.pressed = null;
             this.over = null;
+            this.dropOver = null;
+            this.endDrag();
             cx.notify();
           })
           .children(narrow ? this.compactRows(entries, t) : entries.flatMap((entry) => (blocks ? [this.blockEntry(entry, t)] : this.graphEntry(entry, t)))),

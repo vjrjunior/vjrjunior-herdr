@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
+  accepts,
   assignColors,
   base,
   branchLabel,
@@ -7,6 +8,8 @@ import {
   canOpen,
   checkoutOf,
   counts,
+  DRAG_TTL,
+  dropTarget,
   duePlaces,
   foldedTail,
   holdsActive,
@@ -363,5 +366,40 @@ describe("folds", () => {
 
   test("a fold on a repository without worktrees does not hold back its refresh", () => {
     expect([...liveFolds(new Set([common, solo.common, "/gone/.git"]), { ...repos, [solo.common]: solo })]).toEqual([common]);
+  });
+});
+
+describe("drops", () => {
+  const drag = { tab: "t1", space: "m", at: 1000 };
+  const [entry] = buildTree([space("m"), space("o"), space("x")], { m: look("/r/app"), o: look("/w/app/one") }, repos);
+  const repoEntry = entry as never as { kind: string; key: string; main: Record<string, any>; kids: Record<string, any>[] };
+  const kid = (path: string) => repoEntry.kids.find((row) => row.path === path) as Record<string, any>;
+
+  test("accepts a fresh drag over another checkout of the same repo", () => {
+    const open = kid("/w/app/one");
+    const closed = kid("/w/app/two");
+    expect(dropTarget(repoEntry as never, open as never, undefined)).toEqual({ path: "/w/app/one", common });
+    expect(accepts(drag, dropTarget(repoEntry as never, open as never, undefined), open, common, 1000)).toBe(true);
+    expect(accepts(drag, dropTarget(repoEntry as never, closed as never, undefined), closed, common, 1000 + DRAG_TTL - 1)).toBe(true);
+    const extra = { key: "e", path: null, space: space("e") };
+    const target = dropTarget({ kind: "plain", key: "e" } as never, extra as never, look("/r/app"));
+    expect(target).toEqual({ path: "/r/app", common });
+    expect(accepts(drag, target, extra, common, 1000)).toBe(true);
+    expect(DRAG_TTL).toBe(30000);
+  });
+
+  test("refuses its own space, another repo, a plain non-repo row and a 31-second-old drag", () => {
+    const own = repoEntry.main;
+    expect(own.space.id).toBe("m");
+    expect(accepts(drag, dropTarget(repoEntry as never, own as never, undefined), own, common, 1000)).toBe(false);
+    const open = kid("/w/app/one");
+    const target = dropTarget(repoEntry as never, open as never, undefined);
+    expect(accepts(drag, target, open, "/r/other/.git", 1000)).toBe(false);
+    const plain = { key: "x", path: null, space: space("x") };
+    expect(dropTarget({ kind: "plain", key: "x" } as never, plain as never, null)).toBeNull();
+    expect(accepts(drag, null, plain, common, 1000)).toBe(false);
+    expect(accepts(drag, target, open, common, 1000 + 31000)).toBe(false);
+    expect(accepts(null, target, open, common, 1000)).toBe(false);
+    expect(accepts(drag, target, open, null, 1000)).toBe(false);
   });
 });

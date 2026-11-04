@@ -399,6 +399,34 @@ describe("move-tab", () => {
   test("a menu that changed fails the recipe", () => {
     expect(() => generateDesk({ "mods/menu/main.js": "export default class Mod { render() { return div(); } }" })).toThrow(/recipe move-tab/);
   });
+
+  test("the tab bar starts a drag in both layouts", () => {
+    for (const [generated, tabs] of [
+      [generateDesk(), "vjr-tabs"],
+      [generateSquare(), "vjr-square-tabs"],
+    ] as const) {
+      const text = generated.mods[tabs]?.["main.js"] ?? "";
+      expect(text).toContain('import { spaces, panes, run, openOverlay, theme, window, shared, layout, settings, setShared } from "herdr";');
+      expect(text).toContain(
+        '.on_mouse_down("left", (e, cx) => { cx.stop_propagation(); this.pressed = i; setShared("move-tab.drag", { tab: c.id, space: space.id, at: Date.now() });',
+      );
+      expect(text).toContain('.on_mouse_up("left", () => { this.pressed = null; if (shared("move-tab.drag")) setShared("move-tab.drag", null); })');
+    }
+  });
+
+  test("a tab bar that changed fails the move-tab recipe", () => {
+    const home = tempDir();
+    makeHerdrHome(home);
+    const tabs = readFileSync(join(home, "mods/tabs/main.js"), "utf8");
+    for (const anchor of [
+      'import { spaces, panes, run, openOverlay, theme, window, shared, layout, settings } from "herdr";',
+      '.on_mouse_down("left", (e, cx) => { cx.stop_propagation(); this.pressed = i;',
+      '.on_mouse_up("left", () => { this.pressed = null; })',
+    ]) {
+      expect(tabs).toContain(anchor);
+      expect(() => generateDesk({ "mods/tabs/main.js": tabs.replace(anchor, "") })).toThrow(/recipe move-tab:/);
+    }
+  });
 });
 
 describe("command center", () => {

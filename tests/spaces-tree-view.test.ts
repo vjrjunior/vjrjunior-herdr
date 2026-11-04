@@ -303,3 +303,117 @@ describe("command center lane line", () => {
     expect(rail).toBeDefined();
   });
 });
+
+describe("tab drops", () => {
+  const three = [
+    { path: "/r/app", branch: "main", main: true },
+    { path: "/w/app/one", branch: "one", main: false },
+    { path: "/w/app/two", branch: "two", main: false },
+  ];
+  const DRAG = "move-tab.drag";
+  const REQUEST = "move-tab.request";
+  const drag = (from = "m") => ({ tab: "t1", space: from, at: Date.now() });
+
+  function dropSetup() {
+    app.spaces = [space("m"), space("x", { active: true }), space("w")];
+    const view = new SpacesTree();
+    view.init({}, cx);
+    view.lastPlaces = { m: "/r/app", x: "/x", w: "/w/app/two" };
+    view.looks = { "/r/app": { top: "/r/app", common }, "/x": null, "/w/app/two": { top: "/w/app/two", common } };
+    view.repos = { [common]: { common, name: "app", checkouts: three, refs: {} } };
+    return view;
+  }
+
+  function at(view: { render(): Node }, key: string): Node[] {
+    const path = pathTo(view.render(), key);
+    if (!path) throw new Error(`no element ${key}`);
+    return path;
+  }
+
+  test("releasing a drag on a worktree row asks for the move", () => {
+    const view = dropSetup();
+    app.shared[DRAG] = drag();
+    fire(at(view, "kid-/w/app/one"), "up:left");
+    const request = app.shared[REQUEST] as Record<string, unknown>;
+    expect(request).toMatchObject({ tab: "t1", space: "m", to: "/w/app/one", toSpace: null });
+    expect(typeof request.id).toBe("string");
+    expect(Number.isFinite(request.at)).toBe(true);
+    expect(app.shared[DRAG]).toBeNull();
+
+    app.shared[DRAG] = drag();
+    fire(at(view, "kid-w"), "up:left");
+    expect(app.shared[REQUEST]).toMatchObject({ tab: "t1", space: "m", to: "/w/app/two", toSpace: "w" });
+
+    delete app.shared[REQUEST];
+    app.shared[DRAG] = drag("w");
+    fire(at(view, `head-${common}`), "up:left");
+    expect(app.shared[REQUEST]).toMatchObject({ tab: "t1", space: "w", to: "/r/app", toSpace: "m" });
+    expect(app.runs).toEqual([]);
+  });
+
+  test("a drop on its own space or outside the repo asks nothing", () => {
+    const view = dropSetup();
+    for (const key of [`head-${common}`, "head-x"]) {
+      app.shared[DRAG] = drag();
+      fire(at(view, key), "up:left");
+      expect(app.shared[REQUEST]).toBeUndefined();
+      expect(app.shared[DRAG]).toBeNull();
+    }
+  });
+
+  test("a click on a row after a stale drag opens the row and asks nothing", () => {
+    const view = dropSetup();
+    app.shared[DRAG] = drag();
+    click(view, "kid-/w/app/one");
+    expect(app.runs).toEqual([["space.new", { folder: "/w/app/one", machine: "" }]]);
+    expect(app.shared[REQUEST]).toBeUndefined();
+
+    app.shared[DRAG] = drag();
+    click(view, "kid-w");
+    expect(app.runs.at(-1)).toEqual(["space.select", { id: "w" }]);
+    expect(app.shared[REQUEST]).toBeUndefined();
+
+    app.shared[DRAG] = drag("w");
+    click(view, `head-${common}`);
+    expect(app.runs.at(-1)).toEqual(["space.select", { id: "m" }]);
+    expect(app.shared[REQUEST]).toBeUndefined();
+
+    app.shared[DRAG] = drag();
+    const list = find(view.render(), (node) => node.calls.some(([name]) => name === "overflow_y_scrollbar")) as Node;
+    fire([list], "down:left");
+    expect(app.shared[DRAG]).toBeNull();
+  });
+
+  describe("highlight", () => {
+    const shared = herdr.theme;
+    beforeEach(() => {
+      herdr.theme = () => new Proxy({}, { get: (_target, prop) => (typeof prop === "string" ? `#${prop}` : undefined) });
+    });
+    afterEach(() => {
+      herdr.theme = shared;
+    });
+    const rows = [`head-${common}`, "kid-w", "kid-/w/app/one", "head-x"];
+    const lit = (node: Node) => node.calls.some(([name]) => name === "border_1") && node.calls.some(([name, args]) => name === "border_color" && args[0] === "#accent");
+    const litRows = (view: { render(): Node }) => rows.filter((key) => lit(at(view, key).at(-1) as Node));
+
+    test("only accepting rows highlight", () => {
+      const view = dropSetup();
+      app.shared[DRAG] = drag();
+      const seen: Record<string, string[]> = {};
+      for (const key of rows) {
+        for (const handler of (at(view, key).at(-1) as Node).handlers.hover ?? []) handler(true, cx);
+        seen[key] = litRows(view);
+        for (const handler of (at(view, key).at(-1) as Node).handlers.hover ?? []) handler(false, cx);
+      }
+      expect(seen).toEqual({ [`head-${common}`]: [], "kid-w": ["kid-w"], "kid-/w/app/one": ["kid-/w/app/one"], "head-x": [] });
+
+      for (const handler of (at(view, "kid-w").at(-1) as Node).handlers.move ?? []) handler({}, cx);
+      expect(litRows(view)).toEqual(["kid-w"]);
+      app.shared[DRAG] = null;
+      expect(litRows(view)).toEqual([]);
+
+      for (const handler of (at(view, "kid-/w/app/one").at(-1) as Node).handlers.hover ?? []) handler(true, cx);
+      expect(litRows(view)).toEqual([]);
+    });
+  });
+});

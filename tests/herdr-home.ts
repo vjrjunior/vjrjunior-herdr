@@ -57,6 +57,7 @@ const LAYOUT = {
 
 const SOURCES: Record<string, string> = {
   "mods/tabs/main.js": `import { View } from "gpui-kit";
+import { spaces, panes, run, openOverlay, theme, window, shared, layout, settings } from "herdr";
 export default class Tabs extends View {
   init() {
     this.pressed = null;
@@ -69,7 +70,11 @@ export default class Tabs extends View {
     const enabled = shared("workspace.panels") ?? ["files", "changes"];
     const context = () => openOverlay({ mod: "menu", kind: "popup", width: 200, props: { tab: "tab" } });
     const add = () => openOverlay({ mod: "new-menu", kind: "popup", width: 250, height: 512 });
+    const space = spaces().find(p => p.active);
+    const item = (c, i) => h_flex().id(\`tab-\${c.id}\`)
+        .on_mouse_down("left", (e, cx) => { cx.stop_propagation(); this.pressed = i; if (e.click_count === 2) run("tab.rename", { id: c.id }); });
     return h_flex().rounded(7)
+      .on_mouse_up("left", () => { this.pressed = null; })
       .child(button("tab-new", "+", () => openOverlay({ mod: "new-menu", kind: "popup", width: 250, height: 512 })))
       .when(enabled.includes("files"), el => el.child(panelButton("files", "Files", "mods/files/file.svg")))
       .when(enabled.includes("changes"), el => el.child(panelButton("changes", "Changes", "mods/changes/changes.svg")))
