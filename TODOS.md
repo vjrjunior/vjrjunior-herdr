@@ -110,6 +110,42 @@
 **Priority:** P3
 **Depends on:** Nothing
 
+### Check that a moved Claude runs before saying it moved
+
+**What:** After a move builds the new tab, wait a moment for `terminals()` to show a live terminal whose argv or foreground argv holds `--resume <id>`, and only then post the success toast. When it doesn't show up, post an error toast with the resume command and a click action that resumes it, as a failed move does.
+
+**Why:** The success toast is posted as soon as `herdr-app do` returns. If the resumed Claude then fails to start (a bad option, a missing `claude`), the old tab is already closed, the toast said it moved, and nothing on screen holds the session id: only Claude's `/resume` in the old folder finds the conversation.
+
+**Context:** `mods/move-tab/move.js` posts the notice at the end of `move`. `runsSession` in `mods/move-tab/logic.js` already tells whether a terminal resumes a session, and `resumed` in `move.js` uses it when a launch throws. The wait should be short and bounded, like `PANE_WAIT`, and use `io.sleep` so the fake clock tests it.
+
+**Effort:** S
+**Priority:** P2
+**Depends on:** Nothing
+
+### Clean up the space a failed move opened
+
+**What:** When a move opened a space with `space.new` and the build then fails, close that space (or say in the error toast that it was left behind).
+
+**Why:** `space.new` runs only after every Claude has ended. A failure after it leaves a new space holding Herdr's first shell tab, which the person didn't ask for and has to close by hand.
+
+**Context:** `mods/move-tab/move.js` keeps the new space in `into` and its first tab in `extra`, and closes `extra` only after the build. Closing the space in the failure path must not touch a space the move didn't open, nor one where a Claude was started or may have started (`run.started`, `run.unsure`), since closing it would end that Claude.
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** Nothing
+
+### A kit row for popup lists
+
+**What:** A row component in `kit/kit.js` (icon, label, optional detail, selected state), shown in the kit's gallery, and used by Move tab's popup and the Command Center's profile popup.
+
+**Why:** AGENTS.md puts a component in the kit as soon as a second mod would draw the same thing. Both rows are an `h_flex` with an icon, a label, 8px side padding, an 8px gap, rounded corners and a `hover` background.
+
+**Context:** `row` in `mods/move-tab/main.js` uses the kit's tokens (`CONTROL.large`, `RADIUS.control`, `TEXT.sm`) and marks the selected row with `selected`. `profileView` in `mods/command-center/column.js` (the row at line 437) uses fixed sizes (28px high, radius 4) and marks the chosen row with an `accent` check, so the component needs both kinds of selected state. Kept out of the move-tab branch so that branch stays on moving tabs.
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** Nothing
+
 ## Completed
 
 ### Confirm the first real Herdr update
