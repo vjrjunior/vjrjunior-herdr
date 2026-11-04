@@ -107,6 +107,7 @@ const ADOPTERS = [
   "mods/command-center/logic.js",
   "mods/spaces-tree/main.js",
   "mods/markdown/main.js",
+  "mods/move-tab/main.js",
 ];
 
 for (const file of ADOPTERS) {
