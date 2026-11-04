@@ -427,6 +427,7 @@ describe("move-tab", () => {
       expect(text).toContain('.when(shared("move-tab.drag")?.moving === true && shared("move-tab.drag")?.tab === c.id, (el) => el.opacity(0.45))');
       expect(text).toContain('.when(shared("move-tab.drag")?.moving === true && shared("move-tab.drag")?.tab !== c.id && this.target === i, (el) => el.border_color(t.accent))');
       expect(text).toContain('.on_hover((on, cx) => { if (on) this.target = i; else if (this.target === i) this.target = null; if (shared("move-tab.drag")?.moving) cx.notify(); })');
+      expect(text).toContain('.when(shared("move-tab.drag")?.tab != null && this.pressed !== null, (el) => el.cursor_grabbing())');
       const look = text.indexOf(".when(shared(\"move-tab.drag\")?.moving === true && shared(\"move-tab.drag\")?.tab === c.id");
       expect(look).toBeGreaterThan(-1);
       expect(look).toBeLessThan(text.indexOf("this.pressed = i; this.from = e.position;"));

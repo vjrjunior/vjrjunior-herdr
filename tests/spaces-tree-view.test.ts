@@ -509,5 +509,17 @@ describe("tab drops", () => {
       expect(dashedRows()).toEqual([]);
       expect(litRows(view)).toEqual([]);
     });
+
+    test("the tree shows the grabbing cursor only while a tab is being dragged", () => {
+      const view = dropSetup();
+      const grabbing = () => view.render().calls.some(([name]) => name === "cursor_grabbing");
+      expect(grabbing()).toBe(false);
+      app.shared[DRAG] = drag();
+      expect(grabbing()).toBe(false);
+      app.shared[DRAG] = { ...drag(), moving: true };
+      expect(grabbing()).toBe(true);
+      app.shared[DRAG] = null;
+      expect(grabbing()).toBe(false);
+    });
   });
 });

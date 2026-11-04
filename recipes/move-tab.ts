@@ -18,7 +18,8 @@ const TAB_LOOK =
   `.on_hover((on, cx) => { if (on) this.target = i; else if (this.target === i) this.target = null; if (${DRAG}?.moving) cx.notify(); })`;
 const BAR_MOVE =
   `.on_mouse_move((e) => { const drag = ${DRAG}; if (this.pressed === null || !drag || drag.moving || !this.from) return; ` +
-  `if (Math.hypot(e.position.x - this.from.x, e.position.y - this.from.y) > ${LIFT_PX}) setShared("move-tab.drag", { ...drag, moving: true }); })`;
+  `if (Math.hypot(e.position.x - this.from.x, e.position.y - this.from.y) > ${LIFT_PX}) setShared("move-tab.drag", { ...drag, moving: true }); })` +
+  `.when(${DRAG}?.tab != null && this.pressed !== null, (el) => el.cursor_grabbing())`;
 
 export const moveTab: Recipe = {
   name: "move-tab",
