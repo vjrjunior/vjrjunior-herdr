@@ -56,10 +56,15 @@ async function move(request, io, run) {
     if (!part.launch.argv) return refused(REASONS.session(part.where));
   }
 
+  let sheltered = false;
   for (const claude of parts.filter((part) => part.kind === "claude")) {
     const now = await readPane(claude.block, claude.where, io);
     const reason = now.reason ?? (now.pid === claude.pid && now.session === claude.session ? null : REASONS.session(claude.where));
     if (reason) return run.ended.length > 0 ? failed(reason, run) : refused(reason);
+    if (claude.own && !sheltered && io.spaces().find((candidate) => candidate.id === space.id)?.tabs.length === 1) {
+      await io.act("tab.new", { space: space.id, folder: source.path });
+      sheltered = true;
+    }
     if (!(await ended(claude.pid, io))) return failed(`Claude in ${claude.where} didn't exit, so nothing moved.`, run);
     run.ended.push(claude);
   }
@@ -94,7 +99,7 @@ async function move(request, io, run) {
   if (extra) await io.act("tab.close", { id: extra, confirmed: true });
   const old = io.spaces().find((candidate) => candidate.id === space.id);
   if (old?.tabs.some((candidate) => candidate.id === tab.id)) {
-    if (old.tabs.length === 1) await io.act("tab.new", { space: space.id, folder: source.path });
+    if (old.tabs.length === 1 && !sheltered) await io.act("tab.new", { space: space.id, folder: source.path });
     await io.act("tab.close", { id: tab.id, confirmed: true });
   }
   await io.act("space.select", { id: into });
@@ -109,13 +114,14 @@ async function readPane(block, where, io) {
   const info = await io.get(address);
   if (!info) return { reason: REASONS.gone() };
   if (isClaude(info)) {
+    if (info.parent != null) return { reason: REASONS.subagent(where) };
     const state = info.status?.state;
     if (state === "working" || state === "blocked") return { reason: REASONS[state](where) };
     if (io.terminals().some((terminal) => terminal.parent === address && terminal.state === "live")) return { reason: REASONS.subagents(where) };
     const pid = info.foreground.pid;
     const found = await io.session(pid);
     if (!found) return { reason: REASONS.session(where) };
-    return { kind: "claude", block, address, where, pid, session: found.session, cwd: found.cwd, args: keepArgs(info.foreground.argv ?? []) };
+    return { kind: "claude", block, address, where, pid, own: info.pid === pid, session: found.session, cwd: found.cwd, args: keepArgs(info.foreground.argv ?? []) };
   }
   if (atShell(info)) return { kind: "shell", where, cwd: info.cwd ?? info.foreground?.cwd ?? null };
   const pane = io.panes().find((candidate) => candidate.terminal === address);

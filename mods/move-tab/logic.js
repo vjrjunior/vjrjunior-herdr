@@ -21,6 +21,7 @@ export const REASONS = {
   blocked: (where) => `Claude is waiting for you in ${where}.`,
   busy: (program, where) => `${program} is running in ${where}.`,
   subagents: (where) => `Claude has sub-agents running in ${where}.`,
+  subagent: (where) => `Claude in ${where} is another agent's sub-agent.`,
   session: (where) => `Couldn't find Claude's conversation in ${where}.`,
   remote: () => "Tabs on other machines can't move yet.",
   repo: () => "This tab isn't in a git repo.",

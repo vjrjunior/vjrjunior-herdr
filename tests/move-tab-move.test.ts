@@ -23,6 +23,7 @@ const secondInfo = (state = "idle") => ({
   foreground: { pid: 21, argv: ["claude", "--effort", "high"], cwd: "/r/main/api", name: "2.1.318" },
   status: { app: "claude-code", state },
 });
+const ownInfo = () => ({ ...claudeInfo(), pid: 11 });
 const shellInfo = (pid: number, cwd: string) => ({ pid, cwd, foreground: { pid, argv: ["-zsh"], cwd, name: "zsh" } });
 const block = (pane: string, terminal: string) => ({ type: "block", id: pane, content: { terminal } });
 const pane = (id: string, terminal: string, tab: string, cwd: string, program: string) => ({ pane: id, terminal, tab, title: program, cwd, program: { name: program } });
@@ -208,6 +209,14 @@ describe("moveTab", () => {
     expect(result).toEqual({ moved: true });
   });
 
+  test("refuses a Claude that is another agent's sub-agent", async () => {
+    const { io, notice, result } = await move(world({ infos: { t1: { ...claudeInfo(), parent: "t4" } } }));
+    expect(io.log).toEqual([]);
+    expect(notice).toEqual({ title: "Can't move this tab", body: "Claude in this tab is another agent's sub-agent.", level: "warning" });
+    expect(result).toEqual({ moved: false });
+    expect((await move(world({ infos: { t1: { ...claudeInfo(), parent: null } } }))).result).toEqual({ moved: true });
+  });
+
   test("checks each Claude again right before ending it", async () => {
     const working = await move(world({ infos: { t1: [claudeInfo(), claudeInfo("working")] } }));
     expect(working.io.log).toEqual([]);
@@ -311,6 +320,40 @@ describe("moveTab", () => {
       { name: "space.select", args: { id: "s2" } },
       { name: "tab.select", args: { id: "tb10" } },
     ]);
+  });
+
+  test("gives the old space a shell before ending a Claude that would close its only tab", async () => {
+    const w = world({ infos: { t1: ownInfo() }, onSignal: (current: any) => (current.spaces[0].tabs = [tabInfo("tb10", 2)]) });
+    w.spaces[0].tabs = [tabInfo("tb1", 1)];
+    const { io, acts, result } = await move(w);
+    expect(acts).toEqual([
+      { name: "tab.new", args: { space: "s1", folder: "/r/main" } },
+      { name: "tab.new", args: { space: "s2", folder: "/r/wt", argv: ARGV } },
+      { name: "space.select", args: { id: "s2" } },
+      { name: "tab.select", args: { id: "tb11" } },
+    ]);
+    expect(io.log.findIndex((line) => line.startsWith("act tab.new"))).toBeLessThan(io.log.indexOf("signal 11"));
+    expect(result).toEqual({ moved: true });
+  });
+
+  test("a shell made before the signal is the old space's only new shell", async () => {
+    const w = world({ infos: { t1: ownInfo() } });
+    w.spaces[0].tabs = [tabInfo("tb1", 1)];
+    const { acts } = await move(w);
+    expect(acts).toEqual([
+      { name: "tab.new", args: { space: "s1", folder: "/r/main" } },
+      { name: "tab.new", args: { space: "s2", folder: "/r/wt", argv: ARGV } },
+      { name: "tab.close", args: { id: "tb1", confirmed: true } },
+      { name: "space.select", args: { id: "s2" } },
+      { name: "tab.select", args: { id: "tb11" } },
+    ]);
+  });
+
+  test("a Claude that is its terminal's own process in a space with other tabs gets no early shell", async () => {
+    const { io, acts } = await move(world({ infos: { t1: ownInfo() } }));
+    expect(io.log[0]).toBe("signal 11");
+    expect(acts.map((act) => act.name)).toEqual(["tab.new", "tab.close", "space.select", "tab.select"]);
+    expect(acts[0].args.space).toBe("s2");
   });
 
   test("skips closing an old tab that left with its Claude", async () => {
