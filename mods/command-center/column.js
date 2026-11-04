@@ -473,7 +473,7 @@ export function shotView(view, lane, t) {
         .text_size(12)
         .child(div().text_color(t.foreground).child(shot?.file ?? "No screenshot"))
         .child(div().flex_1().text_color(t.unknown).child(shots.length ? `${view.index + 1} of ${shots.length} · arrow keys to move · Esc to close` : ""))
-        .child(iconButton("close", { icon: "x", bordered: false, size: CONTROL.small, stop: true, onClick: () => view.key("escape") }, t)),
+        .child(iconButton("close", { icon: "x", tooltip: "Close", bordered: false, size: CONTROL.small, stop: true, onClick: () => view.key("escape") }, t)),
     )
     .child(h_flex().flex_1().min_h(0).items_center().justify_center().p(12).bg(t.background ?? t.chrome).when(Boolean(shot), (el) => el.child(image(shot.image).size_full())))
     .child(div().flex_none().px(12).py(10).border_t(1).border_color(t.border).text_size(12).child(shot?.caption ?? ""));

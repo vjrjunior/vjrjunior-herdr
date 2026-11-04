@@ -814,6 +814,8 @@ describe("manual checks in the column", () => {
     expect(svgs(pathTo(root, "check-pass-D02")?.at(-1) as Node)).toContain("mods/kit/icons/check.svg");
     expect(svgs(pathTo(root, "check-fail-D02")?.at(-1) as Node)).toContain("mods/kit/icons/x.svg");
     expect(texts(root)).toContain("asking");
+    const asking = walk(root).find((n) => n.texts.includes("asking")) as Node;
+    expect(asking.kids.some((kid) => kid.calls.some(([c, a]) => c === "size" && a[0] === 7) && kid.calls.some(([c]) => c === "bg"))).toBe(true);
     expect(texts(root)).toContain("passed");
     expect(texts(root)).toContain("pending");
     expect(texts(root).join("")).not.toMatch(/[\u2713\u25cf\u25cb\u2197]/);
@@ -901,6 +903,7 @@ describe("shot window", () => {
     const view = new CommandCenter();
     view.init(propsNow, cx);
     expect(svgs(pathTo(view.render(), "close")?.at(-1) as Node)).toEqual(["mods/kit/icons/x.svg"]);
+    expect(called(pathTo(view.render(), "close")?.at(-1) as Node, "tooltip")).toEqual([["Close"]]);
     expect(texts(view.render()).join("")).not.toMatch(/[\u2715\u2190]/);
   });
 });

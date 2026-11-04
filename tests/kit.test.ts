@@ -116,3 +116,15 @@ test("a button's text size follows its height", () => {
   expect(size(28)).toEqual([[11.5]]);
   expect(size()).toEqual([[11]]);
 });
+
+test("an icon button without a tooltip makes no tooltip call", () => {
+  const node = iconButton("i", { icon: "x", onClick() {} }, t);
+  expect(own(node, "tooltip")).toEqual([]);
+  expect(own(iconButton("i", { icon: "x", tooltip: "Close", onClick() {} }, t), "tooltip")).toEqual([["Close"]]);
+});
+
+test("a button without a label adds no text child", () => {
+  const node = button("b", { icon: "plus", onClick() {} }, t);
+  expect(node.texts).toEqual([]);
+  expect(svgs(node)).toEqual(["mods/kit/icons/plus.svg"]);
+});

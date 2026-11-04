@@ -79,7 +79,7 @@ export function button(id, { label, icon: iconName, variant = "outline", color, 
     .when(full, (el) => el.w_full().justify_center())
     .on_click((_e, cx) => onClick?.(cx))
     .when(iconName != null, (el) => el.child(icon(iconName, { size: ICON_SIZE.md, color: textColor })))
-    .child(label)
+    .when(label != null, (el) => el.child(label))
     .when(hint != null, (el) => el.child(div().text_color(t.unknown).child(hint)));
 }
 
@@ -94,7 +94,7 @@ export function iconButton(id, { icon: iconName, tooltip, color, size = CONTROL.
     .rounded(RADIUS.control)
     .when(bordered, (el) => el.border_1().border_color(t.input))
     .hover((s) => s.bg(t.hover))
-    .tooltip(tooltip)
+    .when(tooltip != null, (el) => el.tooltip(tooltip))
     .when(stop, (el) => el.on_mouse_down("left", (_e, cx) => cx.stop_propagation()))
     .on_click((_e, cx) => {
       if (stop) cx.stop_propagation();
