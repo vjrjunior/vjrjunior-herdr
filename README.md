@@ -139,6 +139,18 @@ herdr-app do pane.split --direction right --mod vjr-markdown --props '{"file":"/
 
 In the square layout the mod is `vjr-square-markdown`. The pane reads the file again when it changes and hides front matter. A link to another `.md` opens in the same pane, with `Back` (an outline button with an arrow) to return; web links open in the browser and other files in their own app. The header's right side has two buttons: Zed, an outline button with a gray Zed icon and the name, opens the file in Zed, and Reload, an icon button with a tooltip, reads it again. It reads only the file it shows and the files it links to, runs `open` and `zed`, and never reaches the network.
 
+### Move tab
+
+Right-click a tab and pick `Move to…` to send it to another checkout of its repo: the main checkout, or a worktree, open as a space or not. The tab's Claude Code conversation is ended and resumed there with `claude --resume`, with the same options and a note that its folder changed. A shell with nothing running gets a new shell in the matching folder (`src/app` in the main checkout is `src/app` in the worktree), and a mod pane such as the Markdown viewer opens again with its props. Splits keep their shape, not their sizes. The tab shows up in the target space, selected, and the old space stays open: when the tab was its only one, the space gets a new tab with a shell at its checkout's root. A worktree with no space gets one first.
+
+The mod is installed as `vjr-move-tab` in `vjr-desk` and `vjr-square-move-tab` in `vjr-desk-square`, with a copy of Herdr's menu that holds the item (`vjr-menu` and `vjr-square-menu`). The copy of the mod that runs the move is an invisible floating block, so a move outlives the popup that asked for it.
+
+It reads Herdr's live data (spaces, panes, terminals), `~/.claude/sessions/<pid>.json` for each Claude's current conversation and Herdr's document through `doc.get`, which it never writes. It runs `git`, `ps`, `kill`, `test`, `hc` and `herdr-app do`, plus `sh` only to pipe into `hc connect`. It never reaches the network.
+
+It refuses, with a toast that says why, when Claude is working or waiting for you, when anything other than Claude, an idle shell or a mod runs in a pane (the toast names the program), when Claude has sub-agents, or when the tab is on another machine or not in a git repo. Claude's own background processes end with it.
+
+The transcript stays under the first folder's project in `~/.claude/projects/`, so `claude --resume <id>` works anywhere, but the worktree's own `/resume` picker may not list the conversation. A tab can't be dragged onto a space yet. [`mods/move-tab/RECIPE.md`](mods/move-tab/RECIPE.md) describes it in full.
+
 ## Kit
 
 `kit/kit.js` is the UI kit of this repo's mods: tokens (sizes, text, radii), components (`button`, `iconButton`, `link`, `chip`, `pill`, `card`, `heading`, `line`, `mark`, `statusDot`, `stepNode`, `icon`) and the SVG icons in `kit/icons/`. A mod imports it as `../../kit/kit.js`, and `apply-layout` copies `kit.js` into each installed mod that imports it. The icons are installed once per layout, in the `kit` mod's `icons/` folder, where the kit reads them. A layout whose mods use the kit must include the `kit` recipe; the generator refuses otherwise. Today the Command Center, the Spaces tree and the Markdown viewer use it.

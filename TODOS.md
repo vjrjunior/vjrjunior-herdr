@@ -86,6 +86,30 @@
 **Priority:** P3
 **Depends on:** Nothing
 
+### A toast for a move cut off by a layout switch or restart
+
+**What:** When a layout switch or an app restart cancels a Move tab in the middle, show a toast that gives the Claude's resume command.
+
+**Why:** The worker's task is cancelled with the move, and the session id is lost with it, so a Claude that already ended gets no notice and no way back besides `/resume`.
+
+**Context:** `mods/move-tab/move.js` keeps the ended Claudes in `run.ended`, in memory only. Writing each one to shared state or a terminal label before ending it would let the next copy of the worker find it and post the toast.
+
+**Effort:** S
+**Priority:** P2
+**Depends on:** Nothing
+
+### Scroll the selected row into view in the Move to popup
+
+**What:** Make the arrow keys in the `Move to…` popup scroll the selected row into view when the list is longer than the popup.
+
+**Why:** The selection moves past the bottom edge and the person can't see which row Enter will pick.
+
+**Context:** `mods/move-tab/main.js` keeps the selection in `this.at` and draws the rows in an `overflow_y_scrollbar()` list. The kit's d.ts shows what a scroll handle offers.
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** Nothing
+
 ## Completed
 
 ### Confirm the first real Herdr update
