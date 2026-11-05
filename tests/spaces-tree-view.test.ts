@@ -615,10 +615,21 @@ describe("the active space", () => {
     expect(row.kids.indexOf(box as Node)).toBe(0);
     const ring = row.kids.find((kid) => style(kid, "size")?.[0] === 14) as Node;
     expect([style(ring, "left"), style(ring, "top"), style(ring, "border_color")]).toEqual([[29], [10], [color]]);
-    expect(ring.kids.map((kid) => style(kid, "size")?.[0])).toEqual([7]);
+    expect(ring.kids.map((kid) => style(kid, "size")?.[0])).toEqual([6]);
     expect(style(rowOf(view, "kid-k"), "pl")).toEqual([52]);
     expect(marks(rowOf(view, "kid-k"))).toEqual([]);
     expect(rowOf(view, "kid-k").kids.some((kid) => style(kid, "size")?.[0] === 10 && style(kid, "left")?.[0] === 31 && style(kid, "top")?.[0] === 12)).toBe(true);
+  });
+
+  test("the ring's center takes the space's color while idle and the status color otherwise", () => {
+    const view = treeWith("o");
+    const color = colorOf(rowOf(view, `head-${common}`));
+    const center = () => (rowOf(view, "kid-o").kids.find((kid) => style(kid, "size")?.[0] === 14) as Node).kids[0] as Node;
+    expect(style(center(), "bg")).toEqual([color]);
+    for (const status of ["idle", "working", "blocked", "done"]) {
+      app.spaces = app.spaces.map((one) => (one.id === "o" ? { ...one, status } : one));
+      expect(style(center(), "bg")).toEqual([status === "idle" ? color : `#${status}`]);
+    }
   });
 
   test("hovering a worktree shows the same box in its space's tint, with no border", () => {

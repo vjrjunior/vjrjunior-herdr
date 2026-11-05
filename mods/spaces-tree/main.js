@@ -446,7 +446,7 @@ export default class SpacesTree extends View {
       .border_color(color)
       .items_center()
       .justify_center()
-      .child(div().size(7).rounded(3.5).bg(t[row.status] ?? t.dim));
+      .child(div().size(6).rounded(3).bg((row.status && row.status !== "idle" && t[row.status]) || color));
   }
 
   headRow(entry, row, t, rail, flat = false) {
