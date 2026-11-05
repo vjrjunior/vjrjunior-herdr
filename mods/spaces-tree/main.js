@@ -436,17 +436,16 @@ export default class SpacesTree extends View {
   }
 
   ring(row, color, t) {
-    return h_flex()
-      .absolute()
-      .left(NODE - 2)
-      .top(TIE - 7)
-      .size(14)
-      .rounded(7)
-      .border(2)
-      .border_color(color)
-      .items_center()
-      .justify_center()
-      .child(div().size(6).rounded(3).bg((row.status && row.status !== "idle" && t[row.status]) || color));
+    return [
+      div().absolute().left(NODE - 2).top(TIE - 7).size(14).rounded(7).border(1.5).border_color(color).bg(t.chrome),
+      div()
+        .absolute()
+        .left(NODE + 2)
+        .top(TIE - 3)
+        .size(6)
+        .rounded(3)
+        .bg((row.status && row.status !== "idle" && t[row.status]) || color),
+    ];
   }
 
   headRow(entry, row, t, rail, flat = false) {
@@ -582,7 +581,7 @@ export default class SpacesTree extends View {
       .when(Boolean(row.space), (el) => el.on_mouse_down("right", () => this.menu(row.space)))
       .when(!last, (el) => el.child(div().absolute().left(RAIL).top(above ? 0 : TIE).w(1.5).h(above ? height : height - TIE).bg(above ? color : rail)))
       .child(div().absolute().left(RAIL).top(0).h(TIE).w(13).border_l(1.5).border_b(1.5).border_color(selected ? color : rail).rounded_bl(9))
-      .child(selected ? this.ring(row, color, t) : this.node(row, rail, t))
+      .children(selected ? this.ring(row, color, t) : [this.node(row, rail, t)])
       .children(this.kidLines(row, lane, t));
     return this.pointer(el, row, this.dropFor(entry, row), t, { hover: (on, cx) => this.hoverKid(row.key, on, cx) });
   }
