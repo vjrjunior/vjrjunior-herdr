@@ -51,7 +51,6 @@ function findNode(node, id) {
 
 const alpha = (color, value) => (/^#[0-9a-f]{6}$/i.test(color) ? `${color}${value}` : color);
 const faded = (color) => alpha(color, "B3");
-const tint = (color) => alpha(color, "1F");
 const git = (args, cwd) => exec("git", ["--no-optional-locks", "-c", "core.fsmonitor=false", ...args], { cwd });
 
 export default class SpacesTree extends View {
@@ -409,19 +408,11 @@ export default class SpacesTree extends View {
   }
 
   frame(color) {
-    return div().absolute().left(0).right(0).top(0).bottom(0).rounded(8).border_1().border_color(faded(color));
+    return div().absolute().left(0).right(0).top(0).bottom(0).rounded(8).border_1().border_color(color);
   }
 
-  box(left, right, selected, color) {
-    return div()
-      .absolute()
-      .left(left)
-      .right(right)
-      .top(2)
-      .bottom(2)
-      .rounded(7)
-      .bg(tint(color))
-      .when(selected, (el) => el.border_1().border_color(faded(color)));
+  box(left, right, t) {
+    return div().absolute().left(left).right(right).top(2).bottom(2).rounded(7).bg(t.hover);
   }
 
   node(row, rail, t) {
@@ -437,7 +428,7 @@ export default class SpacesTree extends View {
 
   ring(row, color, t) {
     return [
-      div().absolute().left(NODE - 2).top(TIE - 7).size(14).rounded(7).border(1.5).border_color(color).bg(t.chrome),
+      div().absolute().left(NODE - 2).top(TIE - 7).size(14).rounded(7).border(1.5).border_color(color).bg(t.raised),
       div()
         .absolute()
         .left(NODE + 2)
@@ -452,8 +443,6 @@ export default class SpacesTree extends View {
     const repo = entry.kind === "repo";
     const folded = isFolded(this.folded(), entry);
     const selected = Boolean(row.space?.active) || (folded && holdsActive(entry));
-    const parent = !selected && repo && holdsActive(entry);
-    const color = this.fill(row.space, t);
     const adding = repo && this.hovered === entry.key;
     const summary = folded ? foldedTail(entry) : null;
     const branch = summary ? "" : branchLabel(row);
@@ -481,14 +470,12 @@ export default class SpacesTree extends View {
       .flex_none()
       .px(flat ? 10 : 8)
       .when(!flat, (el) => el.rounded(8))
-      .when(selected, (el) => el.bg(tint(color)))
       .when(!selected, (el) => el.hover((s) => s.bg(t.hover)))
       .when(index < 0, (el) => el.on_click(() => this.open(row)))
       .when(index >= 0, (el) => this.draggable(el, index, t))
       .when(Boolean(row.space), (el) => el.on_mouse_down("right", () => this.menu(row.space)))
       .when(Boolean(rail), (el) => el.child(div().absolute().left(RAIL).top(bottom).w(1.5).h(height - bottom).bg(rail)))
-      .when(Boolean(status) && flat, (el) => el.child(this.bar(status, t, height)))
-      .when(!flat && (selected || parent), (el) => el.child(this.frame(color)));
+      .when(Boolean(status) && flat, (el) => el.child(this.bar(status, t, height)));
     const events = { hover: (on, cx) => this.hover(entry.key, on, cx), ...(index >= 0 ? this.reorder(row, index, all) : {}) };
     return this.pointer(el, row, this.dropFor(entry, row), t, events);
   }
@@ -557,7 +544,8 @@ export default class SpacesTree extends View {
   }
 
   kidLines(row, lane, t) {
-    const line = h_flex().h(LINE).flex_none().gap(8).items_center().child(this.name(row, t)).when(Boolean(counts(row)), (el) => el.child(this.note(counts(row), t)));
+    const name = this.name(row, t).when(row.open && !row.space?.active, (el) => el.text_color(t.muted));
+    const line = h_flex().h(LINE).flex_none().gap(8).items_center().child(name).when(Boolean(counts(row)), (el) => el.child(this.note(counts(row), t)));
     return lane ? [line, lane.sub] : [line];
   }
 
@@ -576,7 +564,7 @@ export default class SpacesTree extends View {
       .pr(8)
       .justify_center()
       .rounded(8)
-      .when(selected || hovered, (el) => el.child(this.box(BOX, 0, selected, color)))
+      .when(hovered, (el) => el.child(this.box(BOX, 0, t)))
       .on_click(() => this.open(row))
       .when(Boolean(row.space), (el) => el.on_mouse_down("right", () => this.menu(row.space)))
       .when(!last, (el) => el.child(div().absolute().left(RAIL).top(above ? 0 : TIE).w(1.5).h(above ? height : height - TIE).bg(above ? color : rail)))
@@ -587,15 +575,25 @@ export default class SpacesTree extends View {
   }
 
   graphEntry(entry, t) {
-    if (entry.kind === "plain") return [this.headRow(entry, entry.row, t, null)];
-    const kids = isFolded(this.folded(), entry) ? [] : entry.kids;
+    const kids = entry.kind === "repo" && !isFolded(this.folded(), entry) ? entry.kids : [];
+    const rows = entry.kind === "plain" ? [this.headRow(entry, entry.row, t, null)] : this.repoRows(entry, kids, t);
+    return v_flex()
+      .id(`group-${entry.key}`)
+      .relative()
+      .flex_none()
+      .when(holdsActive(entry), (el) => el.bg(t.raised).rounded(8).when(kids.length > 0, (el) => el.pb(6)))
+      .children(rows)
+      .when(holdsActive(entry), (el) => el.child(this.frame(t.dim)));
+  }
+
+  repoRows(entry, kids, t) {
     const color = this.fill(entry.main.space, t);
     const active = kids.findIndex((row) => row.space?.active);
     const rail = active >= 0 ? color : faded(color);
     return [this.headRow(entry, entry.main, t, kids.length ? rail : null), ...kids.map((row, index) => this.graphKid(entry, row, t, color, index === kids.length - 1, index < active))];
   }
 
-  blockKid(entry, row, t, color) {
+  blockKid(entry, row, t) {
     const selected = Boolean(row.space?.active);
     const hovered = !selected && this.kidHover === row.key;
     const lane = this.laneLine(row, t);
@@ -608,7 +606,7 @@ export default class SpacesTree extends View {
       .pl(40)
       .pr(10)
       .justify_center()
-      .when(selected || hovered, (el) => el.child(this.box(30, 6, selected, color)))
+      .when(hovered, (el) => el.child(this.box(30, 6, t)))
       .on_click(() => this.open(row))
       .when(Boolean(row.space), (el) => el.on_mouse_down("right", () => this.menu(row.space)))
       .when(row.open && Boolean(row.status), (el) => el.child(this.bar(row.status, t, height)))
@@ -619,19 +617,18 @@ export default class SpacesTree extends View {
   blockEntry(entry, t) {
     const row = entry.kind === "repo" ? entry.main : entry.row;
     const kids = entry.kind === "repo" && !isFolded(this.folded(), entry) ? entry.kids : [];
-    const color = this.fill(row.space, t);
     return v_flex()
       .id(`block-${entry.key}`)
       .flex_none()
       .mb(6)
       .overflow_hidden()
-      .bg(t.surface)
+      .bg(holdsActive(entry) ? t.raised : t.surface)
       .border_1()
-      .border_color(holdsActive(entry) ? faded(color) : t.border)
+      .border_color(holdsActive(entry) ? t.dim : t.border)
       .rounded(10)
       .child(this.headRow(entry, row, t, null, true))
       .when(kids.length > 0, (el) => el.child(div().h(1).flex_none().bg(t.border)))
-      .children(kids.map((kid) => this.blockKid(entry, kid, t, color)));
+      .children(kids.map((kid) => this.blockKid(entry, kid, t)));
   }
 
   header(t, narrow) {
@@ -696,7 +693,7 @@ export default class SpacesTree extends View {
             this.endDrag();
             cx.notify();
           })
-          .children(narrow ? this.compactRows(entries, t) : entries.flatMap((entry) => (blocks ? [this.blockEntry(entry, t)] : this.graphEntry(entry, t)))),
+          .children(narrow ? this.compactRows(entries, t) : entries.map((entry) => (blocks ? this.blockEntry(entry, t) : this.graphEntry(entry, t)))),
       );
   }
 }

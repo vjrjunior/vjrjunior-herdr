@@ -557,34 +557,49 @@ describe("the active space", () => {
   const rail = (row: Node) => row.kids.find((kid) => style(kid, "w")?.[0] === 1.5) as Node;
   const elbow = (row: Node) => row.kids.find((kid) => has(kid, "border_l")) as Node;
 
-  test("the active top-level space is tinted and bordered in its own color, not gray", () => {
-    const view = treeWith("x");
-    const row = rowOf(view, "head-x");
-    const color = colorOf(row);
-    const [mark] = marks(row);
-    expect(style(row, "bg")).toEqual([`${color}1F`]);
-    expect(has(mark as Node, "border_1")).toBe(true);
-    expect(style(mark as Node, "border_color")).toEqual([`${color}B3`]);
-    expect(style(mark as Node, "bg")).toBeUndefined();
-    expect(has(row, "hover")).toBe(false);
-    expect(marks(rowOf(view, `head-${common}`))).toEqual([]);
-  });
+  const groupOf = (view: { render(): Node }, key: string) => pathTo(view.render(), `group-${key}`)?.at(-1) as Node;
 
-  test("the repository of the active worktree gets the border and no tint", () => {
-    const row = rowOf(treeWith("o"), `head-${common}`);
-    const color = colorOf(row);
-    const [mark] = marks(row);
-    expect(style(mark as Node, "border_color")).toEqual([`${color}B3`]);
-    expect(style(mark as Node, "bg")).toBeUndefined();
-    expect(has(row, "bg")).toBe(false);
-  });
-
-  test("a folded repository holding the active worktree is tinted like an active space", () => {
+  test("only the group holding the active space is raised, padded below when it shows worktrees", () => {
+    for (const [active, raised, padded] of [["x", "x", false], ["o", common, true], ["m", common, true], ["k", common, true]] as const) {
+      const view = treeWith(active);
+      const group = groupOf(view, raised);
+      expect([style(group, "bg"), style(group, "pb")]).toEqual([["#raised"], padded ? [6] : undefined]);
+      expect(group.calls.some(([name]) => name === "border_1")).toBe(false);
+      const other = groupOf(view, raised === "x" ? common : "x");
+      expect(style(other, "bg")).toBeUndefined();
+    }
     const view = treeWith("o");
     app.shared["spaces.folded"] = [common];
-    const row = rowOf(view, `head-${common}`);
-    expect(style(row, "bg")).toEqual([`${colorOf(row)}1F`]);
-    expect(marks(row)).toHaveLength(1);
+    expect([style(groupOf(view, common), "bg"), style(groupOf(view, common), "pb")]).toEqual([["#raised"], undefined]);
+  });
+
+  const frameOf = (group: Node) => group.kids.find((kid) => kid.calls.some(([name]) => name === "absolute") && kid.calls.some(([name]) => name === "border_1"));
+
+  test("a dim border wraps the whole group holding the active space, painted over it", () => {
+    for (const [active, key, folded] of [["x", "x", false], ["m", common, false], ["o", common, false], ["k", common, false], ["o", common, true]] as const) {
+      const view = treeWith(active);
+      if (folded) app.shared["spaces.folded"] = [common];
+      const group = groupOf(view, key);
+      const frame = frameOf(group) as Node;
+      expect([style(frame, "left"), style(frame, "right"), style(frame, "top"), style(frame, "bottom"), style(frame, "border_color"), style(frame, "bg")]).toEqual([[0], [0], [0], [0], ["#dim"], undefined]);
+      expect(group.kids.at(-1)).toBe(frame);
+      expect(has(group, "relative")).toBe(true);
+      expect(has(group, "border_1")).toBe(false);
+      const head = rowOf(view, `head-${key}`);
+      expect(marks(head)).toEqual([]);
+      expect(has(head, "bg")).toBe(false);
+      expect(frameOf(groupOf(view, key === "x" ? common : "x"))).toBeUndefined();
+      delete app.shared["spaces.folded"];
+    }
+  });
+
+  test("an active worktree's name is white, the other open ones muted, closed ones as before", () => {
+    const view = treeWith("o");
+    const nameColor = (key: string, text: string) => style(find(rowOf(view, key), (node) => node.texts.includes(text)) as Node, "text_color");
+    expect(nameColor("kid-o", "two")).toEqual(["#foreground"]);
+    expect(nameColor("kid-k", "one")).toEqual(["#muted"]);
+    expect(nameColor("kid-/w/app/three", "three")).toEqual(["#unknown"]);
+    expect(nameColor(`head-${common}`, "app")).toEqual(["#foreground"]);
   });
 
   test("the rail is in full color down to the active worktree and faded after it", () => {
@@ -603,18 +618,17 @@ describe("the active space", () => {
     expect(style(rail(rowOf(idle, "kid-k")), "top")).toEqual([17]);
   });
 
-  test("the active worktree gets a box from its node's center and a ring around its node", () => {
+  test("the active worktree gets no box, only a ring around its node", () => {
     const view = treeWith("o");
     const color = colorOf(rowOf(view, `head-${common}`));
     const row = rowOf(view, "kid-o");
     expect(has(row, "bg")).toBe(false);
-    const [box] = marks(row);
-    expect([style(box as Node, "left"), style(box as Node, "right"), style(box as Node, "top"), style(box as Node, "bottom")]).toEqual([[36], [0], [2], [2]]);
-    expect(style(box as Node, "bg")).toEqual([`${color}1F`]);
-    expect(style(box as Node, "border_color")).toEqual([`${color}B3`]);
-    expect(row.kids.indexOf(box as Node)).toBe(0);
+    expect(marks(row)).toEqual([]);
+    expect(row.kids.some((kid) => kid.calls.some(([name]) => name === "border_1"))).toBe(false);
+    for (const handler of row.handlers.hover ?? []) handler(true, cx);
+    expect(marks(rowOf(view, "kid-o"))).toEqual([]);
     const ring = row.kids.find((kid) => style(kid, "size")?.[0] === 14) as Node;
-    expect([style(ring, "left"), style(ring, "top"), style(ring, "border"), style(ring, "border_color"), style(ring, "bg")]).toEqual([[29], [10], [1.5], [color], ["#chrome"]]);
+    expect([style(ring, "left"), style(ring, "top"), style(ring, "border"), style(ring, "border_color"), style(ring, "bg")]).toEqual([[29], [10], [1.5], [color], ["#raised"]]);
     expect(ring.kids).toEqual([]);
     const dot = row.kids.find((kid) => style(kid, "size")?.[0] === 6) as Node;
     expect([style(dot, "left"), style(dot, "top")]).toEqual([[33], [14]]);
@@ -635,15 +649,14 @@ describe("the active space", () => {
     }
   });
 
-  test("hovering a worktree shows the same box in its space's tint, with no border", () => {
+  test("hovering a worktree shows the box in the same gray as a head row's hover, with no border", () => {
     const view = treeWith("x");
-    const color = colorOf(rowOf(view, `head-${common}`));
     const hover = (on: boolean) => {
       for (const handler of rowOf(view, "kid-k").handlers.hover ?? []) handler(on, cx);
     };
     hover(true);
     const [box] = marks(rowOf(view, "kid-k"));
-    expect([style(box as Node, "left"), style(box as Node, "bg")]).toEqual([[36], [`${color}1F`]]);
+    expect([style(box as Node, "left"), style(box as Node, "bg")]).toEqual([[36], ["#hover"]]);
     expect(has(box as Node, "border_1")).toBe(false);
     expect(has(rowOf(view, "kid-k"), "hover")).toBe(false);
     hover(false);
@@ -653,33 +666,27 @@ describe("the active space", () => {
   describe("blocks", () => {
     const card = (view: { render(): Node }, key: string) => pathTo(view.render(), key)?.find((node) => node.key?.startsWith("block-")) as Node;
 
-    test("the card of the active space takes its faded color as border", () => {
-      const view = treeWith("o");
-      app.shared["spaces.style"] = "blocks";
-      const color = colorOf(rowOf(view, `head-${common}`));
-      expect(style(card(view, `head-${common}`), "border_color")).toEqual([`${color}B3`]);
-      expect(style(card(view, "head-x"), "border_color")).toEqual(["#border"]);
-      expect(has(rowOf(view, `head-${common}`), "bg")).toBe(false);
+    test("the card holding the active space is raised with a dim border; the others keep surface and border", () => {
+      for (const [active, key] of [["x", "head-x"], ["m", `head-${common}`], ["o", `head-${common}`]] as const) {
+        const view = treeWith(active);
+        app.shared["spaces.style"] = "blocks";
+        expect([style(card(view, key), "bg"), style(card(view, key), "border_color")]).toEqual([["#raised"], ["#dim"]]);
+        const other = key === "head-x" ? `head-${common}` : "head-x";
+        expect([style(card(view, other), "bg"), style(card(view, other), "border_color")]).toEqual([["#surface"], ["#border"]]);
+        const row = rowOf(view, key);
+        expect(has(row, "bg")).toBe(false);
+        expect(marks(row)).toEqual([]);
+      }
     });
 
-    test("an active head row is tinted inside its card", () => {
-      const view = treeWith("x");
-      app.shared["spaces.style"] = "blocks";
-      const row = rowOf(view, "head-x");
-      expect(style(row, "bg")).toEqual([`${colorOf(row)}1F`]);
-      expect(marks(row)).toEqual([]);
-    });
-
-    test("the active worktree gets an inset box, and a hovered one the same tint without the border", () => {
+    test("the active worktree gets no box, and a hovered one the hover gray without a border", () => {
       const view = treeWith("o");
       app.shared["spaces.style"] = "blocks";
-      const color = colorOf(rowOf(view, `head-${common}`));
-      const [box] = marks(rowOf(view, "kid-o"));
-      expect([style(box as Node, "left"), style(box as Node, "right"), style(box as Node, "bg"), style(box as Node, "border_color")]).toEqual([[30], [6], [`${color}1F`], [`${color}B3`]]);
+      expect(marks(rowOf(view, "kid-o"))).toEqual([]);
       expect(style(rowOf(view, "kid-k"), "pl")).toEqual([40]);
       for (const handler of rowOf(view, "kid-k").handlers.hover ?? []) handler(true, cx);
       const [hovered] = marks(rowOf(view, "kid-k"));
-      expect([style(hovered as Node, "left"), style(hovered as Node, "bg")]).toEqual([[30], [`${color}1F`]]);
+      expect([style(hovered as Node, "left"), style(hovered as Node, "bg")]).toEqual([[30], ["#hover"]]);
       expect(hovered?.calls.some(([name]) => name === "border_1")).toBe(false);
     });
   });
