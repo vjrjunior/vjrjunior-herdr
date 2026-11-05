@@ -24,12 +24,17 @@ import {
 import { CONTROL, ICON_SIZE, TEXT, iconButton, statusDot, toneColor } from "../../kit/kit.js";
 
 const WAIT = 1500;
-const RAIL = 16.25;
+const RAIL = 18.25;
 const HEAD = 36;
-const TALL = 44;
-const AVATAR = 18;
+const TALL = 48;
+const AVATAR = 22;
+const LINE = 18;
 const SUB = 14;
-const LANE = 42;
+const KID = 34;
+const LANE = 48;
+const TIE = 17;
+const NODE = 31;
+const BOX = 36;
 const MARK = { ansi6: "#22a99a", ansi3: "#e3814f", ansi4: "#5b8def", ansi5: "#8b7cf6", ansi2: "#3fae6a", ansi1: "#d9649a" };
 const NARROW = 160;
 const DRAG = "move-tab.drag";
@@ -44,7 +49,9 @@ function findNode(node, id) {
   return null;
 }
 
-const faded = (color) => (/^#[0-9a-f]{6}$/i.test(color) ? `${color}B3` : color);
+const alpha = (color, value) => (/^#[0-9a-f]{6}$/i.test(color) ? `${color}${value}` : color);
+const faded = (color) => alpha(color, "B3");
+const tint = (color) => alpha(color, "1F");
 const git = (args, cwd) => exec("git", ["--no-optional-locks", "-c", "core.fsmonitor=false", ...args], { cwd });
 
 export default class SpacesTree extends View {
@@ -62,6 +69,7 @@ export default class SpacesTree extends View {
     this.born = {};
     this.opening = {};
     this.hovered = null;
+    this.kidHover = null;
     this.pressed = null;
     this.over = null;
     this.dropOver = null;
@@ -325,6 +333,12 @@ export default class SpacesTree extends View {
     cx.notify();
   }
 
+  hoverKid(key, on, cx) {
+    if (on) this.kidHover = key;
+    else if (this.kidHover === key) this.kidHover = null;
+    cx.notify();
+  }
+
   fill(space, t) {
     if (!space) return t.dim;
     const color = (shared("space.colors") ?? {})[space.id] ?? "ansi6";
@@ -335,11 +349,11 @@ export default class SpacesTree extends View {
     return h_flex()
       .size(AVATAR)
       .flex_none()
-      .rounded(5)
+      .rounded(6)
       .bg(this.fill(row.space, t))
       .items_center()
       .justify_center()
-      .text_size(10.5)
+      .text_size(12)
       .font_bold()
       .text_color("#ffffff")
       .child([...row.name][0]?.toUpperCase() ?? "?");
@@ -394,10 +408,53 @@ export default class SpacesTree extends View {
     return div().absolute().left(0).top(0).w(3).h(height).bg(t[status] ?? t.unknown);
   }
 
+  frame(color) {
+    return div().absolute().left(0).right(0).top(0).bottom(0).rounded(8).border_1().border_color(faded(color));
+  }
+
+  box(left, right, selected, color) {
+    return div()
+      .absolute()
+      .left(left)
+      .right(right)
+      .top(2)
+      .bottom(2)
+      .rounded(7)
+      .bg(tint(color))
+      .when(selected, (el) => el.border_1().border_color(faded(color)));
+  }
+
+  node(row, rail, t) {
+    return div()
+      .absolute()
+      .left(NODE)
+      .top(TIE - 5)
+      .size(10)
+      .rounded(5)
+      .when(row.open, (el) => el.bg(t[row.status] ?? t.dim))
+      .when(!row.open, (el) => el.border(1.5).border_color(rail));
+  }
+
+  ring(row, color, t) {
+    return h_flex()
+      .absolute()
+      .left(NODE - 2)
+      .top(TIE - 7)
+      .size(14)
+      .rounded(7)
+      .border(2)
+      .border_color(color)
+      .items_center()
+      .justify_center()
+      .child(div().size(7).rounded(3.5).bg(t[row.status] ?? t.dim));
+  }
+
   headRow(entry, row, t, rail, flat = false) {
     const repo = entry.kind === "repo";
     const folded = isFolded(this.folded(), entry);
     const selected = Boolean(row.space?.active) || (folded && holdsActive(entry));
+    const parent = !selected && repo && holdsActive(entry);
+    const color = this.fill(row.space, t);
     const adding = repo && this.hovered === entry.key;
     const summary = folded ? foldedTail(entry) : null;
     const branch = summary ? "" : branchLabel(row);
@@ -425,13 +482,14 @@ export default class SpacesTree extends View {
       .flex_none()
       .px(flat ? 10 : 8)
       .when(!flat, (el) => el.rounded(8))
-      .when(selected, (el) => el.bg(t.selected))
+      .when(selected, (el) => el.bg(tint(color)))
       .when(!selected, (el) => el.hover((s) => s.bg(t.hover)))
       .when(index < 0, (el) => el.on_click(() => this.open(row)))
       .when(index >= 0, (el) => this.draggable(el, index, t))
       .when(Boolean(row.space), (el) => el.on_mouse_down("right", () => this.menu(row.space)))
       .when(Boolean(rail), (el) => el.child(div().absolute().left(RAIL).top(bottom).w(1.5).h(height - bottom).bg(rail)))
-      .when(Boolean(status) && flat, (el) => el.child(this.bar(status, t, height)));
+      .when(Boolean(status) && flat, (el) => el.child(this.bar(status, t, height)))
+      .when(!flat && (selected || parent), (el) => el.child(this.frame(color)));
     const events = { hover: (on, cx) => this.hover(entry.key, on, cx), ...(index >= 0 ? this.reorder(row, index, all) : {}) };
     return this.pointer(el, row, this.dropFor(entry, row), t, events);
   }
@@ -500,74 +558,69 @@ export default class SpacesTree extends View {
   }
 
   kidLines(row, lane, t) {
-    const line = h_flex().h(AVATAR).flex_none().gap(8).items_center().child(this.name(row, t)).when(Boolean(counts(row)), (el) => el.child(this.note(counts(row), t)));
+    const line = h_flex().h(LINE).flex_none().gap(8).items_center().child(this.name(row, t)).when(Boolean(counts(row)), (el) => el.child(this.note(counts(row), t)));
     return lane ? [line, lane.sub] : [line];
   }
 
-  graphKid(entry, row, t, rail, last) {
+  graphKid(entry, row, t, color, last, above) {
     const selected = Boolean(row.space?.active);
+    const hovered = !selected && this.kidHover === row.key;
     const lane = this.laneLine(row, t);
-    const height = lane?.height ?? 28;
+    const height = lane?.height ?? KID;
+    const rail = faded(color);
     const el = v_flex()
       .id(`kid-${row.key}`)
       .relative()
       .h(height)
       .flex_none()
-      .pl(46)
+      .pl(52)
       .pr(8)
       .justify_center()
       .rounded(8)
-      .when(selected, (el) => el.bg(t.selected))
-      .when(!selected, (el) => el.hover((s) => s.bg(t.hover)))
+      .when(selected || hovered, (el) => el.child(this.box(BOX, 0, selected, color)))
       .on_click(() => this.open(row))
       .when(Boolean(row.space), (el) => el.on_mouse_down("right", () => this.menu(row.space)))
-      .when(!last, (el) => el.child(div().absolute().left(RAIL).top(14).w(1.5).h(height - 14).bg(rail)))
-      .child(div().absolute().left(RAIL).top(0).h(14).w(13).border_l(1.5).border_b(1.5).border_color(rail).rounded_bl(9))
-      .child(
-        div()
-          .absolute()
-          .left(29)
-          .top(9)
-          .size(10)
-          .rounded(5)
-          .when(row.open, (el) => el.bg(t[row.status] ?? t.dim))
-          .when(!row.open, (el) => el.border(1.5).border_color(rail)),
-      )
+      .when(!last, (el) => el.child(div().absolute().left(RAIL).top(above ? 0 : TIE).w(1.5).h(above ? height : height - TIE).bg(above ? color : rail)))
+      .child(div().absolute().left(RAIL).top(0).h(TIE).w(13).border_l(1.5).border_b(1.5).border_color(selected ? color : rail).rounded_bl(9))
+      .child(selected ? this.ring(row, color, t) : this.node(row, rail, t))
       .children(this.kidLines(row, lane, t));
-    return this.pointer(el, row, this.dropFor(entry, row), t);
+    return this.pointer(el, row, this.dropFor(entry, row), t, { hover: (on, cx) => this.hoverKid(row.key, on, cx) });
   }
 
   graphEntry(entry, t) {
     if (entry.kind === "plain") return [this.headRow(entry, entry.row, t, null)];
     const kids = isFolded(this.folded(), entry) ? [] : entry.kids;
-    const rail = faded(this.fill(entry.main.space, t));
-    return [this.headRow(entry, entry.main, t, kids.length ? rail : null), ...kids.map((row, index) => this.graphKid(entry, row, t, rail, index === kids.length - 1))];
+    const color = this.fill(entry.main.space, t);
+    const active = kids.findIndex((row) => row.space?.active);
+    const rail = active >= 0 ? color : faded(color);
+    return [this.headRow(entry, entry.main, t, kids.length ? rail : null), ...kids.map((row, index) => this.graphKid(entry, row, t, color, index === kids.length - 1, index < active))];
   }
 
-  blockKid(entry, row, t) {
+  blockKid(entry, row, t, color) {
     const selected = Boolean(row.space?.active);
+    const hovered = !selected && this.kidHover === row.key;
     const lane = this.laneLine(row, t);
-    const height = lane?.height ?? 28;
+    const height = lane?.height ?? KID;
     const el = v_flex()
       .id(`kid-${row.key}`)
       .relative()
       .h(height)
       .flex_none()
-      .pl(36)
+      .pl(40)
       .pr(10)
       .justify_center()
-      .when(selected, (el) => el.bg(t.selected))
-      .when(!selected, (el) => el.hover((s) => s.bg(t.hover)))
+      .when(selected || hovered, (el) => el.child(this.box(30, 6, selected, color)))
       .on_click(() => this.open(row))
       .when(Boolean(row.space), (el) => el.on_mouse_down("right", () => this.menu(row.space)))
       .when(row.open && Boolean(row.status), (el) => el.child(this.bar(row.status, t, height)))
       .children(this.kidLines(row, lane, t));
-    return this.pointer(el, row, this.dropFor(entry, row), t);
+    return this.pointer(el, row, this.dropFor(entry, row), t, { hover: (on, cx) => this.hoverKid(row.key, on, cx) });
   }
 
   blockEntry(entry, t) {
     const row = entry.kind === "repo" ? entry.main : entry.row;
     const kids = entry.kind === "repo" && !isFolded(this.folded(), entry) ? entry.kids : [];
+    const color = this.fill(row.space, t);
     return v_flex()
       .id(`block-${entry.key}`)
       .flex_none()
@@ -575,11 +628,11 @@ export default class SpacesTree extends View {
       .overflow_hidden()
       .bg(t.surface)
       .border_1()
-      .border_color(t.border)
+      .border_color(holdsActive(entry) ? faded(color) : t.border)
       .rounded(10)
       .child(this.headRow(entry, row, t, null, true))
       .when(kids.length > 0, (el) => el.child(div().h(1).flex_none().bg(t.border)))
-      .children(kids.map((kid) => this.blockKid(entry, kid, t)));
+      .children(kids.map((kid) => this.blockKid(entry, kid, t, color)));
   }
 
   header(t, narrow) {

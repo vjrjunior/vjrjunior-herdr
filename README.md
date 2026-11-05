@@ -67,7 +67,7 @@ Two layouts for herdr-app, built from the version you have installed:
 
 | Layout | What it is |
 |---|---|
-| `vjr-desk` | Herdr's window with the VJR theme, `vjr` in the command palette, a **Graph** button that opens Git Graph in the side panel, and Spaces as a tree of each repository's worktrees, open or closed, drawn as a graph or as blocks. |
+| `vjr-desk` | Herdr's window with the VJR theme, `vjr` in the command palette, a **Graph** button that opens Git Graph in the side panel, and Spaces as a tree of each repository's worktrees, open or closed, drawn as a graph or as blocks, with the active space in its own color. |
 | `vjr-desk-square` | The same window with every corner a layout can reach squared, including menus, popups, the command palette, Settings, Git Graph and the Spaces tree. |
 
 ```sh
