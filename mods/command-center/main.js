@@ -62,6 +62,7 @@ const PR_FIELDS = "number,url,state,isDraft,reviewDecision,mergedAt,baseRefName,
 const inside = (path, root) => Boolean(path && root) && (path === root || path.startsWith(`${root}/`));
 const basename = (path) => path.replace(/\/+$/, "").split("/").pop() ?? path;
 const firstLine = (text) => String(text ?? "").trim().split("\n")[0] ?? "";
+const firstWord = (text) => String(text ?? "").trim().split(/\s+/)[0] ?? "";
 const bin = (name) => `${home()}/.claude/skills/pp-stack/bin/${name}`;
 const cacheDir = () => `${appHome()}/data/${SELF.name}/shots`;
 
@@ -256,17 +257,30 @@ export default class CommandCenter extends View {
     cx?.notify?.();
   }
 
+  tell(text, cx) {
+    this.later(cx, (cx) => this.flash(text, cx));
+  }
+
   act(lane, cx) {
     const next = lane.next;
     if (!next || next.disabled) return;
     if (next.kind === "send") this.send([lane.session, lane.claude].find((item) => item?.terminal === next.terminal) ?? { terminal: next.terminal, status: null }, next.text, cx);
-    else if (next.kind === "focus") run("pane.focus", { terminal: next.terminal });
-    else if (next.kind === "tab" || next.kind === "space") this.newClaude(next.kind === "tab" ? next.space : null, next.folder, next.text, next.name);
-    else if (next.kind === "open") this.open(next.url);
+    else if (next.kind === "focus") {
+      run("pane.focus", { terminal: next.terminal });
+      this.tell(`Went to claude · ${next.terminal}`, cx);
+    } else if (next.kind === "tab" || next.kind === "space") {
+      this.newClaude(next.kind === "tab" ? next.space : null, next.folder, next.text, next.name);
+      this.tell(`${next.kind === "tab" ? "New tab" : "New space"}: ${firstWord(next.text)}`, cx);
+    } else if (next.kind === "open") {
+      this.open(next.url);
+      this.tell(`Opened ${next.url}`, cx);
+    }
   }
 
-  newTab(lane) {
-    if (lane.next?.text) this.newClaude(lane.space, lane.path, lane.next.text);
+  newTab(lane, cx) {
+    if (!lane.next?.text) return;
+    this.newClaude(lane.space, lane.path, lane.next.text);
+    this.tell(`${lane.space ? "New tab" : "New space"}: ${firstWord(lane.next.text)}`, cx);
   }
 
   regenerate(lane, cx) {

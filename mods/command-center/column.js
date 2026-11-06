@@ -84,7 +84,7 @@ function nextAction(view, lane, t) {
         .text_size(11)
         .text_color(t.unknown)
         .child(div().flex_1().min_w(0).child(`→ ${next.target ?? ""}`))
-        .when(offerTab, (el) => el.child(link("new-tab", { label: "New tab instead", onClick: () => view.newTab(lane) }, t))),
+        .when(offerTab, (el) => el.child(link("new-tab", { label: "New tab instead", onClick: (cx) => view.newTab(lane, cx) }, t))),
     )
     .when(Boolean(lane.note), (el) => el.child(div().text_size(11).text_color(t.working).child(lane.note)));
 }

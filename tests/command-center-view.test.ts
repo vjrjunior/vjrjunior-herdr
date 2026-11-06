@@ -556,6 +556,30 @@ describe("column", () => {
     expect(app.runs).toContainEqual(["space.new", { folder: "/w/cup-1234", argv: ["claude"], task: "/vjr-ac", machine: "" }]);
   });
 
+  test("every next step says what it did", async () => {
+    focusedCwd = "/w/cup-1234";
+    const cases: [Record<string, unknown>, string][] = [
+      [{ label: "Run /vjr-ac in a new tab", kind: "tab", text: "/vjr-ac", space: "sp-1234", folder: "/w/cup-1234" }, "New tab: /vjr-ac"],
+      [{ label: "Run /pp-clear", kind: "space", text: "/pp-clear 42", space: null, folder: "/r/app" }, "New space: /pp-clear"],
+      [{ label: "Go to claude", kind: "focus", terminal: "t41", target: "review is waiting on you" }, "Went to claude · t41"],
+      [{ label: "Open PR #42", kind: "open", url: "https://github.com/acme/app/pull/42", target: "github.com" }, "Opened https://github.com/acme/app/pull/42"],
+    ];
+    for (const [next, said] of cases) {
+      const view = column([{ ...BASE_LANE, next }]);
+      press(view, "next");
+      await flush();
+      expect(texts(view.render())).toContain(said);
+    }
+  });
+
+  test("New tab instead says it opened the tab", async () => {
+    focusedCwd = "/w/cup-1234";
+    const view = column();
+    press(view, "new-tab");
+    await flush();
+    expect(texts(view.render())).toContain("New tab: /vjr-ac");
+  });
+
   test("the column follows the focused checkout and never keeps the last task", () => {
     const second = { ...BASE_LANE, key: "/w/cup-9", path: "/w/cup-9", task: { ...BASE_LANE.task, id: "CUP-9", title: "Another task" } };
     const view = column([BASE_LANE, second]);
