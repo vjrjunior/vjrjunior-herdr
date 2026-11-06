@@ -40,11 +40,11 @@
 
 ### A personal profile for the Command Center
 
-**What:** A second profile for personal repos, with its own steps and skills, picked from the profile button next to Partner Programmer and Off.
+**What:** A second profile for personal repos, with its own steps and skills, picked from the profile button next to Work and Off.
 
-**Why:** The Command Center follows the company flow (`/vjr-task`, `/vjr-ac`, `/pp-ship`, PR evidence); personal repos need a flow of their own.
+**Why:** Work follows the company's flows (Work - VJR with `VJR-TASK.md`, Work - PP from `pp-lane-status`); personal repos show up as Work - PP today and need a flow of their own, or Off.
 
-**Context:** `PROFILES` in `mods/command-center/logic.js` holds only Partner Programmer, and the steps, notes and next-step rules are that flow's. A new profile needs its own versions of `stepsOf`, `stepNotes` and `nextStep`, chosen by the repo's profile.
+**Context:** `PROFILES` in `mods/command-center/logic.js` holds only `work`, and `profileOf` reads anything but `off` as Work. Inside Work, the watcher picks the flow per worktree by `VJR-TASK.md` (`lanesOf` in `main.js`). `mods/command-center/flow-pp.js` is the model for a new flow: it turns a lane into `steps`, `notes`, `next`, `chip` and `summary`, routes commands through `route.js`, and the column draws it with its own step list (`ppTaskView` in `column.js`).
 
 **Effort:** M
 **Priority:** P3
