@@ -102,10 +102,10 @@ function respond(command: string, args: string[], options: { cwd?: string } = {}
     if (args[0] === "last-code-sha") return ok(`${HEAD}\n`);
     return ok("", 2);
   }
-  if (command.endsWith("/pp-lane-status")) {
+  if (command.endsWith("/pp-lane-status") || args[0]?.endsWith("/pp-lane-status")) {
     if (binsMissing) throw new Error("ENOENT");
     if (statusText != null) return ok(statusText);
-    return ok(JSON.stringify(statusFor(args)));
+    return ok(JSON.stringify(statusFor(command.endsWith("/pp-lane-status") ? args : args.slice(1))));
   }
   if (command === "hc" && args[0] === "get") {
     const found = agentsNow.find((agent) => agent.address === args[1]) as Record<string, any> | undefined;
@@ -200,7 +200,7 @@ function watcher() {
 
 const state = () => app.shared["command-center.state"] as { lanes: Record<string, any>[] };
 const ghCalls = () => app.execs.filter((call) => call.command === "gh").length;
-const statusCalls = () => app.execs.filter((call) => call.command.endsWith("/pp-lane-status"));
+const statusCalls = () => app.execs.filter((call) => call.command.endsWith("/pp-lane-status") || call.args[0]?.endsWith("/pp-lane-status"));
 const noLaneStatus = () => {
   binsMissing = true;
   rmSync(join(root, "home", ".claude", "skills", "pp-stack", "bin", "pp-lane-status"));
@@ -320,6 +320,19 @@ describe("watcher", () => {
     await view.read(cx);
     expect(statusCalls().map((call) => call.command)).toEqual([join(devStack, "bin", "pp-lane-status")]);
     expect(app.execs.filter((call) => call.command.endsWith("/pp-pr-evidence")).map((call) => call.command)).toEqual([join(devStack, "bin", "pp-pr-evidence")]);
+    expect(state().repos[0].error).toBeNull();
+  });
+
+  test("a watcher given bun's path runs pp-lane-status with it, since the app's PATH may not have bun", async () => {
+    leftOut = new Set([lane]);
+    const view = new CommandCenter();
+    view.init({ role: "watch", bun: "/opt/bun/bin/bun" }, cx);
+    await view.read(cx);
+    const bin = join(root, "home", ".claude", "skills", "pp-stack", "bin", "pp-lane-status");
+    expect(statusCalls().map((call) => [call.command, ...call.args])).toEqual([
+      ["/opt/bun/bin/bun", bin, "--json"],
+      ["/opt/bun/bin/bun", bin, "--json", "--no-network", "--path", lane],
+    ]);
     expect(state().repos[0].error).toBeNull();
   });
 

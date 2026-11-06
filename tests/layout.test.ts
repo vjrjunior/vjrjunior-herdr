@@ -183,15 +183,15 @@ describe("apply", () => {
     const watcher = (name: string) => layout(name).floating.find((node: { id: string }) => node.id === "command-center-watch").content.props;
 
     expect(apply(["--pp-stack", ppStack]).code).toBe(0);
-    expect(watcher("vjr-desk")).toEqual({ role: "watch", ppStack });
-    expect(watcher("vjr-desk-square")).toEqual({ role: "watch", ppStack });
+    expect(watcher("vjr-desk")).toEqual({ role: "watch", bun: process.execPath, ppStack });
+    expect(watcher("vjr-desk-square")).toEqual({ role: "watch", bun: process.execPath, ppStack });
     expect(record().ppStack).toBe(ppStack);
 
     expect(apply(["--herdr-version", "0.1.11"]).code).toBe(0);
-    expect(watcher("vjr-desk")).toEqual({ role: "watch", ppStack });
+    expect(watcher("vjr-desk")).toEqual({ role: "watch", bun: process.execPath, ppStack });
 
     expect(apply(["--pp-stack", ""]).code).toBe(0);
-    expect(watcher("vjr-desk")).toEqual({ role: "watch" });
+    expect(watcher("vjr-desk")).toEqual({ role: "watch", bun: process.execPath });
     expect(record().ppStack).toBeUndefined();
   });
 

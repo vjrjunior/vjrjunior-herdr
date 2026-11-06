@@ -116,7 +116,7 @@ export function generateVariant(variant: Variant, options: GenerateOptions): Gen
   }
   const replacements: Record<string, string> = {};
   const keys: Record<string, string> = {};
-  applyRecipes(variant, { copies, layout, replacements, keys, variant, ppStack: options.ppStack });
+  applyRecipes(variant, { copies, layout, replacements, keys, variant, bun: options.bun, ppStack: options.ppStack });
   for (const copy of Object.values(copies)) {
     if (copy.files["kit.js"] !== undefined && !Object.hasOwn(copies, "kit")) throw new RecipeError(`${copy.name} uses the kit, but ${variant.layout} has no kit`);
   }

@@ -471,7 +471,7 @@ describe("command center", () => {
       const body = findNode(layout, "work-body");
       expect(body?.children.map((node: { id: string }) => node.id)).toEqual(["main", "panel", "command-center"]);
       expect(body?.children[2]).toEqual({ id: "command-center", type: "block", size: { px: 380 }, hidden: true, content: { mod: copy } });
-      expect(layout.floating).toContainEqual({ id: "command-center-watch", content: { mod: copy, props: { role: "watch" } }, edge: "left", align: "end" });
+      expect(layout.floating).toContainEqual({ id: "command-center-watch", content: { mod: copy, props: { role: "watch", bun: "/bin/bun" } }, edge: "left", align: "end" });
       expect(layout.floating.at(-1).id).toBe("vjr-sync");
       expect(Object.keys(generated.mods[copy] ?? {}).sort()).toEqual(["column.js", "flow-pp.js", "kit.js", "lane-status.js", "logic.js", "main.js", "mod.json", "route.js", "start.js"]);
     }
@@ -483,7 +483,7 @@ describe("command center", () => {
       [generate("vjr-desk-square", {}, { ppStack: "/dev/pp-stack" }), "vjr-square-command-center"],
     ] as const) {
       const layout = JSON.parse(generated.layoutText);
-      expect(layout.floating).toContainEqual({ id: "command-center-watch", content: { mod: copy, props: { role: "watch", ppStack: "/dev/pp-stack" } }, edge: "left", align: "end" });
+      expect(layout.floating).toContainEqual({ id: "command-center-watch", content: { mod: copy, props: { role: "watch", bun: "/bin/bun", ppStack: "/dev/pp-stack" } }, edge: "left", align: "end" });
     }
   });
 

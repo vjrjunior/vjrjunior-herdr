@@ -95,6 +95,7 @@ export default class CommandCenter extends View {
     const own = given && typeof given === "object" ? given : {};
     this.role = own.role ?? props()?.role ?? null;
     this.ppStack = own.ppStack ?? props()?.ppStack ?? null;
+    this.bun = own.bun ?? props()?.bun ?? null;
     if (this.role === "watch") this.startWatch(cx);
     else if (this.role === "shot") this.startShot(own, cx);
     else if (this.role === "profile") this.startProfile(own);
@@ -349,6 +350,11 @@ export default class CommandCenter extends View {
     return `${this.ppStack || `${home()}/.claude/skills/pp-stack`}/bin/${name}`;
   }
 
+  laneStatus(args) {
+    const script = this.bin("pp-lane-status");
+    return this.bun ? [this.bun, [script, ...args]] : [script, args];
+  }
+
   startWatch(cx) {
     this.id = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
     this.clock = () => Date.now();
@@ -573,7 +579,7 @@ export default class CommandCenter extends View {
     }
     let result;
     try {
-      result = await exec(this.bin("pp-lane-status"), ["--json"], { cwd: repo.main });
+      result = await exec(...this.laneStatus(["--json"]), { cwd: repo.main });
     } catch {
       entry.error = "pp-lane-status could not start";
       return;
@@ -592,7 +598,7 @@ export default class CommandCenter extends View {
   }
 
   async readAlone(path) {
-    const result = await this.run(this.bin("pp-lane-status"), ["--json", "--no-network", "--path", path], path);
+    const result = await this.run(...this.laneStatus(["--json", "--no-network", "--path", path]), path);
     if (result?.code !== 0) return null;
     const report = parseLaneStatus(result.stdout);
     return report.repo ? (report.lanes.find((lane) => lane.path === path) ?? null) : null;
