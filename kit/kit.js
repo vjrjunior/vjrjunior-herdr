@@ -13,6 +13,7 @@ export const ICONS = [
   "chevron-down",
   "chevron-right",
   "clickup",
+  "cursor",
   "exclamation",
   "external-link",
   "eye",

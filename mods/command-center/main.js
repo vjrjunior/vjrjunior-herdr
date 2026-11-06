@@ -152,6 +152,11 @@ export default class CommandCenter extends View {
     exec("zed", [path]).catch(() => {});
   }
 
+  openEditor(path) {
+    const zed = shared("command-center.state")?.editor === "zed";
+    (zed ? exec("zed", [path]) : exec("open", ["-na", "Cursor", "--args", path])).catch(() => {});
+  }
+
   newClaude(space, folder, text, name) {
     const label = name ? { [space ? "name" : "tab"]: name } : {};
     if (space) run("tab.new", { space, folder, ...label, argv: ["claude"], task: text });
@@ -175,7 +180,7 @@ export default class CommandCenter extends View {
   }
 
   chooseProfile(repo) {
-    openOverlay({ mod: "command-center", kind: "popup", at: "pointer", width: 240, height: 104, props: { role: "profile", repo: repo.main, name: repo.name } });
+    openOverlay({ mod: "command-center", kind: "popup", at: "pointer", width: 260, height: 124, props: { role: "profile", repo: repo.main, name: repo.name } });
   }
 
   setProfile(repo, id) {
@@ -809,7 +814,7 @@ export default class CommandCenter extends View {
     const lanes = this.stateLanes();
     if (this.role === "shot") return shotView(this, lanes.find((lane) => lane.key === this.shotLane), t);
     const profiles = shared("command-center.profiles") ?? {};
-    if (this.role === "profile") return profileView(this, profiles, t);
+    if (this.role === "profile") return profileView(this, profiles, t, Boolean(shared("command-center.state")?.vjrTask));
     return columnView(this, shared("command-center.state") ?? {}, this.checkoutCwd(), profiles, t);
   }
 }

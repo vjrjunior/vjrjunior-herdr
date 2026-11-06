@@ -32,7 +32,8 @@ export default class Kit extends View {
       .child(iconButton("kit-ib-bordered", { icon: "eye", tooltip: "Bordered", onClick: noop }, t))
       .child(iconButton("kit-ib-plain", { icon: "terminal", tooltip: "Plain", bordered: false, onClick: noop }, t))
       .child(iconButton("kit-ib-clickup", { icon: "clickup", tooltip: "ClickUp", onClick: noop }, t))
-      .child(iconButton("kit-ib-zed", { icon: "zed", tooltip: "Zed", bordered: false, onClick: noop }, t));
+      .child(iconButton("kit-ib-zed", { icon: "zed", tooltip: "Zed", bordered: false, onClick: noop }, t))
+      .child(iconButton("kit-ib-cursor", { icon: "cursor", tooltip: "Cursor", bordered: false, onClick: noop }, t));
     const links = row()
       .child(link("kit-l-plain", { label: "A link", onClick: noop }, t))
       .child(link("kit-l-icon", { label: "An external link", icon: "external-link", onClick: noop }, t));

@@ -167,7 +167,7 @@ In the square layout the mod is `vjr-square-kit`.
 
 Credits:
 - [Lucide](https://lucide.dev) icons by Lucide Contributors (ISC; portions from Feather by Cole Bemis, MIT), from `lucide-static@0.469.0`. The license is in `kit/icons/LICENSE-lucide`.
-- [Simple Icons](https://simpleicons.org) by Simple Icons contributors (CC0), from `simple-icons@13.21.0`: ClickUp, GitHub and Zed. Brand marks are their owners' trademarks.
+- [Simple Icons](https://simpleicons.org) by Simple Icons contributors (CC0), from `simple-icons@13.21.0`: ClickUp, GitHub and Zed; and from `simple-icons@16.0.0`: Cursor. Brand marks are their owners' trademarks.
 
 ## Test panel
 

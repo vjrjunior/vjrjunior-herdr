@@ -5,6 +5,8 @@ import { herdr, type Node } from "./app-mocks";
 import { removeTempDirs, tempDir } from "./helpers";
 
 const { default: CommandCenter } = await import("../mods/command-center/main.js");
+const { ppChip, ppNext, ppSignals, ppSummary } = await import("../mods/command-center/flow-pp.js");
+const { factsOf } = await import("../mods/command-center/lane-status.js");
 
 const FIXTURES = join(import.meta.dir, "fixtures/command-center");
 const BRANCH = "fix/cup-1234-draft-reload";
@@ -671,8 +673,8 @@ const SHIPPED = {
   next: { label: "Run /pp-clear", kind: "tab", target: "new tab in app", text: "/pp-clear 42", space: "sp-main", folder: "/r/app" },
 };
 
-function column(lanes: Record<string, unknown>[] = [BASE_LANE], repos: Record<string, unknown>[] = REPOS) {
-  app.shared["command-center.state"] = { lanes, repos };
+function column(lanes: Record<string, unknown>[] = [BASE_LANE], repos: Record<string, unknown>[] = REPOS, extra: Record<string, unknown> = {}) {
+  app.shared["command-center.state"] = { lanes, repos, ...extra };
   propsNow = {};
   const view = new CommandCenter();
   view.init({}, cx);
@@ -770,7 +772,7 @@ describe("column", () => {
     const shown = texts(column().render());
     expect(shown).toContain("app");
     expect(shown).toContain("cup-1234");
-    expect(shown).toContain("Work");
+    expect(shown).toContain("Work - VJR");
   });
 
   test("the timeline names every step with what it did or will do", () => {
@@ -822,9 +824,11 @@ describe("column", () => {
     expect(app.shared["command-center.profiles"]).toEqual({});
   });
 
-  test("a worktree without a task says so", () => {
+  test("a worktree not read yet says it is being read, with no word of VJR-TASK.md", () => {
     focusedCwd = "/w/bare";
-    expect(texts(column().render())).toContain("No task in this worktree");
+    const shown = texts(column().render());
+    expect(shown).toContain("Reading this worktree…");
+    expect(shown.join(" ")).not.toContain("VJR-TASK.md");
   });
 
   test("the main checkout lists the repo's tasks and starts a new one", () => {
@@ -1168,5 +1172,142 @@ describe("timeline and identity", () => {
     expect(bare).toBeNull();
     expect(pathTo(column().render(), "link-pr")).toBeNull();
     expect(pathTo(column().render(), "link-task")).not.toBeNull();
+  });
+});
+
+const LANE_REPORT = JSON.parse(readFileSync(join(FIXTURES, "lane-status.json"), "utf8"));
+const PP_REPOS = [{ name: "app", main: "/r/app", trees: ["/r/app", "/w/cup-1234", "/w/app-lincoln", "/w/app-cup-7001", "/w/app-gabriel", "/w/app-cup-7003"], error: null }];
+
+function ppLane(index: number, over: Record<string, unknown> = {}) {
+  const json = LANE_REPORT.lanes[index];
+  const lane = { ...ppSignals(json, factsOf(json, LANE_REPORT), { repo: { name: "app", main: "/r/app" }, space: "sp-pp", mainSpace: "sp-main", claudes: [] }), ...over };
+  const shown = { ...lane, next: ppNext(lane) };
+  return { ...shown, chip: ppChip(shown), summary: ppSummary(shown) };
+}
+
+function profilePopup(state: Record<string, unknown>) {
+  app.shared["command-center.state"] = state;
+  propsNow = { role: "profile", repo: "/r/app", name: "app", overlay: "o7" };
+  const view = new CommandCenter();
+  view.init({}, cx);
+  return view;
+}
+
+describe("Work - PP column", () => {
+  test("the header says Work in main, the flow in a worktree, Off when off", () => {
+    const lanes = [BASE_LANE, ppLane(0)];
+    focusedCwd = "/w/app-lincoln";
+    expect(texts(column(lanes, PP_REPOS).render())).toContain("Work - PP");
+    focusedCwd = "/w/cup-1234";
+    expect(texts(column(lanes, PP_REPOS).render())).toContain("Work - VJR");
+    focusedCwd = "/r/app";
+    const main = texts(column(lanes, PP_REPOS).render());
+    expect(main).toContain("Work");
+    expect(main).not.toContain("Work - PP");
+    app.shared["command-center.profiles"] = { "/r/app": "off" };
+    expect(texts(column(lanes, PP_REPOS).render())).toContain("Off");
+  });
+
+  test("a Work - PP worktree shows six steps with the report's notes", () => {
+    focusedCwd = "/w/app-lincoln";
+    const shown = texts(column([ppLane(0)], PP_REPOS).render());
+    for (const label of ["Build", "Ship", "Evidence", "PR", "Merge", "Clear"]) expect(shown).toContain(label);
+    for (const note of ["40 commits ahead of main", "3 commits since ship", "3 of 4 current", "/pp-clear from main"]) expect(shown).toContain(note);
+    expect(shown).not.toContain("Task");
+    expect(shown).not.toContain("AC");
+  });
+
+  test("its identity shows the task, where it came from and no VJR-TASK.md", () => {
+    focusedCwd = "/w/app-cup-7001";
+    const shown = texts(column([ppLane(1)], PP_REPOS).render());
+    expect(shown).toContain("CUP-7001");
+    expect(shown).toContain("claimed with /work");
+    expect(shown).toContain("Child of the umbrella");
+    expect(shown).toContain("feat/CUP-7000--cup-7001-umbrella-child → feat/CUP-7000");
+    expect(shown).not.toContain("VJR-TASK.md");
+    focusedCwd = "/w/app-lincoln";
+    const bare = texts(column([ppLane(0)], PP_REPOS).render());
+    expect(bare).toContain("\u2014");
+    expect(bare).not.toContain("from the branch");
+  });
+
+  test("the open Ship step shows the ships, what the last covers and the commits since", () => {
+    focusedCwd = "/w/app-lincoln";
+    const shown = texts(column([ppLane(0)], PP_REPOS).render());
+    for (const text of ["12 ships", "covers aaaaaaa", "3 code commits since"]) expect(shown).toContain(text);
+  });
+
+  test("the open Evidence step says why each receipt is stale", () => {
+    focusedCwd = "/w/app-lincoln";
+    const shown = texts(column([ppLane(0, { steps: ["done", "done", "bad", "run", "todo", "todo"] })], PP_REPOS).render());
+    expect(shown).toContain("ship.json");
+    expect(shown).toContain("3 code commits since covers_sha");
+  });
+
+  test("a check with a link opens it", () => {
+    focusedCwd = "/w/app-cup-7001";
+    const view = column([ppLane(1, { steps: ["done", "done", "done", "run", "todo", "todo"] })], PP_REPOS);
+    expect(texts(view.render())).toContain("CI / test");
+    press(view, "pr-check-0");
+    expect(app.execs).toContainEqual({ command: "open", args: ["https://github.com/acme/app/actions/runs/2"], cwd: undefined });
+  });
+
+  test("the editor button follows PP_EDITOR", () => {
+    focusedCwd = "/w/app-lincoln";
+    let view = column([ppLane(0)], PP_REPOS, { editor: "zed" });
+    let node = pathTo(view.render(), "link-editor")?.at(-1) as Node;
+    expect(texts(node)).toContain("Zed");
+    expect(svgs(node)).toEqual(["mods/kit/icons/zed.svg"]);
+    press(view, "link-editor");
+    expect(app.execs.at(-1)).toMatchObject({ command: "zed", args: ["/w/app-lincoln"] });
+    view = column([ppLane(0)], PP_REPOS, { editor: "cursor" });
+    node = pathTo(view.render(), "link-editor")?.at(-1) as Node;
+    expect(texts(node)).toContain("Cursor");
+    expect(svgs(node)).toEqual(["mods/kit/icons/cursor.svg"]);
+    press(view, "link-editor");
+    expect(app.execs.at(-1)).toMatchObject({ command: "open", args: ["-na", "Cursor", "--args", "/w/app-lincoln"] });
+  });
+
+  test("on a machine without /vjr-task nothing in a Work - PP column or the profile popup says vjr", () => {
+    for (const [index, path] of [[0, "/w/app-lincoln"], [1, "/w/app-cup-7001"], [3, "/w/app-cup-7003"]] as const) {
+      focusedCwd = path;
+      expect(texts(column([ppLane(index)], PP_REPOS, { vjrTask: false }).render()).join(" ")).not.toMatch(/vjr/i);
+    }
+    expect(texts(profilePopup({ vjrTask: false }).render()).join(" ")).not.toMatch(/vjr/i);
+  });
+
+  test("the main list tags each row VJR or PP only where /vjr-task exists", () => {
+    focusedCwd = "/r/app";
+    const lanes = [BASE_LANE, ppLane(0)];
+    const tagged = texts(column(lanes, PP_REPOS, { vjrTask: true }).render());
+    expect(tagged).toContain("VJR");
+    expect(tagged).toContain("PP");
+    const row = texts(pathTo(column(lanes, PP_REPOS, { vjrTask: true }).render(), "lane-/w/app-lincoln")?.at(-1) as Node);
+    expect(row).toContain("\u2014");
+    expect(row).toContain("Ship");
+    expect(row).toContain("3 commits since ship");
+    const plain = texts(column(lanes, PP_REPOS, { vjrTask: false }).render());
+    expect(plain).not.toContain("VJR");
+    expect(plain).not.toContain("PP");
+  });
+
+  test("an old pp-stack says which version is needed and offers Off", () => {
+    focusedCwd = "/w/app-lincoln";
+    const view = column([ppLane(0)], [{ ...PP_REPOS[0], error: "Command Center needs pp-stack 0.94.0 or later" }]);
+    const shown = texts(view.render());
+    expect(shown).toContain("Command Center needs pp-stack 0.94.0 or later");
+    expect(shown).toContain("Update pp-stack, or switch this repo off.");
+    expect(shown).not.toContain("12 ships");
+    press(view, "profile-off");
+    expect(app.shared["command-center.profiles"]).toEqual({ "/r/app": "off" });
+  });
+
+  test("the profile popup offers Work and Off, each with its line", () => {
+    const withVjr = texts(profilePopup({ vjrTask: true }).render());
+    expect(withVjr).toContain("Work");
+    expect(withVjr).toContain("Work - VJR with VJR-TASK.md, Work - PP without");
+    expect(withVjr).toContain("Off");
+    expect(withVjr).toContain("nothing is read in this repo");
+    expect(texts(profilePopup({ vjrTask: false }).render())).toContain("the team's flow");
   });
 });

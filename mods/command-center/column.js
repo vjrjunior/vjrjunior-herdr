@@ -1,13 +1,16 @@
 import { div, image } from "gpui-kit";
 import { Input, TextView, h_flex, v_flex } from "gpui-base";
 import { CONTROL, ICON_SIZE, button, card, chip, heading, icon, iconButton, line, link, pill, statusDot, stepNode, toneColor } from "../../kit/kit.js";
-import { answerStep, laneSummary, prChecks, PROFILES, profileOf, stepNotes, viewFor } from "./logic.js";
+import { PP_STEPS, ppSummary } from "./flow-pp.js";
+import { answerStep, FLOW_LABEL, laneSummary, prChecks, PROFILES, profileOf, stepNotes, viewFor } from "./logic.js";
 
 const STEPS = ["Task", "AC", "Ship", "Evidence", "PR", "Merge", "Clear"];
 const FILES = ["ship.json", "screenshots.md", "message.txt", "meta.json"];
 const CHECK_CHIP = { passed: ["check", "done"], failed: ["exclamation", "blocked"], asking: ["dot", "working"], pending: ["ring", "unknown"] };
 const MARK_OF = { ok: "check", run: "dot", bad: "exclamation", idle: "ring" };
-const OPTIONS = [...Object.entries(PROFILES).map(([id, profile]) => [id, profile.label]), ["off", "Off"]];
+const PP_SOURCE = { claim: "claimed with /work", branch: "from the branch", "pr-title": "from the PR title" };
+const OLD_PP_STACK = "Command Center needs pp-stack 0.94.0 or later";
+const plural = (count, word) => `${count} ${word}${count === 1 ? "" : "s"}`;
 
 const stateColor = (state, t) => ({ done: t.done, ok: t.done, current: t.done, run: t.working, next: t.accent, bad: t.blocked, stale: t.blocked }[state] ?? t.unknown);
 const merged = (lane) => lane.pr && !lane.pr.error && lane.pr.state === "MERGED";
@@ -17,7 +20,7 @@ const currentOf = (steps) => {
   return index < 0 ? 6 : index;
 };
 
-function topBar(view, left, repo, profiles, t) {
+function topBar(view, left, repo, profiles, label, t) {
   const profile = repo ? profileOf(profiles, repo.main) : null;
   return h_flex()
     .h(34)
@@ -46,7 +49,7 @@ function topBar(view, left, repo, profiles, t) {
           .hover((s) => s.bg(t.hover))
           .on_click((_e, cx) => view.chooseProfile(repo, cx))
           .child(statusDot(profile === "off" ? t.dim : t.accent, { size: 6 }))
-          .child(profile === "off" ? "Off" : PROFILES[profile].label)
+          .child(profile === "off" ? "Off" : label)
           .child(icon("chevron-down", { size: ICON_SIZE.sm })),
       ),
     );
@@ -163,13 +166,16 @@ function checksBody(view, lane, t) {
     .children(checks.map((check) => checkRow(view, lane, check, t)));
 }
 
-function prBody(lane, t) {
+function prBody(view, lane, t) {
   const pr = lane.pr;
   if (!pr || pr.error) return div().text_size(11.5).text_color(t.unknown).child(pr?.error ?? "No PR yet");
   const checks = prChecks(pr);
   const body = v_flex().child(div().pb(4).text_size(11.5).text_color(t.foreground).child(`PR #${pr.number} · ${pr.isDraft ? "draft" : pr.state === "MERGED" ? "merged" : "ready for review"}`));
   if (lane.prError) body.child(div().pb(4).text_size(11).text_color(t.working).child(lane.prError));
-  for (const item of checks.items) body.child(line(item.name, { detail: item.detail, color: stateColor(item.state, t), mark: MARK_OF[item.state] }, t));
+  checks.items.forEach((item, index) => {
+    const row = line(item.name, { detail: item.detail, color: stateColor(item.state, t), mark: MARK_OF[item.state] }, t);
+    body.child(item.link ? div().id(`pr-check-${index}`).hover((s) => s.opacity(0.85)).on_click(() => view.open(item.link)).child(row) : row);
+  });
   if (lane.preview?.link) body.child(line("Preview", { detail: lane.preview.state?.toLowerCase?.() ?? "ready", color: t.done, mark: "check" }, t));
   if (pr.reviewDecision) {
     const color = pr.reviewDecision === "CHANGES_REQUESTED" ? t.blocked : pr.reviewDecision === "APPROVED" ? t.done : t.working;
@@ -192,14 +198,15 @@ function doneBody(lane, t) {
   return body;
 }
 
-function evidenceBody(view, lane, t) {
+function evidenceBody(view, lane, t, reasons = false) {
   const evidence = lane.evidence;
   const body = v_flex();
   if (evidence?.error) body.child(div().text_size(11.5).text_color(t.unknown).child(evidence.error));
   else if (evidence) {
     for (const file of FILES) {
       const state = evidence.files?.[file] ?? "missing";
-      body.child(line(file, { detail: state, color: stateColor(state, t), mark: state === "current" ? "check" : state === "stale" ? "exclamation" : "ring" }, t));
+      const detail = (reasons && evidence.reasons?.[file]) || state;
+      body.child(line(file, { detail, color: stateColor(state, t), mark: state === "current" ? "check" : state === "stale" ? "exclamation" : "ring" }, t));
     }
   }
   const release = releaseCard(view, lane, t);
@@ -275,7 +282,7 @@ function stepBody(view, lane, index, now, t) {
   const parts = [];
   if (index === 1 && (lane.task.manual ?? []).length) parts.push(checksBody(view, lane, t));
   if (index === 3) parts.push(evidenceBody(view, lane, t));
-  if (index === 4) parts.push(prBody(lane, t));
+  if (index === 4) parts.push(prBody(view, lane, t));
   if (now && !asking) parts.push(nextAction(view, lane, t));
   return v_flex().gap(10).children(parts.filter(Boolean));
 }
@@ -341,10 +348,96 @@ function taskView(view, lane, t) {
   ].filter(Boolean);
 }
 
-function laneRow(view, lane, t) {
-  const summary = laneSummary(lane);
+function ppIdentity(view, lane, editor, t) {
+  const task = lane.task;
+  const source = PP_SOURCE[task.source];
+  const zed = editor === "zed";
+  return v_flex()
+    .gap(3)
+    .child(h_flex().gap(8).items_center().child(pill(task.id ?? "\u2014", t)).when(Boolean(source), (el) => el.child(div().text_size(11).text_color(t.unknown).child(source))))
+    .child(div().pt(3).text_size(13.5).font_semibold().text_color(t.foreground).child(task.title))
+    .child(div().text_size(11).text_color(t.unknown).truncate().child(`${lane.branch ?? "detached"} → ${task.base}`))
+    .child(
+      h_flex()
+        .pt(8)
+        .gap(6)
+        .flex_wrap()
+        .when(Boolean(task.url), (el) => el.child(button("link-task", { label: "ClickUp", icon: "clickup", iconColor: t.muted, onClick: () => view.open(task.url) }, t)))
+        .when(hasPr(lane), (el) => el.child(button("link-pr", { label: `PR #${lane.pr.number}`, icon: "github", iconColor: t.muted, onClick: () => view.open(lane.pr.url) }, t)))
+        .child(button("link-editor", { label: zed ? "Zed" : "Cursor", icon: zed ? "zed" : "cursor", iconColor: t.muted, onClick: () => view.openEditor(lane.path) }, t)),
+    );
+}
+
+function shipBody(lane, t) {
+  const ship = lane.ship ?? {};
+  const lines = [plural(ship.count ?? 0, "ship")];
+  if (ship.coversSha) lines.push(`covers ${ship.coversSha.slice(0, 7)}`);
+  if (ship.commitsSince > 0) lines.push(`${plural(ship.commitsSince, "code commit")} since`);
+  else if (ship.reason) lines.push(ship.reason);
+  return v_flex().gap(2).text_size(11.5).text_color(t.muted).children(lines.map((text) => div().child(text)));
+}
+
+function ppStepBody(view, lane, index, t) {
+  const parts = [];
+  if (index === 0) parts.push(div().text_size(11.5).text_color(t.muted).child(`${plural(lane.commitsAhead ?? 0, "commit")} ahead of ${lane.task.base}`));
+  if (index === 1 && lane.ship?.state && lane.ship.state !== "none") parts.push(shipBody(lane, t));
+  if (index === 2) parts.push(evidenceBody(view, lane, t, true));
+  if (index === 3) parts.push(prBody(view, lane, t));
+  parts.push(nextAction(view, lane, t));
+  return v_flex().gap(10).children(parts);
+}
+
+function ppStepRow(view, lane, index, current, t) {
+  const name = PP_STEPS[index];
+  const state = lane.steps[index] ?? "todo";
+  const now = index === current;
+  const done = state === "done";
+  const bad = state === "bad";
+  const node = stepNode(done ? "done" : bad ? "bad" : now ? "current" : "todo", t);
+  const head = h_flex()
+    .id(`step-${name}`)
+    .h(20)
+    .gap(10)
+    .items_center()
+    .child(div().flex_none().text_size(12.5).text_color(now ? t.foreground : done ? t.muted : t.dim).when(now, (el) => el.font_bold()).child(name))
+    .child(
+      h_flex()
+        .flex_1()
+        .min_w(0)
+        .justify_end()
+        .child(div().min_w(0).truncate().text_size(11).text_color(bad ? t.blocked : now ? t.accent : done ? t.done : t.dim).when(done && !now, (el) => el.opacity(0.75)).child(lane.notes?.[index] ?? "")),
+    );
+  const rail = h_flex()
+    .flex_1()
+    .justify_center()
+    .items_stretch()
+    .when(index < PP_STEPS.length - 1, (el) => el.child(div().w(1.5).bg(done ? t.done : t.border).when(done, (item) => item.opacity(0.35))));
+  return h_flex()
+    .items_stretch()
+    .gap(10)
+    .child(v_flex().flex_none().w(18).child(h_flex().h(20).items_center().justify_center().child(node)).child(rail))
+    .child(
+      v_flex()
+        .flex_1()
+        .min_w(0)
+        .pb(now ? 14 : 12)
+        .child(head)
+        .when(now, (el) => el.child(div().pt(8).child(card(t).child(ppStepBody(view, lane, index, t))))),
+    );
+}
+
+function ppTaskView(view, lane, state, t) {
+  const found = lane.steps.findIndex((step) => step !== "done");
+  const current = found < 0 ? PP_STEPS.length - 1 : found;
+  return [ppIdentity(view, lane, state?.editor, t), v_flex().pt(4).children(PP_STEPS.map((_, index) => ppStepRow(view, lane, index, current, t)))];
+}
+
+function laneRow(view, lane, tagged, t) {
+  const pp = lane.flow === "pp";
+  const summary = pp ? (lane.summary ?? ppSummary(lane)) : laneSummary(lane);
+  const names = pp ? PP_STEPS : STEPS;
   const tone = toneColor(summary.tone, t);
-  const dots = STEPS.map((_, index) => {
+  const dots = names.map((_, index) => {
     if (index < summary.stage) return statusDot(t.done, { size: 6 }).opacity(0.6);
     if (index === summary.stage) return statusDot(tone, { size: 6 });
     return statusDot(t.dim, { size: 6, hollow: true });
@@ -365,23 +458,31 @@ function laneRow(view, lane, t) {
         .gap(3)
         .hover((s) => s.opacity(0.85))
         .on_click((_e, cx) => view.goTo(lane, cx))
-        .child(h_flex().gap(6).text_size(11.5).child(div().flex_none().text_color(t.unknown).child(lane.task.id ?? "TASK")).child(div().flex_1().min_w(0).truncate().text_color(t.foreground).child(lane.task.title)))
+        .child(
+          h_flex()
+            .gap(6)
+            .items_center()
+            .text_size(11.5)
+            .child(div().flex_none().text_color(t.unknown).child(lane.task.id ?? (pp ? "\u2014" : "TASK")))
+            .child(div().flex_1().min_w(0).truncate().text_color(t.foreground).child(lane.task.title))
+            .when(tagged, (el) => el.child(chip(pp ? "PP" : "VJR", { color: t.muted }, t))),
+        )
         .child(
           h_flex()
             .gap(8)
             .items_center()
             .text_size(11)
             .child(h_flex().flex_none().gap(1).children(dots))
-            .child(div().flex_none().text_color(tone).child(STEPS[summary.stage]))
+            .child(div().flex_none().text_color(tone).child(names[summary.stage]))
             .child(div().flex_1().min_w(0).truncate().text_color(t.muted).child(summary.why ?? "")),
         ),
     )
     .when(Boolean(summary.action), (el) => el.child(button(`lane-act-${lane.key}`, { label: summary.action, color: t.muted, onClick: (cx) => view.laneAction(lane, summary.action, cx) }, t)));
 }
 
-function repoView(view, repo, lanes, t) {
+function repoView(view, repo, lanes, tagged, t) {
   const start = button("start-task", { label: "Start a task", icon: "plus", variant: "dashed", full: true, height: CONTROL.large, hint: "/vjr-task in a new tab", onClick: (cx) => view.startTask(repo, cx) }, t);
-  const list = lanes.length ? v_flex().children(lanes.map((lane) => laneRow(view, lane, t))) : div().text_size(11.5).text_color(t.unknown).child("No tasks in progress.");
+  const list = lanes.length ? v_flex().children(lanes.map((lane) => laneRow(view, lane, tagged, t))) : div().text_size(11.5).text_color(t.unknown).child("No tasks in progress.");
   return [start, v_flex().gap(6).child(heading(`Tasks in ${repo.name}`, t, lanes.length)).child(list)];
 }
 
@@ -400,18 +501,26 @@ export function columnView(view, state, cwd, profiles, t) {
   const name = (path) => path.split("/").pop();
   let left = [div().child("Command Center")];
   let body = [message("Not in a repository", "Focus a terminal in a repo or one of its worktrees.", t)];
+  let label = PROFILES.work.label;
   if (shown.kind === "task") {
     left = [div().font_semibold().text_color(t.foreground).child(repo.name), div().text_color(t.dim).child("/"), div().min_w(0).truncate().child(name(shown.lane.path))];
-    body = taskView(view, shown.lane, t);
+    label = FLOW_LABEL[shown.lane.flow === "pp" ? "pp" : "vjr"];
+    body = shown.lane.flow === "pp" ? ppTaskView(view, shown.lane, state, t) : taskView(view, shown.lane, t);
   } else if (shown.kind === "repo") {
     left = [div().font_semibold().text_color(t.foreground).child(repo.name), div().text_color(t.unknown).child("· main")];
-    body = repoView(view, repo, shown.lanes, t);
+    body = repoView(view, repo, shown.lanes, Boolean(state?.vjrTask), t);
   } else if (shown.kind === "bare") {
     left = [div().font_semibold().text_color(t.foreground).child(repo.name), div().text_color(t.dim).child("/"), div().min_w(0).truncate().child(name(cwd))];
-    body = [message("No task in this worktree", "A task is a worktree with a VJR-TASK.md from /vjr-task.", t)];
+    body = [message("Reading this worktree…", null, t)];
   } else if (shown.kind === "off") {
     left = [div().font_semibold().text_color(t.foreground).child(repo.name)];
     body = [message(`Command Center is off in ${repo.name}`, "Nothing is read here until a profile is on.", t), h_flex().justify_center().child(button("profile-on", { label: `Use ${PROFILES.work.label}`, color: t.muted, onClick: () => view.setProfile(repo.main, "work") }, t))];
+  }
+  if (repo?.error && ["task", "repo", "bare"].includes(shown.kind)) {
+    body = [
+      message(repo.error, repo.error === OLD_PP_STACK ? "Update pp-stack, or switch this repo off." : "Switch this repo off to stop reading it.", t),
+      h_flex().justify_center().child(button("profile-off", { label: "Switch off", color: t.muted, onClick: () => view.setProfile(repo.main, "off") }, t)),
+    ];
   }
   return v_flex()
     .size_full()
@@ -419,13 +528,17 @@ export function columnView(view, state, cwd, profiles, t) {
     .bg(t.chrome)
     .text_size(12.5)
     .text_color(t.foreground)
-    .child(topBar(view, left, repo, profiles, t))
+    .child(topBar(view, left, repo, profiles, label, t))
     .child(v_flex().flex_1().min_h(0).p(12).gap(14).overflow_y_scrollbar().children(body))
     .when(Boolean(view.flashText), (el) => el.child(div().flex_none().px(12).py(8).border_t_1().border_color(t.border).text_size(11.5).text_color(t.done).child(view.flashText)));
 }
 
-export function profileView(view, profiles, t) {
+export function profileView(view, profiles, t, vjrTask = false) {
   const chosen = profileOf(profiles, view.profileRepo);
+  const options = [
+    ["work", PROFILES.work.label, vjrTask ? "Work - VJR with VJR-TASK.md, Work - PP without" : "the team's flow"],
+    ["off", "Off", "nothing is read in this repo"],
+  ];
   return v_flex()
     .size_full()
     .p(4)
@@ -434,10 +547,11 @@ export function profileView(view, profiles, t) {
     .text_size(12)
     .child(div().px(8).py(4).text_size(10.5).text_color(t.unknown).child(`PROFILE · ${(view.profileName ?? "").toUpperCase()}`))
     .children(
-      OPTIONS.map(([id, label]) =>
+      options.map(([id, label, detail]) =>
         h_flex()
           .id(`profile-${id}`)
-          .h(28)
+          .min_h(28)
+          .py(4)
           .px(8)
           .gap(8)
           .items_center()
@@ -445,7 +559,7 @@ export function profileView(view, profiles, t) {
           .hover((s) => s.bg(t.hover))
           .on_click(() => view.setProfile(view.profileRepo, id))
           .child(div().w(12).flex().items_center().when(id === chosen, (el) => el.child(icon("check", { color: t.accent }))))
-          .child(div().text_color(t.foreground).child(label)),
+          .child(v_flex().min_w(0).child(div().text_color(t.foreground).child(label)).child(div().text_size(10.5).text_color(t.unknown).child(detail))),
       ),
     );
 }
