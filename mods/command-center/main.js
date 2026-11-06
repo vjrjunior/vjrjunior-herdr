@@ -2,6 +2,7 @@ import { View, div } from "gpui-kit";
 import { InputState } from "gpui-base";
 import * as fs from "fs/promises";
 import { columnView, profileView, shotView } from "./column.js";
+import { ppChip, ppNext, ppSignals, ppSummary } from "./flow-pp.js";
 import { factsOf, parseLaneStatus } from "./lane-status.js";
 import {
   agents,
@@ -327,6 +328,9 @@ export default class CommandCenter extends View {
     this.id = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
     this.clock = () => Date.now();
     this.lanes = [];
+    this.worktrees = [];
+    this.vjrTask = false;
+    this.editor = "cursor";
     this.cache = {};
     this.claudes = {};
     this.records = [];
@@ -416,15 +420,20 @@ export default class CommandCenter extends View {
       const main = list[0];
       if (!main) continue;
       repos.push({ name: basename(main.path), main: main.path, trees: list.map((tree) => tree.path) });
-      for (const tree of list.slice(1)) {
-        if ((await readTextFile(`${tree.path}/VJR-TASK.md`)) == null) continue;
-        found.push({ key: tree.path, path: tree.path, branch: tree.branch, repo: { name: basename(main.path), main: main.path } });
-      }
+      for (const tree of list.slice(1)) found.push({ key: tree.path, path: tree.path, branch: tree.branch, repo: { name: basename(main.path), main: main.path } });
     }
-    const keep = new Set(found.map((lane) => lane.key));
+    const keep = new Set(found.map((tree) => tree.key));
     for (const key of Object.keys(this.cache)) if (!keep.has(key)) delete this.cache[key];
-    this.lanes = found;
+    this.worktrees = found;
     this.repos = repos;
+    await this.readMachine();
+  }
+
+  async readMachine() {
+    this.vjrTask = (await readTextFile(`${home()}/.claude/skills/vjr-task/SKILL.md`)) != null;
+    const shell = await this.run("sh", ["-c", `"\${SHELL:-/bin/sh}" -ic 'printf "\\n%s" "$PP_EDITOR"' 2>/dev/null`]);
+    const last = shell?.code === 0 ? (shell.stdout.split("\n").pop() ?? "").trim() : "";
+    this.editor = last === "zed" ? "zed" : "cursor";
   }
 
   async sweep() {
@@ -506,9 +515,9 @@ export default class CommandCenter extends View {
     if (cache.taskAt && now - cache.taskAt < every) return false;
     cache.taskAt = now;
     const text = await readTextFile(`${lane.path}/VJR-TASK.md`);
-    if (text != null && text !== cache.text) {
+    if (text !== cache.text) {
       cache.text = text;
-      cache.task = parseTask(text) ?? cache.task;
+      cache.task = text == null ? null : (parseTask(text) ?? cache.task);
     }
     const head = await this.run("git", ["rev-parse", "HEAD"], lane.path);
     const sha = head?.code === 0 ? head.stdout.trim() : null;
@@ -630,6 +639,34 @@ export default class CommandCenter extends View {
     };
   }
 
+  placeOf(lane, places) {
+    const own = this.localSpaces();
+    let space = own.find((item) => inside(item.folder, lane.path))?.id ?? null;
+    let mainSpace = own.find((item) => inside(item.folder, lane.repo.main))?.id ?? null;
+    for (const [id, paths] of Object.entries(places)) {
+      const list = [...paths];
+      if (!space && list.some((path) => inside(path, lane.path))) space = id;
+      if (!mainSpace && list.some((path) => inside(path, lane.repo.main) && !inside(path, lane.path))) mainSpace = id;
+    }
+    return { space, mainSpace };
+  }
+
+  async readPpLane(lane, places) {
+    const cache = (this.cache[lane.key] ??= {});
+    const entry = this.status[lane.repo.main];
+    if (!entry?.report) return null;
+    const alone = entry.alone.get(lane.path);
+    const json = entry.byPath.get(lane.path) ?? alone;
+    if (!json) return null;
+    const facts = factsOf(json, json === alone ? OFFLINE : entry.report);
+    cache.evidence = facts.evidence;
+    await this.readRelease(lane, cache);
+    const claudes = Object.values(this.claudes).filter((claude) => inside(claude.cwd, lane.path));
+    const signals = ppSignals(json, facts, { repo: lane.repo, ...this.placeOf(lane, places), claudes });
+    signals.release = cache.release ?? null;
+    return signals;
+  }
+
   async readLane(lane, places, headMoved) {
     const cache = (this.cache[lane.key] ??= {});
     this.applyFacts(lane, cache);
@@ -639,14 +676,7 @@ export default class CommandCenter extends View {
     const treeRecord = skillRecord(this.records, { path: lane.path, task: null })?.record ?? null;
     if (headMoved || cache.lastCode === undefined) await this.readVerified(lane, cache, base);
     await this.readRelease(lane, cache);
-    const own = this.localSpaces();
-    cache.space = own.find((space) => inside(space.folder, lane.path))?.id ?? null;
-    cache.mainSpace = own.find((space) => inside(space.folder, lane.repo.main))?.id ?? null;
-    for (const [id, paths] of Object.entries(places)) {
-      const list = [...paths];
-      if (!cache.space && list.some((path) => inside(path, lane.path))) cache.space = id;
-      if (!cache.mainSpace && list.some((path) => inside(path, lane.repo.main) && !inside(path, lane.path))) cache.mainSpace = id;
-    }
+    Object.assign(cache, this.placeOf(lane, places));
     const signals = laneSignals(lane, cache);
     const state = skillState(record, signals);
     signals.skill = state ? { ...state, from: found.from } : null;
@@ -669,18 +699,25 @@ export default class CommandCenter extends View {
       await this.readClaudes();
       const places = this.spacePlaces();
       const profiles = shared("command-center.profiles");
-      const lanes = this.lanes.filter((lane) => profileOf(profiles, lane.repo.main) !== "off");
+      const on = (repo) => profileOf(profiles, repo.main) !== "off";
+      const trees = this.worktrees.filter((tree) => on(tree.repo));
       const moved = {};
-      for (const lane of lanes) moved[lane.key] = await this.readTask(lane, (this.cache[lane.key] ??= {}), this.clock());
+      for (const tree of trees) moved[tree.key] = await this.readTask(tree, (this.cache[tree.key] ??= {}), this.clock());
+      await this.readStatuses(this.repos.filter(on));
+      const lanes = this.lanesOf(trees);
+      this.lanes = lanes;
+      await this.readAlones(lanes);
       const claims = {};
       for (const lane of lanes) {
-        const session = this.cache[lane.key]?.task?.session;
+        const session = lane.flow === "vjr" ? this.cache[lane.key]?.task?.session : null;
         if (session) claims[session] = (claims[session] ?? 0) + 1;
       }
       this.sharedSessions = new Set(Object.keys(claims).filter((session) => claims[session] > 1));
-      await this.readStatuses(lanes, profiles);
       const signals = [];
-      for (const lane of lanes) signals.push(await this.readLane(lane, places, moved[lane.key]));
+      for (const lane of lanes) {
+        const read = lane.flow === "pp" ? await this.readPpLane(lane, places) : await this.readLane(lane, places, moved[lane.key]);
+        if (read) signals.push(read);
+      }
       this.publish(signals);
       await this.sweep();
     } finally {
@@ -689,9 +726,31 @@ export default class CommandCenter extends View {
     cx?.notify?.();
   }
 
-  async readStatuses(lanes, profiles) {
+  lanesOf(trees) {
+    const cwd = focused()?.cwd;
+    const lanes = [];
+    for (const tree of trees) {
+      const cache = this.cache[tree.key];
+      const flow = cache.text != null ? "vjr" : "pp";
+      if (flow === "pp" && !this.status[tree.repo.main]?.byPath.has(tree.path) && !inside(cwd, tree.path)) continue;
+      if (cache.flow && cache.flow !== flow) this.cache[tree.key] = { text: cache.text, task: null, taskAt: cache.taskAt, head: cache.head };
+      this.cache[tree.key].flow = flow;
+      lanes.push({ ...tree, flow });
+    }
+    return lanes;
+  }
+
+  async readAlones(lanes) {
+    for (const lane of lanes) {
+      const entry = this.status[lane.repo.main];
+      if (!entry?.report || entry.byPath.has(lane.path) || entry.alone.has(lane.path)) continue;
+      const alone = await this.readAlone(lane.path);
+      if (alone) entry.alone.set(lane.path, alone);
+    }
+  }
+
+  async readStatuses(repos) {
     const now = this.clock();
-    const repos = this.repos.filter((repo) => profileOf(profiles, repo.main) !== "off");
     const trees = (repo) => repo.trees ?? [repo.main];
     for (const cwd of this.settled.splice(0)) {
       const repo = repos.find((item) => trees(item).some((tree) => inside(cwd, tree)));
@@ -700,12 +759,6 @@ export default class CommandCenter extends View {
     const cwd = focused()?.cwd;
     const focusedMain = repos.find((repo) => trees(repo).some((tree) => inside(cwd, tree)))?.main ?? null;
     for (const repo of repos) await this.readStatus(repo, now, focusedMain);
-    for (const lane of lanes) {
-      const entry = this.status[lane.repo.main];
-      if (!entry?.report || entry.byPath.has(lane.path) || entry.alone.has(lane.path)) continue;
-      const alone = await this.readAlone(lane.path);
-      if (alone) entry.alone.set(lane.path, alone);
-    }
   }
 
   share(key, value) {
@@ -717,9 +770,13 @@ export default class CommandCenter extends View {
 
   publish(signals) {
     const lanes = signals.map((lane) => {
+      if (lane.flow === "pp") {
+        const shown = { ...lane, next: ppNext(lane) };
+        return { ...shown, chip: ppChip(shown), summary: ppSummary(shown) };
+      }
       const steps = stepsOf(lane);
       const next = nextStep(lane);
-      return { ...lane, steps, chip: chipOf({ ...lane, next }, steps), next, note: noteOf(lane) };
+      return { ...lane, flow: "vjr", steps, chip: chipOf({ ...lane, next }, steps), next, note: noteOf(lane) };
     });
     const after = {};
     for (const lane of signals) {
@@ -731,7 +788,7 @@ export default class CommandCenter extends View {
       notify({ title: alert.title, body: alert.body, level: alert.level, timeout: 8000, action: { name: `${SELF.name}.show` } });
     }
     this.before = after;
-    this.share("command-center.state", { lanes, repos: this.repos.map((repo) => ({ ...repo, error: this.status[repo.main]?.error ?? null })) });
+    this.share("command-center.state", { lanes, repos: this.repos.map((repo) => ({ ...repo, error: this.status[repo.main]?.error ?? null })), vjrTask: this.vjrTask, editor: this.editor });
     this.share("command-center.badge", badge(signals));
     this.share("command-center.lanes", Object.fromEntries(lanes.map((lane) => [lane.key, lane.chip])));
   }

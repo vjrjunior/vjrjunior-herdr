@@ -27,6 +27,8 @@ let statusPr: Record<string, unknown> | null = null;
 let statusError: string | null = null;
 let statusText: string | null = null;
 let leftOut = new Set<string>();
+let reportOther = false;
+let shellEditor = "";
 let binsMissing = false;
 let evidence: Record<string, unknown> = {};
 let agentsNow: Record<string, unknown>[] = [];
@@ -80,7 +82,7 @@ function statusFor(args: string[]) {
     const path = args[at + 1];
     return { version: 1, repo: { main, name: "app" }, network: false, error: null, lanes: [laneJson(path, path === lane ? BRANCH : "chore/other", null)] };
   }
-  const lanes = leftOut.has(lane) ? [] : [laneJson(lane, BRANCH, statusPr)];
+  const lanes = [...(leftOut.has(lane) ? [] : [laneJson(lane, BRANCH, statusPr)]), ...(reportOther ? [laneJson(other, "chore/other", null)] : [])];
   return { version: 1, repo: { main, name: "app" }, network: true, error: statusError, lanes };
 }
 
@@ -107,6 +109,7 @@ function respond(command: string, args: string[], options: { cwd?: string } = {}
     return found ? ok(JSON.stringify({ address: args[1], pid: 100, foreground: found.foreground })) : ok("", 1);
   }
   if (command === "ps") return ok(`${ttyOf[args.at(-1) as string] ?? "??"}\n`);
+  if (command === "sh") return ok(`noise from the profile\n${shellEditor}`);
   return ok("");
 }
 
@@ -125,6 +128,8 @@ beforeEach(() => {
   statusError = null;
   statusText = null;
   leftOut = new Set();
+  reportOther = false;
+  shellEditor = "";
   binsMissing = false;
   evidence = { ready: false, dir: join(lane, ".pp-stack/updates/fix-cup-1234-draft-reload"), files: {}, reasons: {} };
   agentsNow = [];
@@ -197,11 +202,72 @@ const noLaneStatus = () => {
 };
 
 describe("watcher", () => {
-  test("only a non-main worktree with VJR-TASK.md becomes a task", async () => {
+  test("a worktree is a lane when it has VJR-TASK.md, the report lists it or it has the focus", async () => {
     const view = watcher();
-    await view.discover();
-    expect(view.lanes.map((item: { key: string }) => item.key)).toEqual([lane]);
-    expect(view.lanes[0]).toMatchObject({ branch: BRANCH, repo: { name: "app", main } });
+    await view.read(cx);
+    expect(state().lanes.map((item) => item.key)).toEqual([lane]);
+    expect(state().lanes[0]).toMatchObject({ branch: BRANCH, repo: { name: "app", main }, flow: "vjr" });
+  });
+
+  test("a worktree the report lists without VJR-TASK.md is a Work - PP lane", async () => {
+    reportOther = true;
+    await watcher().read(cx);
+    const published = state().lanes.find((item) => item.key === other);
+    expect(published).toMatchObject({ flow: "pp", task: { title: "chore/other", id: null } });
+    expect(published.steps).toHaveLength(6);
+    expect(published.next).toMatchObject({ kind: "space", text: "/pp-ship", name: "ship · other", folder: other });
+    expect(app.shared["command-center.lanes"]).toMatchObject({ [other]: published.chip });
+  });
+
+  test("a worktree with VJR-TASK.md stays Work - VJR, with its facts from the report", async () => {
+    prReturns(jsonPr());
+    await watcher().read(cx);
+    const published = state().lanes.find((item) => item.key === lane);
+    expect(published).toMatchObject({ flow: "vjr", pr: { number: 42 } });
+    expect(published.steps).toHaveLength(7);
+  });
+
+  test("the focused worktree the report left out is read alone and shows as Work - PP", async () => {
+    focusedCwd = other;
+    await watcher().read(cx);
+    expect(statusCalls().map((call) => call.args)).toContainEqual(["--json", "--no-network", "--path", other]);
+    expect(state().lanes.find((item) => item.key === other)).toMatchObject({ flow: "pp" });
+  });
+
+  test("the focused worktree already in the report is not read again or listed twice", async () => {
+    focusedCwd = other;
+    reportOther = true;
+    await watcher().read(cx);
+    expect(statusCalls().map((call) => call.args)).not.toContainEqual(["--json", "--no-network", "--path", other]);
+    expect(state().lanes.filter((item) => item.key === other)).toHaveLength(1);
+  });
+
+  test("deleting VJR-TASK.md makes the lane Work - PP at the next read, with nothing left from the task", async () => {
+    let now = 1_000_000;
+    const view = watcher();
+    view.clock = () => now;
+    await view.read(cx);
+    expect(state().lanes[0]).toMatchObject({ flow: "vjr", task: { id: "CUP-1234" } });
+    rmSync(join(lane, "VJR-TASK.md"));
+    now += 61_000;
+    await view.read(cx);
+    const published = state().lanes.find((item) => item.key === lane);
+    expect(published.flow).toBe("pp");
+    expect(published.task).toEqual({ id: null, title: BRANCH, url: null, source: "branch-name", base: "main", branch: BRANCH });
+    expect(published.session).toBeUndefined();
+    expect(published.steps).toHaveLength(6);
+  });
+
+  test("state says whether this machine has /vjr-task and which editor it uses", async () => {
+    await watcher().read(cx);
+    expect(app.shared["command-center.state"]).toMatchObject({ vjrTask: false, editor: "cursor" });
+    mkdirSync(join(root, "home", ".claude", "skills", "vjr-task"), { recursive: true });
+    writeFileSync(join(root, "home", ".claude", "skills", "vjr-task", "SKILL.md"), "---\nname: vjr-task\n---\n");
+    shellEditor = "zed";
+    await watcher().close();
+    app.shared["command-center.watch"] = null;
+    await watcher().read(cx);
+    expect(app.shared["command-center.state"]).toMatchObject({ vjrTask: true, editor: "zed" });
   });
 
   test("a read publishes the lane with its task, steps and next step", async () => {
@@ -704,7 +770,7 @@ describe("column", () => {
     const shown = texts(column().render());
     expect(shown).toContain("app");
     expect(shown).toContain("cup-1234");
-    expect(shown).toContain("Partner Programmer");
+    expect(shown).toContain("Work");
   });
 
   test("the timeline names every step with what it did or will do", () => {
@@ -993,11 +1059,11 @@ describe("profile popup", () => {
     view.init({}, cx);
     const shown = texts(view.render());
     expect(shown).toContain("PROFILE · APP");
-    expect(shown).toContain("Partner Programmer");
+    expect(shown).toContain("Work");
     expect(shown).toContain("Off");
     press(view, "profile-off");
     expect(app.shared["command-center.profiles"]).toEqual({ "/r/app": "off" });
-    press(view, "profile-pp");
+    press(view, "profile-work");
     expect(app.shared["command-center.profiles"]).toEqual({});
     expect(closed).toEqual(["o7", "o7"]);
   });

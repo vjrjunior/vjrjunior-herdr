@@ -1,3 +1,4 @@
+import { ppWaits } from "./flow-pp.js";
 import { inMain, inNewTab, NO_CLAUDE, pickClaude, sendArgs, sendTo } from "./route.js";
 
 export { pickClaude, sendArgs };
@@ -10,7 +11,8 @@ const VERIFICATION = /^## Verification — (\S+)\s*$/;
 const SLACK_LINK = /<([^|>]+)\|([^>]+)>/g;
 const SESSION_ID = /^[A-Za-z0-9_-]+$/;
 
-export const PROFILES = { pp: { label: "Partner Programmer" } };
+export const PROFILES = { work: { label: "Work" } };
+export const FLOW_LABEL = { vjr: "Work - VJR", pp: "Work - PP" };
 
 const inside = (path, root) => Boolean(path && root) && (path === root || path.startsWith(`${root}/`));
 
@@ -368,6 +370,12 @@ export function badge(lanes) {
   let count = 0;
   let bad = false;
   for (const lane of lanes) {
+    if (lane.flow === "pp") {
+      const waits = ppWaits(lane);
+      if (waits.failed) bad = true;
+      if (waits.waits) count += 1;
+      continue;
+    }
     const steps = stepsOf(lane);
     const next = nextStep(lane);
     const failed = steps[4] === "bad";
@@ -379,7 +387,7 @@ export function badge(lanes) {
 
 export function profileOf(profiles, main) {
   const chosen = profiles?.[main];
-  return chosen === "off" || Object.hasOwn(PROFILES, chosen ?? "") ? chosen : "pp";
+  return chosen === "off" ? "off" : "work";
 }
 
 export function skillRecord(records, lane, shared) {

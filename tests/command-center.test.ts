@@ -17,6 +17,7 @@ import {
   pickClaude,
   profileOf,
   PROFILES,
+  FLOW_LABEL,
   prStep,
   pushLine,
   regenerateStep,
@@ -532,12 +533,23 @@ describe("the task's session", () => {
 });
 
 describe("profiles", () => {
-  test("every repo follows Partner Programmer until it is switched off", () => {
-    expect(PROFILES.pp.label).toBe("Partner Programmer");
-    expect(profileOf({}, "/r/app")).toBe("pp");
-    expect(profileOf(null, "/r/app")).toBe("pp");
+  test("Work is every repo's profile until it is switched off, an old value reads as Work", () => {
+    expect(PROFILES.work.label).toBe("Work");
+    expect(profileOf({}, "/r/app")).toBe("work");
+    expect(profileOf(null, "/r/app")).toBe("work");
     expect(profileOf({ "/r/app": "off" }, "/r/app")).toBe("off");
-    expect(profileOf({ "/r/app": "nonsense" }, "/r/app")).toBe("pp");
+    expect(profileOf({ "/r/app": "pp" }, "/r/app")).toBe("work");
+    expect(profileOf({ "/r/app": "nonsense" }, "/r/app")).toBe("work");
+  });
+
+  test("each flow has its name", () => {
+    expect(FLOW_LABEL).toEqual({ vjr: "Work - VJR", pp: "Work - PP" });
+  });
+
+  test("the badge counts a Work - PP lane that waits on you", () => {
+    const ppLane = (steps: string[]) => ({ flow: "pp", steps, claude: { terminal: null, status: null, count: 0, ambiguous: false }, skill: null, action: null, why: null });
+    expect(badge([ppLane(["done", "done", "done", "done", "done", "next"])])).toEqual({ count: 1, level: "wait" });
+    expect(badge([ppLane(["done", "done", "done", "bad", "todo", "todo"]), ppLane(["done", "next", "todo", "todo", "todo", "todo"])])).toEqual({ count: 1, level: "bad" });
   });
 });
 

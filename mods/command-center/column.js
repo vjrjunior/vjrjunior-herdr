@@ -411,7 +411,7 @@ export function columnView(view, state, cwd, profiles, t) {
     body = [message("No task in this worktree", "A task is a worktree with a VJR-TASK.md from /vjr-task.", t)];
   } else if (shown.kind === "off") {
     left = [div().font_semibold().text_color(t.foreground).child(repo.name)];
-    body = [message(`Command Center is off in ${repo.name}`, "Nothing is read here until a profile is on.", t), h_flex().justify_center().child(button("profile-on", { label: `Use ${PROFILES.pp.label}`, color: t.muted, onClick: () => view.setProfile(repo.main, "pp") }, t))];
+    body = [message(`Command Center is off in ${repo.name}`, "Nothing is read here until a profile is on.", t), h_flex().justify_center().child(button("profile-on", { label: `Use ${PROFILES.work.label}`, color: t.muted, onClick: () => view.setProfile(repo.main, "work") }, t))];
   }
   return v_flex()
     .size_full()
