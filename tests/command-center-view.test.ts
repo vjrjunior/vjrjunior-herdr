@@ -589,6 +589,8 @@ const called = (node: Node, name: string) => walk(node).flatMap((n) => n.calls.f
 const svgs = (node: Node) => called(node, "svg").map(([path]) => path as string);
 
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
+const typing = { notify() {}, sleep: () => new Promise(() => {}) };
+const submitCx = { notify() {}, spawn: (run: (cx: typeof typing) => unknown) => run(typing) };
 
 function pathTo(node: Node, key: string): Node[] | null {
   if (node.key === key) return [node];
@@ -831,15 +833,64 @@ describe("column", () => {
     expect(shown.join(" ")).not.toContain("VJR-TASK.md");
   });
 
-  test("the main checkout lists the repo's tasks and starts a new one", () => {
+  test("the main checkout lists the repo's tasks", () => {
     focusedCwd = "/r/app";
     const view = column([BASE_LANE, { ...SHIPPED, key: "/w/cup-9", path: "/w/cup-9", task: { ...BASE_LANE.task, id: "CUP-9", title: "Shipped task" } }]);
     const shown = texts(view.render());
     expect(shown).toContain("TASKS IN APP");
     expect(shown).toContain("A saved draft disappears");
     expect(shown).toContain("merged · clean up");
-    press(view, "start-task");
-    expect(app.runs).toContainEqual(["tab.new", { space: "sp-1234", folder: "/r/app", name: "task", argv: ["claude"], task: "/vjr-task" }]);
+  });
+
+  test("with /vjr-task, Enter sends the text to /vjr-task in a new tab", async () => {
+    focusedCwd = "/r/app";
+    const view = column([BASE_LANE], REPOS, { vjrTask: true });
+    expect(texts(view.render())).toContain("Enter runs /vjr-task in a new tab");
+    view.startInput.set_value("CUP-5555");
+    view.startInput.emit("submit", submitCx);
+    await flush();
+    expect(app.runs).toContainEqual(["tab.new", { space: "sp-1234", folder: "/r/app", name: "start · CUP-5555", argv: ["claude"], task: "/vjr-task CUP-5555" }]);
+    expect(view.startInput.value()).toBe("");
+    expect(texts(view.render())).toContain("Started: start · CUP-5555");
+  });
+
+  test("Team flow instead claims with /work and starts the worktree with Herdr as the editor", () => {
+    focusedCwd = "/r/app";
+    const view = column([BASE_LANE], REPOS, { vjrTask: true });
+    view.startInput.set_value("CUP-5555");
+    press(view, "start-team");
+    expect(app.runs).toContainEqual(["tab.new", { space: "sp-1234", folder: "/r/app", name: "start · CUP-5555", argv: ["env", "PP_EDITOR=herdr", "claude"], task: "/work start CUP-5555, then /pp-worktree-start for it" }]);
+  });
+
+  test("without /vjr-task, Enter runs the team flow and nothing mentions vjr", async () => {
+    focusedCwd = "/r/app";
+    const view = column([], REPOS, { vjrTask: false });
+    const shown = texts(view.render());
+    expect(shown).toContain("Enter claims with /work and runs /pp-worktree-start");
+    expect(shown.join(" ")).not.toMatch(/vjr/i);
+    expect(pathTo(view.render(), "start-team")).toBeNull();
+    view.startInput.set_value("faster search");
+    view.startInput.emit("submit", submitCx);
+    await flush();
+    expect(app.runs).toContainEqual(["tab.new", { space: "sp-1234", folder: "/r/app", name: "start · faster search", argv: ["env", "PP_EDITOR=herdr", "claude"], task: "/pp-worktree-start faster search" }]);
+  });
+
+  test("an id that already has a lane goes to its space and starts nothing", async () => {
+    focusedCwd = "/r/app";
+    const view = column([BASE_LANE], REPOS, { vjrTask: true });
+    view.startInput.set_value("cup-1234");
+    view.startInput.emit("submit", submitCx);
+    await flush();
+    expect(app.runs).toEqual([["space.select", { id: "sp-1234" }]]);
+  });
+
+  test("an empty field starts nothing", async () => {
+    focusedCwd = "/r/app";
+    const view = column([], REPOS, { vjrTask: true });
+    view.startInput.set_value("  ");
+    view.startInput.emit("submit", submitCx);
+    await flush();
+    expect(app.runs).toEqual([]);
   });
 
   test("a row's own action runs without picking the row", () => {
@@ -1125,12 +1176,13 @@ describe("timeline and identity", () => {
     expect(texts(head()).join("")).not.toContain("▾");
   });
 
-  test("Start a task is a dashed button with a plus", () => {
+  test("Start a task is a field with a plus and its placeholder", () => {
     focusedCwd = "/r/app";
-    const start = pathTo(column([]).render(), "start-task")?.at(-1) as Node;
+    const view = column([]);
+    const start = pathTo(view.render(), "start-task")?.at(-1) as Node;
     expect(svgs(start)).toEqual(["mods/kit/icons/plus.svg"]);
     expect(called(start, "border_dashed")).toHaveLength(1);
-    expect(texts(start)).toContain("Start a task");
+    expect(view.startInput.placeholder).toBe("CUP-1234 or what you'll work on");
   });
 
   test("the profile button shows a chevron", () => {

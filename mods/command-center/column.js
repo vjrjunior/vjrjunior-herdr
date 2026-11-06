@@ -480,8 +480,35 @@ function laneRow(view, lane, tagged, t) {
     .when(Boolean(summary.action), (el) => el.child(button(`lane-act-${lane.key}`, { label: summary.action, color: t.muted, onClick: (cx) => view.laneAction(lane, summary.action, cx) }, t)));
 }
 
+function startField(view, repo, vjrTask, t) {
+  return v_flex()
+    .gap(6)
+    .child(
+      h_flex()
+        .id("start-task")
+        .h(CONTROL.large)
+        .px(9)
+        .gap(6)
+        .items_center()
+        .rounded(5)
+        .border_1()
+        .border_dashed()
+        .border_color(t.input)
+        .child(icon("plus", { size: ICON_SIZE.md, color: t.muted }))
+        .child(div().flex_1().min_w(0).child(Input.new(view.startInput))),
+    )
+    .child(
+      h_flex()
+        .gap(8)
+        .text_size(11)
+        .text_color(t.unknown)
+        .child(div().flex_1().min_w(0).child(vjrTask ? "Enter runs /vjr-task in a new tab" : "Enter claims with /work and runs /pp-worktree-start"))
+        .when(vjrTask, (el) => el.child(link("start-team", { label: "Team flow instead", onClick: (cx) => view.startTask(repo, "team", cx) }, t))),
+    );
+}
+
 function repoView(view, repo, lanes, tagged, t) {
-  const start = button("start-task", { label: "Start a task", icon: "plus", variant: "dashed", full: true, height: CONTROL.large, hint: "/vjr-task in a new tab", onClick: (cx) => view.startTask(repo, cx) }, t);
+  const start = startField(view, repo, tagged, t);
   const list = lanes.length ? v_flex().children(lanes.map((lane) => laneRow(view, lane, tagged, t))) : div().text_size(11.5).text_color(t.unknown).child("No tasks in progress.");
   return [start, v_flex().gap(6).child(heading(`Tasks in ${repo.name}`, t, lanes.length)).child(list)];
 }

@@ -4,6 +4,7 @@ import * as fs from "fs/promises";
 import { columnView, profileView, shotView } from "./column.js";
 import { ppChip, ppNext, ppSignals, ppSummary } from "./flow-pp.js";
 import { factsOf, parseLaneStatus } from "./lane-status.js";
+import { startPlan } from "./start.js";
 import {
   agents,
   appHome,
@@ -44,6 +45,7 @@ import {
   skillState,
   stepsOf,
   transitions,
+  viewFor,
 } from "./logic.js";
 
 const SELF = { name: "command-center" };
@@ -113,6 +115,8 @@ export default class CommandCenter extends View {
     this.sent = {};
     this.failInput = InputState.new({ placeholder: "What did you see?" });
     this.failInput.on("submit", (_e, cx) => this.submitFailure(cx));
+    this.startInput = InputState.new({ placeholder: "CUP-1234 or what you'll work on" });
+    this.startInput.on("submit", (_e, cx) => this.submitStart(cx));
   }
 
   startShot(own, cx) {
@@ -191,10 +195,22 @@ export default class CommandCenter extends View {
     if (this.overlay) closeOverlay(this.overlay);
   }
 
-  startTask(repo, cx) {
-    const space = focused()?.space ?? null;
-    this.newClaude(space, repo.main, "/vjr-task", "task");
-    cx?.notify?.();
+  submitStart(cx) {
+    const state = shared("command-center.state") ?? {};
+    const shown = viewFor(this.checkoutCwd(), state, shared("command-center.profiles") ?? {});
+    if (shown.kind === "repo") this.startTask(shown.repo, state.vjrTask ? "vjr" : "team", cx);
+  }
+
+  startTask(repo, route, cx) {
+    const lanes = shared("command-center.state")?.lanes ?? [];
+    const plan = startPlan({ text: this.startInput.value(), route, repo, lanes, space: focused()?.space ?? null });
+    if (plan.kind === "none") return;
+    if (plan.kind === "select") run("space.select", { id: plan.space });
+    else if (plan.kind === "open") run("space.new", { folder: plan.folder, machine: "" });
+    else if (plan.kind === "tab") run("tab.new", { space: plan.space, folder: plan.folder, name: plan.name, argv: plan.argv, task: plan.task });
+    else run("space.new", { folder: plan.folder, tab: plan.name, argv: plan.argv, task: plan.task, machine: "" });
+    this.startInput.set_value("");
+    this.tell(plan.kind === "select" || plan.kind === "open" ? "Went to that task" : `Started: ${plan.name}`, cx);
   }
 
   isOpen(lane, name, current) {
