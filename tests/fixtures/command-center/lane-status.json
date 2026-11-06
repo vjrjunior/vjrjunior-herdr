@@ -1,0 +1,173 @@
+{
+  "version": 1,
+  "generatedAt": "2026-11-05T11:40:02Z",
+  "repo": { "main": "/r/app", "name": "app", "defaultBranch": "main" },
+  "network": true,
+  "prFetchedAt": "2026-11-05T11:40:01Z",
+  "error": null,
+  "lanes": [
+    {
+      "path": "/w/app-lincoln",
+      "branch": "feat/faster-search",
+      "head": "bbbbbbb2222",
+      "base": "main",
+      "baseSource": "default",
+      "task": { "id": null, "name": "feat/faster-search", "url": null, "source": "branch-name" },
+      "commitsAhead": 40,
+      "skill": null,
+      "ship": { "state": "stale", "count": 12, "commitsSince": 3, "coversSha": "aaaaaaa1111", "reason": "covers_sha aaaaaaa is behind HEAD" },
+      "evidence": {
+        "ready": false,
+        "dir": "/w/app-lincoln/.pp-stack/updates/feat-faster-search",
+        "files": { "ship.json": "stale", "screenshots.md": "current", "message.txt": "current", "meta.json": "current" },
+        "reasons": { "ship.json": "3 code commits since covers_sha" }
+      },
+      "pr": {
+        "number": 862,
+        "url": "https://github.com/acme/app/pull/862",
+        "title": "feat(search): faster search",
+        "state": "OPEN",
+        "isDraft": false,
+        "base": "main",
+        "reviewDecision": "REVIEW_REQUIRED",
+        "mergedAt": null,
+        "checks": {
+          "passed": 5,
+          "failed": [],
+          "pending": 0,
+          "items": [{ "name": "CI / test", "state": "ok", "detail": "success", "link": "https://github.com/acme/app/actions/runs/1" }]
+        },
+        "preview": { "match": "preview", "name": "CI / Deploy to Preview", "job": "Deploy to Preview", "state": "SUCCESS", "link": "https://preview.example/862" }
+      },
+      "steps": [
+        { "id": "build", "state": "done", "note": "40 commits ahead of main" },
+        { "id": "ship", "state": "next", "note": "3 commits since ship" },
+        { "id": "evidence", "state": "bad", "note": "3 of 4 current" },
+        { "id": "pr", "state": "run", "note": "#862 · 5/5 checks · review pending" },
+        { "id": "merge", "state": "todo", "note": "/land-and-deploy" },
+        { "id": "clear", "state": "todo", "note": "/pp-clear from main" }
+      ],
+      "next": { "label": "Run /pp-ship (delta)", "command": "/pp-ship", "url": null, "where": "worktree", "kind": "skill" },
+      "waitsOnYou": true,
+      "why": "3 commits since ship",
+      "error": null
+    },
+    {
+      "path": "/w/app-cup-7001",
+      "branch": "feat/CUP-7000--cup-7001-umbrella-child",
+      "head": "ccccccc3333",
+      "base": "feat/CUP-7000",
+      "baseSource": "worktree-parent",
+      "task": { "id": "CUP-7001", "name": "Child of the umbrella", "url": "https://app.clickup.com/t/86abc7001", "source": "claim" },
+      "commitsAhead": 6,
+      "skill": { "name": "pp-ship", "running": false, "startedAt": "2026-11-05T09:00:00Z", "endedAt": "2026-11-05T09:20:00Z", "tty": "ttys011", "sessionId": "s-7001" },
+      "ship": { "state": "current", "count": 1, "commitsSince": 0, "coversSha": "ccccccc3333", "reason": null },
+      "evidence": {
+        "ready": false,
+        "dir": "/w/app-cup-7001/.pp-stack/updates/feat-CUP-7000--cup-7001-umbrella-child",
+        "files": { "ship.json": "current", "screenshots.md": "current", "message.txt": "missing", "meta.json": "missing" },
+        "reasons": {}
+      },
+      "pr": {
+        "number": 901,
+        "url": "https://github.com/acme/app/pull/901",
+        "title": "feat(umbrella): child of the umbrella",
+        "state": "OPEN",
+        "isDraft": true,
+        "base": "feat/CUP-7000",
+        "reviewDecision": null,
+        "mergedAt": null,
+        "checks": {
+          "passed": 3,
+          "failed": [],
+          "pending": 1,
+          "items": [{ "name": "CI / test", "state": "run", "detail": "running", "link": "https://github.com/acme/app/actions/runs/2" }]
+        },
+        "preview": null
+      },
+      "steps": [
+        { "id": "build", "state": "done", "note": "6 commits ahead of feat/CUP-7000" },
+        { "id": "ship", "state": "done", "note": "1 ship · current" },
+        { "id": "evidence", "state": "next", "note": "2 of 4 current" },
+        { "id": "pr", "state": "run", "note": "#901 · 3/4 checks · draft" },
+        { "id": "merge", "state": "todo", "note": "/land-and-deploy" },
+        { "id": "clear", "state": "todo", "note": "/pp-clear from main" }
+      ],
+      "next": { "label": "Run /pp-pr-ready", "command": "/pp-pr-ready", "url": null, "where": "worktree", "kind": "skill" },
+      "waitsOnYou": true,
+      "why": "2 of 4 current",
+      "error": null
+    },
+    {
+      "path": "/w/app-gabriel",
+      "branch": "worktree-feat+CUP-7002-export",
+      "head": "ddddddd4444",
+      "base": "main",
+      "baseSource": "default",
+      "task": { "id": "CUP-7002", "name": "worktree-feat+CUP-7002-export", "url": null, "source": "branch" },
+      "commitsAhead": 2,
+      "skill": null,
+      "ship": { "state": "none", "count": 0, "commitsSince": 0, "coversSha": null, "reason": null },
+      "evidence": {
+        "ready": false,
+        "dir": "/w/app-gabriel/.pp-stack/updates/worktree-feat-CUP-7002-export",
+        "files": { "ship.json": "missing", "screenshots.md": "missing", "message.txt": "missing", "meta.json": "missing" },
+        "reasons": {}
+      },
+      "pr": null,
+      "steps": [
+        { "id": "build", "state": "run", "note": "2 commits, not shipped" },
+        { "id": "ship", "state": "next", "note": "not shipped yet" },
+        { "id": "evidence", "state": "todo", "note": "4 receipts" },
+        { "id": "pr", "state": "todo", "note": "no PR yet" },
+        { "id": "merge", "state": "todo", "note": "/land-and-deploy" },
+        { "id": "clear", "state": "todo", "note": "/pp-clear from main" }
+      ],
+      "next": { "label": "Run /pp-ship", "command": "/pp-ship", "url": null, "where": "worktree", "kind": "skill" },
+      "waitsOnYou": true,
+      "why": "not shipped yet",
+      "error": null
+    },
+    {
+      "path": "/w/app-cup-7003",
+      "branch": "fix/cup-7003-totals",
+      "head": "eeeeeee5555",
+      "base": "main",
+      "baseSource": "pr",
+      "task": { "id": "CUP-7003", "name": "Totals add up again", "url": "https://app.clickup.com/t/86abc7003", "source": "claim" },
+      "commitsAhead": 0,
+      "skill": { "name": "land-and-deploy", "running": false, "startedAt": "2026-11-05T08:00:00Z", "endedAt": "2026-11-05T08:30:00Z", "tty": "ttys012", "sessionId": "s-7003" },
+      "ship": { "state": "current", "count": 2, "commitsSince": 0, "coversSha": "eeeeeee5555", "reason": null },
+      "evidence": {
+        "ready": true,
+        "dir": "/w/app-cup-7003/.pp-stack/updates/fix-cup-7003-totals",
+        "files": { "ship.json": "current", "screenshots.md": "current", "message.txt": "current", "meta.json": "current" },
+        "reasons": {}
+      },
+      "pr": {
+        "number": 905,
+        "url": "https://github.com/acme/app/pull/905",
+        "title": "fix(totals): totals add up again",
+        "state": "MERGED",
+        "isDraft": false,
+        "base": "main",
+        "reviewDecision": "APPROVED",
+        "mergedAt": "2026-11-05T08:25:00Z",
+        "checks": { "passed": 6, "failed": [], "pending": 0, "items": [] },
+        "preview": null
+      },
+      "steps": [
+        { "id": "build", "state": "done", "note": "0 commits ahead of main" },
+        { "id": "ship", "state": "done", "note": "2 ships · current" },
+        { "id": "evidence", "state": "done", "note": "4 of 4 current" },
+        { "id": "pr", "state": "done", "note": "#905 merged" },
+        { "id": "merge", "state": "done", "note": "merged" },
+        { "id": "clear", "state": "next", "note": "/pp-clear 905 from main" }
+      ],
+      "next": { "label": "Run /pp-clear 905", "command": "/pp-clear 905", "url": null, "where": "main", "kind": "skill" },
+      "waitsOnYou": true,
+      "why": "/pp-clear 905 from main",
+      "error": null
+    }
+  ]
+}
