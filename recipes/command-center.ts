@@ -50,7 +50,7 @@ export const commandCenter: Recipe = {
     { name: "command-center", from: "repo" },
     { name: "tabs", from: "mods" },
   ],
-  apply({ copies, layout, variant }) {
+  apply({ copies, layout, variant, ppStack }) {
     const corners = variant.recipes.some((recipe) => recipe.name === "square") ? "" : ".rounded(6)";
     exact(copies.tabs as Copy, FILES_BUTTON, `${TOGGLE.replace("CORNERS", corners)}\n      ${FILES_BUTTON}`);
     exact(copies.tabs as Copy, PANELS_MEMORY, `${PANELS_MEMORY}\n    ${MEMORY}`);
@@ -59,7 +59,7 @@ export const commandCenter: Recipe = {
     (findNode(layout, "work-body").children as LayoutNode[]).push({ id: "command-center", type: "block", size: { px: 380 }, hidden: true, content: { mod: "command-center" } });
     layout.floating = [
       ...((layout.floating as LayoutNode[] | undefined) ?? []),
-      { id: "command-center-watch", content: { mod: "command-center", props: { role: "watch" } }, edge: "left", align: "end" },
+      { id: "command-center-watch", content: { mod: "command-center", props: { role: "watch", ...(ppStack ? { ppStack } : {}) } }, edge: "left", align: "end" },
     ];
   },
 };

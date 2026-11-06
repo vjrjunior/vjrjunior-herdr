@@ -23,6 +23,11 @@ function mtimes(home: string): Record<string, number> {
   return Object.fromEntries(allFiles(home).map((path) => [relative(home, path), statSync(path).mtimeMs]));
 }
 
+function setupWithBase() {
+  const homes = makeHomes();
+  return { ...setup(copyRepo(), homes), base: homes.base };
+}
+
 function setup(root = copyRepo(), homes = makeHomes()) {
   const home = homes.herdrApp;
   makeHerdrHome(home);
@@ -168,6 +173,38 @@ describe("apply", () => {
     apply();
 
     expect(log().filter((line) => line.startsWith("check "))).toHaveLength(34);
+  });
+
+  test("--pp-stack points the Command Center's watcher at that pp-stack and is kept for later runs", () => {
+    const { apply, layout, record, base } = setupWithBase();
+    const ppStack = join(base, "pp stack");
+    mkdirSync(join(ppStack, "bin"), { recursive: true });
+    writeFileSync(join(ppStack, "bin", "pp-lane-status"), "");
+    const watcher = (name: string) => layout(name).floating.find((node: { id: string }) => node.id === "command-center-watch").content.props;
+
+    expect(apply(["--pp-stack", ppStack]).code).toBe(0);
+    expect(watcher("vjr-desk")).toEqual({ role: "watch", ppStack });
+    expect(watcher("vjr-desk-square")).toEqual({ role: "watch", ppStack });
+    expect(record().ppStack).toBe(ppStack);
+
+    expect(apply(["--herdr-version", "0.1.11"]).code).toBe(0);
+    expect(watcher("vjr-desk")).toEqual({ role: "watch", ppStack });
+
+    expect(apply(["--pp-stack", ""]).code).toBe(0);
+    expect(watcher("vjr-desk")).toEqual({ role: "watch" });
+    expect(record().ppStack).toBeUndefined();
+  });
+
+  test("--pp-stack refuses a folder without bin/pp-lane-status and changes nothing", () => {
+    const { apply, base, record } = setupWithBase();
+    apply();
+    const before = record();
+
+    const result = apply(["--pp-stack", join(base, "nowhere")]);
+
+    expect(result.code).toBe(1);
+    expect(result.stderr).toContain("bin/pp-lane-status");
+    expect(record()).toEqual(before);
   });
 
   test("records what it created", () => {

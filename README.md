@@ -92,6 +92,7 @@ If a recipe no longer fits the new version, nothing changes in either layout: th
 - Run it again after changing the shortcut for the palette, Settings, help or search in the `global` section of `keys.json`.
 - The layouts store this repo's path. If you move it, run `bun run apply-layout` from the new place.
 - `~/.local/state/vjr-herdr/layout.log` records every run.
+- `bun run apply-layout --pp-stack <folder>` makes the Command Center run `pp-lane-status` and `pp-pr-evidence` from `<folder>/bin/` instead of the installed pp-stack, to try a pp-stack branch before it ships. The folder needs `bin/pp-lane-status`. Later runs, including the ones `vjr-sync` makes after a Herdr update, keep it; `--pp-stack ''` goes back to `~/.claude/skills/pp-stack`.
 
 ### Git Graph
 

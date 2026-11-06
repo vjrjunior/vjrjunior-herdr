@@ -1,12 +1,12 @@
 import { appendFileSync, closeSync, cpSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync, writeSync } from "node:fs";
-import { basename, dirname, join } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { LEFT_ROUNDED, REPLACED, VARIANTS } from "../recipes/variants";
 import { type Generated, generateVariant } from "./generate-layout";
 import { deriveSection, type KeyTable, keysText, readKeys, withoutSections, withSections } from "./layout-keys";
 import { herdrAppHome, stateDir } from "./paths";
 
 export type ApplyResult = "applied" | "unchanged" | "busy";
-export type LayoutRecord = { version: string; mods: string[]; kept: string[]; files: string[]; sections: string[] };
+export type LayoutRecord = { version: string; mods: string[]; kept: string[]; files: string[]; sections: string[]; ppStack?: string };
 
 const root = join(import.meta.dir, "..");
 const REPO_MODS = ["vjr-sync", "git-graph"];
@@ -194,7 +194,15 @@ function warnUncovered(home: string): void {
   }
 }
 
-function applyAll(options: { herdrVersion?: string }): ApplyResult {
+function ppStackFor(given: string | undefined, record: LayoutRecord): string | undefined {
+  if (given === undefined) return record.ppStack;
+  if (!given) return undefined;
+  const folder = resolve(given);
+  if (!existsSync(join(folder, "bin/pp-lane-status"))) throw new Error(`${join(folder, "bin/pp-lane-status")} not found: --pp-stack needs a pp-stack folder with pp-lane-status`);
+  return folder;
+}
+
+function applyAll(options: { herdrVersion?: string; ppStack?: string }): ApplyResult {
   const home = herdrAppHome();
   const state = stateDir();
   if (!existsSync(join(home, "themes/vjr.json"))) throw new Error("the vjr theme is not installed: run bun run install-theme first");
@@ -202,7 +210,8 @@ function applyAll(options: { herdrVersion?: string }): ApplyResult {
   const table = readKeys(keysPath);
   const version = options.herdrVersion ?? installedVersion();
   const record = readRecord();
-  const generated = VARIANTS.map((variant) => generateVariant(variant, { home, version, repo: root, bun: process.execPath }));
+  const ppStack = ppStackFor(options.ppStack, record);
+  const generated = VARIANTS.map((variant) => generateVariant(variant, { home, version, repo: root, bun: process.execPath, ppStack }));
   const build = join(state, `build-${process.pid}`);
   const previous = join(state, `previous-${process.pid}`);
   mkdirSync(build, { recursive: true });
@@ -237,6 +246,7 @@ function applyAll(options: { herdrVersion?: string }): ApplyResult {
       kept,
       files: union(record.files, Object.keys(files)),
       sections: union(record.sections, Object.keys(sections)),
+      ppStack: record.ppStack,
     });
     mkdirSync(previous, { recursive: true });
     const installed: string[] = [];
@@ -263,7 +273,7 @@ function applyAll(options: { herdrVersion?: string }): ApplyResult {
       if (before !== null) Bun.sleepSync(RELOAD_MS);
       for (const mod of staleMods) rmSync(join(home, "mods", mod), { recursive: true, force: true });
     }
-    writeRecord({ version, mods, kept, files: Object.keys(files), sections: Object.keys(sections) });
+    writeRecord({ version, mods, kept, files: Object.keys(files), sections: Object.keys(sections), ppStack });
     warnUncovered(home);
     return "applied";
   } finally {
@@ -276,7 +286,7 @@ function writeLog(line: string): void {
   appendFileSync(join(stateDir(), "layout.log"), `${new Date().toISOString()} ${line.replace(/\s+/g, " ")}\n`);
 }
 
-export function apply(options: { herdrVersion?: string } = {}): ApplyResult {
+export function apply(options: { herdrVersion?: string; ppStack?: string } = {}): ApplyResult {
   mkdirSync(stateDir(), { recursive: true });
   if (!takeLock()) return "busy";
   const started = Date.now();
@@ -320,9 +330,9 @@ function flag(args: string[], name: string): string | undefined {
 if (import.meta.main) {
   try {
     const [command, ...args] = process.argv.slice(2);
-    if (command === "apply") console.log(apply({ herdrVersion: flag(args, "--herdr-version") }));
+    if (command === "apply") console.log(apply({ herdrVersion: flag(args, "--herdr-version"), ppStack: flag(args, "--pp-stack") }));
     else if (command === "uninstall") uninstall();
-    else throw new Error("usage: layout.ts apply [--herdr-version X] | uninstall");
+    else throw new Error("usage: layout.ts apply [--herdr-version X] [--pp-stack <folder> | --pp-stack ''] | uninstall");
   } catch (error) {
     console.error(`error: ${(error as Error).message}`);
     process.exit(1);

@@ -7,6 +7,7 @@ export type RecipeContext = {
   replacements: Record<string, string>;
   keys: Record<string, string>;
   variant: Variant;
+  ppStack?: string;
 };
 export type Recipe = { name: string; mods: ModSource[]; apply(context: RecipeContext): void };
 export type Variant = { layout: string; prefix: string; preview: string; recipes: Recipe[] };

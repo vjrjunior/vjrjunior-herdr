@@ -67,7 +67,6 @@ const inside = (path, root) => Boolean(path && root) && (path === root || path.s
 const basename = (path) => path.replace(/\/+$/, "").split("/").pop() ?? path;
 const firstLine = (text) => String(text ?? "").trim().split("\n")[0] ?? "";
 const firstWord = (text) => String(text ?? "").trim().split(/\s+/)[0] ?? "";
-const bin = (name) => `${home()}/.claude/skills/pp-stack/bin/${name}`;
 const cacheDir = () => `${appHome()}/data/${SELF.name}/shots`;
 
 function laneSignals(lane, cache) {
@@ -95,6 +94,7 @@ export default class CommandCenter extends View {
   init(given, cx) {
     const own = given && typeof given === "object" ? given : {};
     this.role = own.role ?? props()?.role ?? null;
+    this.ppStack = own.ppStack ?? props()?.ppStack ?? null;
     if (this.role === "watch") this.startWatch(cx);
     else if (this.role === "shot") this.startShot(own, cx);
     else if (this.role === "profile") this.startProfile(own);
@@ -324,7 +324,7 @@ export default class CommandCenter extends View {
           return false;
         }
       };
-      const copied = (await attempt(bin("pp-stack-rich-copy"), [release.messagePath])) || (await attempt("sh", ["-c", 'pbcopy < "$1"', "_", release.messagePath]));
+      const copied = (await attempt(this.bin("pp-stack-rich-copy"), [release.messagePath])) || (await attempt("sh", ["-c", 'pbcopy < "$1"', "_", release.messagePath]));
       await this.flash(copied ? "Copied the message" : "Could not copy the message", cx);
     });
   }
@@ -343,6 +343,10 @@ export default class CommandCenter extends View {
     if (name === "right") this.index = (this.index + 1) % total;
     if (name === "left") this.index = (this.index + total - 1) % total;
     cx?.notify?.();
+  }
+
+  bin(name) {
+    return `${this.ppStack || `${home()}/.claude/skills/pp-stack`}/bin/${name}`;
   }
 
   startWatch(cx) {
@@ -548,7 +552,7 @@ export default class CommandCenter extends View {
   }
 
   async readVerified(lane, cache, base) {
-    const last = await this.run(bin("pp-pr-evidence"), ["last-code-sha", "--base", base], lane.path);
+    const last = await this.run(this.bin("pp-pr-evidence"), ["last-code-sha", "--base", base], lane.path);
     cache.lastCode = last?.code === 0 && last.stdout.trim() ? last.stdout.trim() : cache.head;
     const verified = cache.task?.verification?.sha;
     cache.sinceVerified = 0;
@@ -563,13 +567,13 @@ export default class CommandCenter extends View {
     if (held && now - held.at < (focusedMain === repo.main ? STATUS_FOCUS : STATUS_OTHER)) return;
     const entry = { at: now, report: null, byPath: new Map(), alone: new Map(), error: null };
     this.status[repo.main] = entry;
-    if (!(await fs.exists(bin("pp-lane-status")))) {
+    if (!(await fs.exists(this.bin("pp-lane-status")))) {
       entry.error = OLD_PP_STACK;
       return;
     }
     let result;
     try {
-      result = await exec(bin("pp-lane-status"), ["--json"], { cwd: repo.main });
+      result = await exec(this.bin("pp-lane-status"), ["--json"], { cwd: repo.main });
     } catch {
       entry.error = "pp-lane-status could not start";
       return;
@@ -588,7 +592,7 @@ export default class CommandCenter extends View {
   }
 
   async readAlone(path) {
-    const result = await this.run(bin("pp-lane-status"), ["--json", "--no-network", "--path", path], path);
+    const result = await this.run(this.bin("pp-lane-status"), ["--json", "--no-network", "--path", path], path);
     if (result?.code !== 0) return null;
     const report = parseLaneStatus(result.stdout);
     return report.repo ? (report.lanes.find((lane) => lane.path === path) ?? null) : null;

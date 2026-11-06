@@ -310,6 +310,19 @@ describe("watcher", () => {
     expect(app.runs).toContainEqual(["space.select", { id: "sp-other" }]);
   });
 
+  test("a watcher given a pp-stack folder runs that folder's scripts", async () => {
+    const devStack = join(root, "dev pp-stack");
+    mkdirSync(join(devStack, "bin"), { recursive: true });
+    writeFileSync(join(devStack, "bin", "pp-lane-status"), "");
+    rmSync(join(root, "home", ".claude", "skills", "pp-stack", "bin", "pp-lane-status"));
+    const view = new CommandCenter();
+    view.init({ role: "watch", ppStack: devStack }, cx);
+    await view.read(cx);
+    expect(statusCalls().map((call) => call.command)).toEqual([join(devStack, "bin", "pp-lane-status")]);
+    expect(app.execs.filter((call) => call.command.endsWith("/pp-pr-evidence")).map((call) => call.command)).toEqual([join(devStack, "bin", "pp-pr-evidence")]);
+    expect(state().repos[0].error).toBeNull();
+  });
+
   test("state says whether this machine has /vjr-task and which editor it uses", async () => {
     await watcher().read(cx);
     expect(app.shared["command-center.state"]).toMatchObject({ vjrTask: false, editor: "cursor" });

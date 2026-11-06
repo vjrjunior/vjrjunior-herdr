@@ -2,7 +2,7 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { type Copy, type LayoutNode, type ModSource, RecipeError, type RecipeContext, type Variant } from "../recipes/recipe";
 
-export type GenerateOptions = { home: string; version: string; repo: string; bun: string };
+export type GenerateOptions = { home: string; version: string; repo: string; bun: string; ppStack?: string };
 export type Generated = {
   layout: string;
   layoutText: string;
@@ -116,7 +116,7 @@ export function generateVariant(variant: Variant, options: GenerateOptions): Gen
   }
   const replacements: Record<string, string> = {};
   const keys: Record<string, string> = {};
-  applyRecipes(variant, { copies, layout, replacements, keys, variant });
+  applyRecipes(variant, { copies, layout, replacements, keys, variant, ppStack: options.ppStack });
   for (const copy of Object.values(copies)) {
     if (copy.files["kit.js"] !== undefined && !Object.hasOwn(copies, "kit")) throw new RecipeError(`${copy.name} uses the kit, but ${variant.layout} has no kit`);
   }

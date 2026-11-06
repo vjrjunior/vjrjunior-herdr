@@ -10,12 +10,12 @@ import { makeHerdrHome, SHIPPED_MODS } from "./herdr-home";
 
 afterEach(removeTempDirs);
 
-function generate(layout: string, overrides: Record<string, string> = {}) {
+function generate(layout: string, overrides: Record<string, string> = {}, extra: { ppStack?: string } = {}) {
   const home = tempDir();
   makeHerdrHome(home, overrides);
   const variant = VARIANTS.find((candidate) => candidate.layout === layout);
   if (!variant) throw new Error(`no variant ${layout}`);
-  return generateVariant(variant, { home, version: "0.1.10", repo, bun: "/bin/bun" });
+  return generateVariant(variant, { home, version: "0.1.10", repo, bun: "/bin/bun", ...extra });
 }
 
 const generateDesk = (overrides?: Record<string, string>) => generate("vjr-desk", overrides);
@@ -474,6 +474,16 @@ describe("command center", () => {
       expect(layout.floating).toContainEqual({ id: "command-center-watch", content: { mod: copy, props: { role: "watch" } }, edge: "left", align: "end" });
       expect(layout.floating.at(-1).id).toBe("vjr-sync");
       expect(Object.keys(generated.mods[copy] ?? {}).sort()).toEqual(["column.js", "flow-pp.js", "kit.js", "lane-status.js", "logic.js", "main.js", "mod.json", "route.js", "start.js"]);
+    }
+  });
+
+  test("a pp-stack folder goes to the watcher's props in both layouts", () => {
+    for (const [generated, copy] of [
+      [generate("vjr-desk", {}, { ppStack: "/dev/pp-stack" }), "vjr-command-center"],
+      [generate("vjr-desk-square", {}, { ppStack: "/dev/pp-stack" }), "vjr-square-command-center"],
+    ] as const) {
+      const layout = JSON.parse(generated.layoutText);
+      expect(layout.floating).toContainEqual({ id: "command-center-watch", content: { mod: copy, props: { role: "watch", ppStack: "/dev/pp-stack" } }, edge: "left", align: "end" });
     }
   });
 
