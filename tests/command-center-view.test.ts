@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { herdr, type Node } from "./app-mocks";
 import { removeTempDirs, tempDir } from "./helpers";
@@ -23,7 +23,10 @@ let app: {
   overlays: Record<string, any>[];
   setCount: number;
 };
-let gh: { code: number; stdout: string; stderr: string } = { code: 0, stdout: "[]", stderr: "" };
+let statusPr: Record<string, unknown> | null = null;
+let statusError: string | null = null;
+let statusText: string | null = null;
+let leftOut = new Set<string>();
 let binsMissing = false;
 let evidence: Record<string, unknown> = {};
 let agentsNow: Record<string, unknown>[] = [];
@@ -31,21 +34,55 @@ let ttyOf: Record<string, string> = {};
 let focusedCwd: string | null = null;
 let propsNow: Record<string, unknown> = { role: "watch" };
 
-const ghPr = (over: Record<string, unknown> = {}) => ({
+const jsonPr = (over: Record<string, unknown> = {}) => ({
   number: 42,
   url: "https://github.com/acme/app/pull/42",
+  title: "fix: draft reload",
   state: "OPEN",
   isDraft: false,
-  reviewDecision: "",
+  base: "main",
+  reviewDecision: null,
   mergedAt: null,
-  baseRefName: "main",
-  headRefName: BRANCH,
-  statusCheckRollup: [],
+  checks: { passed: 0, failed: [], pending: 0, items: [] },
+  preview: { match: "preview", name: "Deploy to Preview", job: "Deploy to Preview", state: "SUCCESS", link: "https://preview.example/42" },
   ...over,
 });
-const ghReturns = (pr: Record<string, unknown> | null) => {
-  gh = { code: 0, stdout: JSON.stringify(pr ? [pr] : []), stderr: "" };
+const prReturns = (pr: Record<string, unknown> | null) => {
+  statusPr = pr;
 };
+const failedCheck = (name: string) => ({ passed: 0, failed: [name], pending: 0, items: [{ name, state: "bad", detail: "failure", link: null }] });
+const runningCheck = (name: string) => ({ passed: 0, failed: [], pending: 1, items: [{ name, state: "run", detail: "running", link: null }] });
+
+function laneJson(path: string, branch: string, pr: Record<string, unknown> | null) {
+  return {
+    path,
+    branch,
+    head: HEAD,
+    base: "main",
+    baseSource: "default",
+    task: { id: null, name: branch, url: null, source: "branch-name" },
+    commitsAhead: 1,
+    skill: null,
+    ship: { state: "none", count: 0, commitsSince: 0, coversSha: null, reason: null },
+    evidence,
+    pr,
+    steps: [],
+    next: { label: "Run /pp-ship", command: "/pp-ship", url: null, where: "worktree", kind: "skill" },
+    waitsOnYou: true,
+    why: "not shipped yet",
+    error: null,
+  };
+}
+
+function statusFor(args: string[]) {
+  const at = args.indexOf("--path");
+  if (at >= 0) {
+    const path = args[at + 1];
+    return { version: 1, repo: { main, name: "app" }, network: false, error: null, lanes: [laneJson(path, path === lane ? BRANCH : "chore/other", null)] };
+  }
+  const lanes = leftOut.has(lane) ? [] : [laneJson(lane, BRANCH, statusPr)];
+  return { version: 1, repo: { main, name: "app" }, network: true, error: statusError, lanes };
+}
 
 function respond(command: string, args: string[], options: { cwd?: string } = {}) {
   const ok = (stdout: string, code = 0) => ({ code, stdout, stderr: "" });
@@ -58,13 +95,13 @@ function respond(command: string, args: string[], options: { cwd?: string } = {}
   if (command.endsWith("/pp-pr-evidence")) {
     if (binsMissing) throw new Error("ENOENT");
     if (args[0] === "last-code-sha") return ok(`${HEAD}\n`);
-    return ok(JSON.stringify(evidence), (evidence as { ready?: boolean }).ready ? 0 : 1);
+    return ok("", 2);
   }
-  if (command.endsWith("/pp-pr-preview-check")) {
+  if (command.endsWith("/pp-lane-status")) {
     if (binsMissing) throw new Error("ENOENT");
-    return ok(JSON.stringify({ match: "preview", name: "Deploy to Preview", state: "SUCCESS", link: "https://preview.example/42" }));
+    if (statusText != null) return ok(statusText);
+    return ok(JSON.stringify(statusFor(args)));
   }
-  if (command === "gh") return gh;
   if (command === "hc" && args[0] === "get") {
     const found = agentsNow.find((agent) => agent.address === args[1]) as Record<string, any> | undefined;
     return found ? ok(JSON.stringify({ address: args[1], pid: 100, foreground: found.foreground })) : ok("", 1);
@@ -81,10 +118,15 @@ beforeEach(() => {
   for (const dir of [main, lane, other]) mkdirSync(dir, { recursive: true });
   copyFileSync(join(FIXTURES, "vjr-task-verified.md"), join(lane, "VJR-TASK.md"));
   mkdirSync(join(root, "home", ".pp-stack", "session"), { recursive: true });
+  mkdirSync(join(root, "home", ".claude", "skills", "pp-stack", "bin"), { recursive: true });
+  writeFileSync(join(root, "home", ".claude", "skills", "pp-stack", "bin", "pp-lane-status"), "");
   app = { shared: {}, runs: [], execs: [], notes: [], overlays: [], setCount: 0 };
-  ghReturns(null);
+  prReturns(null);
+  statusError = null;
+  statusText = null;
+  leftOut = new Set();
   binsMissing = false;
-  evidence = { ready: false, slug: "fix-cup-1234-draft-reload", dir: join(lane, ".pp-stack/updates/fix-cup-1234-draft-reload"), files: [] };
+  evidence = { ready: false, dir: join(lane, ".pp-stack/updates/fix-cup-1234-draft-reload"), files: {}, reasons: {} };
   agentsNow = [];
   ttyOf = {};
   focusedCwd = null;
@@ -148,6 +190,11 @@ function watcher() {
 
 const state = () => app.shared["command-center.state"] as { lanes: Record<string, any>[] };
 const ghCalls = () => app.execs.filter((call) => call.command === "gh").length;
+const statusCalls = () => app.execs.filter((call) => call.command.endsWith("/pp-lane-status"));
+const noLaneStatus = () => {
+  binsMissing = true;
+  rmSync(join(root, "home", ".claude", "skills", "pp-stack", "bin", "pp-lane-status"));
+};
 
 describe("watcher", () => {
   test("only a non-main worktree with VJR-TASK.md becomes a task", async () => {
@@ -171,10 +218,10 @@ describe("watcher", () => {
     const view = watcher();
     let now = 1_000_000;
     view.clock = () => now;
-    ghReturns(ghPr({ reviewDecision: "APPROVED" }));
+    prReturns(jsonPr({ reviewDecision: "APPROVED" }));
     await view.read(cx);
     expect(app.notes).toEqual([]);
-    ghReturns(ghPr({ state: "MERGED", mergedAt: "2026-11-02T22:00:00Z" }));
+    prReturns(jsonPr({ state: "MERGED", mergedAt: "2026-11-02T22:00:00Z" }));
     now += 61_000;
     await view.read(cx);
     expect(app.notes.map((note) => note.title)).toEqual(["PR #42 merged"]);
@@ -185,18 +232,79 @@ describe("watcher", () => {
   });
 
   test("a failing gh shows GitHub unavailable and posts nothing", async () => {
-    gh = { code: 1, stdout: "", stderr: "gh: To get started with GitHub CLI, please run: gh auth login\nmore" };
+    statusError = "gh: To get started with GitHub CLI, please run: gh auth login";
     const view = watcher();
     await view.read(cx);
     expect(state().lanes[0].pr).toEqual({ error: "GitHub unavailable · gh: To get started with GitHub CLI, please run: gh auth login" });
     expect(app.notes).toEqual([]);
   });
 
-  test("missing pp-stack scripts leave the evidence block saying so", async () => {
-    binsMissing = true;
+  test("a missing pp-lane-status says which pp-stack is needed", async () => {
+    noLaneStatus();
     const view = watcher();
     await view.read(cx);
-    expect(state().lanes[0].evidence).toEqual({ error: "pp-stack not found" });
+    expect(state().repos[0].error).toBe("Command Center needs pp-stack 0.94.0 or later");
+    expect(state().lanes[0].evidence).toEqual({ error: "Command Center needs pp-stack 0.94.0 or later" });
+  });
+
+  test("pp-lane-status output that is not JSON shows on its repo and the watcher keeps going", async () => {
+    statusText = "bun: command not found";
+    const view = watcher();
+    let now = 1_000_000;
+    view.clock = () => now;
+    await view.read(cx);
+    now += 31_000;
+    await view.read(cx);
+    expect(statusCalls()).toHaveLength(2);
+    expect(state().repos[0].error).toBe("pp-lane-status gave no JSON");
+  });
+
+  test("the watcher never calls gh, the preview check or evidence status", async () => {
+    prReturns(jsonPr());
+    await watcher().read(cx);
+    expect(app.execs.filter((call) => call.command === "gh" || call.command.endsWith("/pp-pr-preview-check") || (call.command.endsWith("/pp-pr-evidence") && call.args[0] === "status"))).toEqual([]);
+    expect(state().lanes[0]).toMatchObject({ pr: { number: 42 }, preview: { link: "https://preview.example/42" } });
+  });
+
+  test("pp-lane-status runs once per repo, every 5 s for the focused repo and 30 s for the others", async () => {
+    let now = 1_000_000;
+    focusedCwd = lane;
+    const view = watcher();
+    view.clock = () => now;
+    await view.read(cx);
+    now += 2000;
+    await view.read(cx);
+    expect(statusCalls()).toHaveLength(1);
+    now += 4000;
+    await view.read(cx);
+    expect(statusCalls()).toHaveLength(2);
+    expect(statusCalls()[0]).toMatchObject({ args: ["--json"], cwd: main });
+    focusedCwd = null;
+    now += 6000;
+    await view.read(cx);
+    expect(statusCalls()).toHaveLength(2);
+    now += 30_000;
+    await view.read(cx);
+    expect(statusCalls()).toHaveLength(3);
+  });
+
+  test("a VJR lane the report left out is read alone and offline", async () => {
+    leftOut = new Set([lane]);
+    await watcher().read(cx);
+    expect(statusCalls().map((call) => call.args)).toContainEqual(["--json", "--no-network", "--path", lane]);
+    expect(state().lanes[0].evidence).toMatchObject({ ready: false });
+  });
+
+  test("a claude leaving working re-reads its repo at once", async () => {
+    let now = 1_000_000;
+    agentsNow = [{ address: "t12", app: "claude-code", status: "working", foreground: { pid: 512, cwd: lane, argv: ["claude"] } }];
+    const view = watcher();
+    view.clock = () => now;
+    await view.read(cx);
+    agentsNow = [{ address: "t12", app: "claude-code", status: "idle", foreground: { pid: 512, cwd: lane, argv: ["claude"] } }];
+    now += 2000;
+    await view.read(cx);
+    expect(statusCalls()).toHaveLength(2);
   });
 
   test("a second watcher stays idle while the first holds the lease", async () => {
@@ -228,7 +336,7 @@ describe("watcher", () => {
     const dir = join(lane, ".pp-stack/updates/fix-cup-1234-draft-reload");
     mkdirSync(dir, { recursive: true });
     for (const name of ["message.txt", "meta.json", "screenshots.md"]) copyFileSync(join(FIXTURES, name), join(dir, name));
-    evidence = { ready: false, slug: "fix-cup-1234-draft-reload", dir, files: [] };
+    evidence = { ready: false, dir, files: {}, reasons: {} };
     const view = watcher();
     await view.read(cx);
     const copies = () => app.execs.filter((call) => call.command === "cp").length;
@@ -237,19 +345,6 @@ describe("watcher", () => {
     view.cache[lane].taskAt = 0;
     await view.read(cx);
     expect(copies()).toBe(first + 3);
-  });
-
-  test("gh runs at most once a minute for an open PR", async () => {
-    ghReturns(ghPr());
-    const view = watcher();
-    let now = 1_000_000;
-    view.clock = () => now;
-    await view.read(cx);
-    await view.read(cx);
-    expect(ghCalls()).toBe(1);
-    now += 61_000;
-    await view.read(cx);
-    expect(ghCalls()).toBe(2);
   });
 
   test("an unchanged read does not touch shared state again", async () => {
@@ -280,9 +375,10 @@ describe("watcher", () => {
     const view = watcher();
     let now = 1_000_000;
     view.clock = () => now;
-    ghReturns(ghPr());
+    prReturns(jsonPr());
     await view.read(cx);
-    gh = { code: 1, stdout: "", stderr: "gh: auth required" };
+    prReturns(null);
+    statusError = "gh: auth required";
     now += 61_000;
     await view.read(cx);
     expect(state().lanes[0].pr).toMatchObject({ number: 42 });
@@ -300,9 +396,9 @@ describe("watcher", () => {
     const view = watcher();
     let now = 1_000_000;
     view.clock = () => now;
-    ghReturns(ghPr({ statusCheckRollup: [{ __typename: "CheckRun", name: "test", status: "IN_PROGRESS", conclusion: null }] }));
+    prReturns(jsonPr({ checks: runningCheck("test") }));
     await view.read(cx);
-    ghReturns(ghPr({ statusCheckRollup: [{ __typename: "CheckRun", name: "test", status: "COMPLETED", conclusion: "FAILURE" }] }));
+    prReturns(jsonPr({ checks: failedCheck("test") }));
     now += 61_000;
     await view.read(cx);
     expect(app.notes[0].title).toBe("PR #42 needs attention");
@@ -335,7 +431,7 @@ describe("watcher per checkout", () => {
   test("every repo in a space is published with its checkouts", async () => {
     const view = watcher();
     await view.read(cx);
-    expect((app.shared["command-center.state"] as any).repos).toEqual([{ name: "app", main, trees: [main, lane, other] }]);
+    expect((app.shared["command-center.state"] as any).repos).toEqual([{ name: "app", main, trees: [main, lane, other], error: null }]);
   });
 
   test("a repo switched off is not read and alerts nothing", async () => {
@@ -343,7 +439,7 @@ describe("watcher per checkout", () => {
     const view = watcher();
     await view.read(cx);
     expect(state().lanes).toEqual([]);
-    expect(ghCalls()).toBe(0);
+    expect(statusCalls()).toEqual([]);
     expect(app.shared["command-center.lanes"]).toEqual({});
     expect(app.shared["command-center.badge"]).toEqual({ count: 0, level: null });
   });
@@ -408,9 +504,9 @@ describe("watcher per checkout", () => {
     const view = watcher();
     let now = 1_000_000;
     view.clock = () => now;
-    ghReturns(ghPr({ statusCheckRollup: [{ __typename: "CheckRun", name: "test", status: "IN_PROGRESS", conclusion: null }] }));
+    prReturns(jsonPr({ checks: runningCheck("test") }));
     await view.read(cx);
-    ghReturns(ghPr({ statusCheckRollup: [{ __typename: "CheckRun", name: "test", status: "COMPLETED", conclusion: "FAILURE" }] }));
+    prReturns(jsonPr({ checks: failedCheck("test") }));
     now += 61_000;
     await view.read(cx);
     await view.command("show", cx);
@@ -500,7 +596,7 @@ const RELEASE = {
 };
 
 const REPOS = [{ name: "app", main: "/r/app", trees: ["/r/app", "/w/cup-1234", "/w/cup-9", "/w/bare"] }];
-const MERGED_PR = { number: 42, url: "https://github.com/acme/app/pull/42", state: "MERGED", isDraft: false, reviewDecision: "", statusCheckRollup: [] };
+const MERGED_PR = { number: 42, url: "https://github.com/acme/app/pull/42", state: "MERGED", isDraft: false, reviewDecision: "", checks: { passed: 0, failed: [], pending: 0, items: [] } };
 const SHIPPED = {
   ...BASE_LANE,
   release: RELEASE,
@@ -764,7 +860,7 @@ describe("review fixes in the column", () => {
 
   test("a gh failure after a PR was seen still says GitHub unavailable", () => {
     focusedCwd = "/w/cup-1234";
-    const seen = { ...BASE_LANE, steps: ["done", "done", "done", "done", "run", "todo", "todo"], pr: { number: 42, url: "u", state: "OPEN", isDraft: false, reviewDecision: "", statusCheckRollup: [] }, prError: "GitHub unavailable · gh: auth required" };
+    const seen = { ...BASE_LANE, steps: ["done", "done", "done", "done", "run", "todo", "todo"], pr: { number: 42, url: "u", state: "OPEN", isDraft: false, reviewDecision: "", checks: { passed: 0, failed: [], pending: 0, items: [] } }, prError: "GitHub unavailable · gh: auth required" };
     expect(texts(column([seen]).render())).toContain("GitHub unavailable · gh: auth required");
   });
 });

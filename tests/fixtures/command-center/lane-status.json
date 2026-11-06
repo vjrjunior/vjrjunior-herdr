@@ -32,7 +32,7 @@
         "reviewDecision": "REVIEW_REQUIRED",
         "mergedAt": null,
         "checks": {
-          "passed": 5,
+          "passed": 1,
           "failed": [],
           "pending": 0,
           "items": [{ "name": "CI / test", "state": "ok", "detail": "success", "link": "https://github.com/acme/app/actions/runs/1" }]
@@ -43,7 +43,7 @@
         { "id": "build", "state": "done", "note": "40 commits ahead of main" },
         { "id": "ship", "state": "next", "note": "3 commits since ship" },
         { "id": "evidence", "state": "bad", "note": "3 of 4 current" },
-        { "id": "pr", "state": "run", "note": "#862 · 5/5 checks · review pending" },
+        { "id": "pr", "state": "run", "note": "#862 · 1/1 checks · review pending" },
         { "id": "merge", "state": "todo", "note": "/land-and-deploy" },
         { "id": "clear", "state": "todo", "note": "/pp-clear from main" }
       ],
@@ -78,7 +78,7 @@
         "reviewDecision": null,
         "mergedAt": null,
         "checks": {
-          "passed": 3,
+          "passed": 0,
           "failed": [],
           "pending": 1,
           "items": [{ "name": "CI / test", "state": "run", "detail": "running", "link": "https://github.com/acme/app/actions/runs/2" }]
@@ -89,7 +89,7 @@
         { "id": "build", "state": "done", "note": "6 commits ahead of feat/CUP-7000" },
         { "id": "ship", "state": "done", "note": "1 ship · current" },
         { "id": "evidence", "state": "next", "note": "2 of 4 current" },
-        { "id": "pr", "state": "run", "note": "#901 · 3/4 checks · draft" },
+        { "id": "pr", "state": "run", "note": "#901 · 0/1 checks · draft" },
         { "id": "merge", "state": "todo", "note": "/land-and-deploy" },
         { "id": "clear", "state": "todo", "note": "/pp-clear from main" }
       ],
@@ -153,7 +153,7 @@
         "base": "main",
         "reviewDecision": "APPROVED",
         "mergedAt": "2026-11-05T08:25:00Z",
-        "checks": { "passed": 6, "failed": [], "pending": 0, "items": [] },
+        "checks": { "passed": 0, "failed": [], "pending": 0, "items": [] },
         "preview": null
       },
       "steps": [

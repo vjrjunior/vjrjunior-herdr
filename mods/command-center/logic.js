@@ -172,8 +172,6 @@ const FAMILIES = {
   "pp-worktree-close": "clear",
   "docker-cleanup": "clear",
 };
-const PASSED = new Set(["SUCCESS", "SKIPPED", "NEUTRAL"]);
-const FAILED = new Set(["FAILURE", "ERROR", "CANCELLED", "TIMED_OUT", "ACTION_REQUIRED", "STARTUP_FAILURE"]);
 const PLAIN_WORD = /^[A-Za-z0-9_./@%+=:,-]+$/;
 const BARE_FILE = /^[A-Za-z0-9_-][A-Za-z0-9._-]*$/;
 
@@ -210,26 +208,16 @@ export function pickClaude(claudes, record) {
   return claudes.length === 0 ? none : { ...none, ambiguous: true };
 }
 
-export function rollup(statusCheckRollup) {
-  const items = (Array.isArray(statusCheckRollup) ? statusCheckRollup : []).map((check) => {
-    const name = check.name ?? check.context ?? "check";
-    if (check.__typename === "StatusContext" || (check.state && !check.status)) {
-      const state = String(check.state ?? "").toUpperCase();
-      return { name, state: state === "SUCCESS" ? "ok" : FAILED.has(state) ? "bad" : "run", detail: state.toLowerCase() };
-    }
-    const conclusion = String(check.conclusion ?? "").toUpperCase();
-    if (String(check.status ?? "").toUpperCase() !== "COMPLETED") return { name, state: "run", detail: "running" };
-    if (PASSED.has(conclusion)) return { name, state: "ok", detail: conclusion.toLowerCase() };
-    return { name, state: FAILED.has(conclusion) ? "bad" : "idle", detail: conclusion.toLowerCase() };
-  });
-  return { items, failed: items.filter((item) => item.state === "bad").map((item) => item.name), pending: items.filter((item) => item.state === "run").length };
+export function prChecks(pr) {
+  const checks = pr?.checks ?? {};
+  return { items: Array.isArray(checks.items) ? checks.items : [], failed: Array.isArray(checks.failed) ? checks.failed : [], pending: Number(checks.pending) || 0 };
 }
 
 export function prStep(pr) {
   if (!hasPr(pr)) return "todo";
   if (pr.state === "MERGED") return "done";
   if (pr.state === "CLOSED") return "bad";
-  const checks = rollup(pr.statusCheckRollup);
+  const checks = prChecks(pr);
   if (checks.failed.length || pr.reviewDecision === "CHANGES_REQUESTED") return "bad";
   if (pr.isDraft || checks.pending || checks.items.length === 0 || pr.reviewDecision === "REVIEW_REQUIRED") return "run";
   return "done";
@@ -388,7 +376,7 @@ export function regenerateStep(lane) {
 export function alertState(lane) {
   if (!hasPr(lane.pr)) return null;
   const step = prStep(lane.pr);
-  const checks = rollup(lane.pr.statusCheckRollup);
+  const checks = prChecks(lane.pr);
   let reason = "";
   if (checks.failed.length) reason = `${checks.failed.join(", ")} failed`;
   else if (lane.pr.reviewDecision === "CHANGES_REQUESTED") reason = "changes requested";
@@ -473,7 +461,7 @@ export function stepNotes(lane, steps) {
   if (pr?.state === "MERGED") request = `#${pr.number} merged`;
   else if (pr?.state === "CLOSED") request = `#${pr.number} closed`;
   else if (pr) {
-    const checks = rollup(pr.statusCheckRollup);
+    const checks = prChecks(pr);
     const passed = checks.items.filter((item) => item.state === "ok").length;
     request = `#${pr.number} · ${checks.items.length ? `${passed}/${checks.items.length} checks` : "no checks yet"}${pr.isDraft ? " · draft" : ""}`;
   }
@@ -491,7 +479,7 @@ export function laneSummary(lane) {
     return { stage, tone: "blocked", why: asking ? `vjr-ac asks ${asking.id}` : next.target, action: "Go to task" };
   }
   if (steps[4] === "bad") {
-    const checks = rollup(lane.pr.statusCheckRollup);
+    const checks = prChecks(lane.pr);
     const why = checks.failed.length ? `${checks.failed.join(", ")} failed` : lane.pr.reviewDecision === "CHANGES_REQUESTED" ? "changes requested" : "closed without merging";
     return { stage, tone: "blocked", why, action: "Open PR" };
   }

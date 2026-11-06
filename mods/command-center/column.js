@@ -1,7 +1,7 @@
 import { div, image } from "gpui-kit";
 import { Input, TextView, h_flex, v_flex } from "gpui-base";
 import { CONTROL, ICON_SIZE, button, card, chip, heading, icon, iconButton, line, link, pill, statusDot, stepNode, toneColor } from "../../kit/kit.js";
-import { answerStep, laneSummary, PROFILES, profileOf, rollup, stepNotes, viewFor } from "./logic.js";
+import { answerStep, laneSummary, prChecks, PROFILES, profileOf, stepNotes, viewFor } from "./logic.js";
 
 const STEPS = ["Task", "AC", "Ship", "Evidence", "PR", "Merge", "Clear"];
 const FILES = ["ship.json", "screenshots.md", "message.txt", "meta.json"];
@@ -166,7 +166,7 @@ function checksBody(view, lane, t) {
 function prBody(lane, t) {
   const pr = lane.pr;
   if (!pr || pr.error) return div().text_size(11.5).text_color(t.unknown).child(pr?.error ?? "No PR yet");
-  const checks = rollup(pr.statusCheckRollup);
+  const checks = prChecks(pr);
   const body = v_flex().child(div().pb(4).text_size(11.5).text_color(t.foreground).child(`PR #${pr.number} · ${pr.isDraft ? "draft" : pr.state === "MERGED" ? "merged" : "ready for review"}`));
   if (lane.prError) body.child(div().pb(4).text_size(11).text_color(t.working).child(lane.prError));
   for (const item of checks.items) body.child(line(item.name, { detail: item.detail, color: stateColor(item.state, t), mark: MARK_OF[item.state] }, t));

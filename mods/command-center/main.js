@@ -2,6 +2,7 @@ import { View, div } from "gpui-kit";
 import { InputState } from "gpui-base";
 import * as fs from "fs/promises";
 import { columnView, profileView, shotView } from "./column.js";
+import { factsOf, parseLaneStatus } from "./lane-status.js";
 import {
   agents,
   appHome,
@@ -49,15 +50,15 @@ const TICK = 2000;
 const FOCUS_TASK = 5000;
 const OTHER_TASK = 30000;
 const DISCOVER = 60000;
-const GH_OPEN = 60000;
-const GH_NONE = 300000;
+const STATUS_FOCUS = 5000;
+const STATUS_OTHER = 30000;
 const CLAUDE = 5000;
 const SKILLS = 10000;
-const EVIDENCE_ACTIVE = 60000;
 const SKILL_AGE = 12 * 3600 * 1000;
 const LEASE = 30000;
 const LEASE_KEY = "command-center.watch";
-const PR_FIELDS = "number,url,state,isDraft,reviewDecision,mergedAt,baseRefName,headRefName,statusCheckRollup";
+const OLD_PP_STACK = "Command Center needs pp-stack 0.94.0 or later";
+const OFFLINE = { network: false, error: null };
 
 const inside = (path, root) => Boolean(path && root) && (path === root || path.startsWith(`${root}/`));
 const basename = (path) => path.replace(/\/+$/, "").split("/").pop() ?? path;
@@ -338,6 +339,8 @@ export default class CommandCenter extends View {
     this.before = {};
     this.lastAlerted = null;
     this.published = {};
+    this.status = {};
+    this.settled = [];
     this.reading = false;
     cx.timer.every(TICK, (cx) => cx.spawn(async (cx) => this.read(cx)));
     cx.spawn(async (cx) => this.read(cx));
@@ -466,6 +469,7 @@ export default class CommandCenter extends View {
       if (agent.app !== "claude-code" || String(agent.address).includes("/")) continue;
       seen.add(agent.address);
       const known = this.claudes[agent.address];
+      if (known?.status === "working" && agent.status !== "working" && known.cwd) this.settled.push(known.cwd);
       if (known && now - known.at < CLAUDE) {
         known.status = agent.status;
         continue;
@@ -513,7 +517,7 @@ export default class CommandCenter extends View {
     return changed;
   }
 
-  async readEvidence(lane, cache, base, now, shipping) {
+  async readVerified(lane, cache, base) {
     const last = await this.run(bin("pp-pr-evidence"), ["last-code-sha", "--base", base], lane.path);
     cache.lastCode = last?.code === 0 && last.stdout.trim() ? last.stdout.trim() : cache.head;
     const verified = cache.task?.verification?.sha;
@@ -522,54 +526,66 @@ export default class CommandCenter extends View {
       const count = await this.run("git", ["rev-list", "--count", `${verified}..${cache.lastCode}`], lane.path);
       cache.sinceVerified = count?.code === 0 ? Number(count.stdout.trim()) || 0 : 0;
     }
-    cache.evidenceAt = now;
-    let result;
-    try {
-      result = await exec(bin("pp-pr-evidence"), ["status", "--base", base, "--json"], { cwd: lane.path });
-    } catch {
-      cache.evidence = { error: "pp-stack not found" };
-      return;
-    }
-    if (result.code !== 0 && result.code !== 1) {
-      cache.evidence = { error: firstLine(result.stderr) || "pp-pr-evidence failed" };
-      return;
-    }
-    try {
-      const data = JSON.parse(result.stdout);
-      const files = {};
-      for (const file of data.files ?? []) files[file.file] = file.state;
-      cache.evidence = { ready: Boolean(data.ready), files, slug: data.slug ?? null, dir: data.dir ?? null };
-    } catch {
-      cache.evidence = { error: "pp-pr-evidence failed" };
-    }
-    if (shipping) cache.ghAt = 0;
   }
 
-  async readPr(lane, cache, now) {
-    const open = cache.pr && cache.pr.state === "OPEN";
-    if (cache.pr?.state === "MERGED" && cache.finalRead) return;
-    if (cache.ghAt && now - cache.ghAt < (open ? GH_OPEN : GH_NONE)) return;
-    cache.ghAt = now;
-    if (!lane.branch) return;
-    const result = await this.run("gh", ["pr", "list", "--head", lane.branch, "--state", "all", "--limit", "1", "--json", PR_FIELDS], lane.path);
-    if (!result || result.code !== 0) {
-      cache.prError = `GitHub unavailable · ${firstLine(result?.stderr) || "gh failed"}`;
+  async readStatus(repo, now, focusedMain) {
+    const held = this.status[repo.main];
+    if (held && now - held.at < (focusedMain === repo.main ? STATUS_FOCUS : STATUS_OTHER)) return;
+    const entry = { at: now, report: null, byPath: new Map(), alone: new Map(), error: null };
+    this.status[repo.main] = entry;
+    if (!(await fs.exists(bin("pp-lane-status")))) {
+      entry.error = OLD_PP_STACK;
       return;
     }
+    let result;
     try {
-      const pr = JSON.parse(result.stdout).find((item) => item.headRefName === lane.branch) ?? null;
-      cache.pr = pr;
-      cache.prError = null;
-      if (pr?.state === "MERGED") cache.finalRead = true;
-      cache.preview = null;
-      if (pr && pr.state === "OPEN") {
-        const preview = await this.run(bin("pp-pr-preview-check"), ["--pr", String(pr.number)], lane.path);
-        try {
-          cache.preview = preview?.code === 0 ? JSON.parse(preview.stdout) : null;
-        } catch {}
-      }
+      result = await exec(bin("pp-lane-status"), ["--json"], { cwd: repo.main });
     } catch {
-      cache.prError = "GitHub unavailable · unreadable answer";
+      entry.error = "pp-lane-status could not start";
+      return;
+    }
+    if (result.code !== 0) {
+      entry.error = firstLine(result.stderr) || `pp-lane-status exited ${result.code}`;
+      return;
+    }
+    const report = parseLaneStatus(result.stdout);
+    if (!report.repo) {
+      entry.error = report.error ?? "pp-lane-status gave no report";
+      return;
+    }
+    entry.report = report;
+    for (const lane of report.lanes) entry.byPath.set(lane.path, lane);
+  }
+
+  async readAlone(path) {
+    const result = await this.run(bin("pp-lane-status"), ["--json", "--no-network", "--path", path], path);
+    if (result?.code !== 0) return null;
+    const report = parseLaneStatus(result.stdout);
+    return report.repo ? (report.lanes.find((lane) => lane.path === path) ?? null) : null;
+  }
+
+  applyFacts(lane, cache) {
+    const entry = this.status[lane.repo.main];
+    if (!entry) return;
+    if (entry.error) {
+      cache.evidence = { error: entry.error };
+      return;
+    }
+    const alone = entry.alone.get(lane.path);
+    const json = entry.byPath.get(lane.path) ?? alone ?? null;
+    if (!json) return;
+    const facts = factsOf(json, json === alone ? OFFLINE : entry.report);
+    cache.base = facts.base;
+    cache.evidence = facts.evidence;
+    if (facts.pr) {
+      cache.pr = facts.pr;
+      cache.preview = facts.preview;
+      cache.prError = null;
+    } else if (facts.prError) cache.prError = facts.prError;
+    else {
+      cache.pr = null;
+      cache.preview = null;
+      cache.prError = null;
     }
   }
 
@@ -616,17 +632,12 @@ export default class CommandCenter extends View {
 
   async readLane(lane, places, headMoved) {
     const cache = (this.cache[lane.key] ??= {});
-    const now = this.clock();
-    const base = cache.pr?.baseRefName || cache.task?.base || "main";
+    this.applyFacts(lane, cache);
+    const base = cache.base || cache.task?.base || "main";
     const found = skillRecord(this.records, { path: lane.path, task: cache.task }, this.sharedSessions);
     const record = found?.record ?? null;
     const treeRecord = skillRecord(this.records, { path: lane.path, task: null })?.record ?? null;
-    const shipping = Boolean(record && ["ship"].includes(skillState(record, laneSignals(lane, cache))?.family));
-    if (headMoved || !cache.evidence || (shipping && now - (cache.evidenceAt ?? 0) >= EVIDENCE_ACTIVE) || (cache.wasShipping && !shipping)) {
-      await this.readEvidence(lane, cache, base, now, cache.wasShipping && !shipping);
-    }
-    cache.wasShipping = shipping;
-    await this.readPr(lane, cache, now);
+    if (headMoved || cache.lastCode === undefined) await this.readVerified(lane, cache, base);
     await this.readRelease(lane, cache);
     const own = this.localSpaces();
     cache.space = own.find((space) => inside(space.folder, lane.path))?.id ?? null;
@@ -667,6 +678,7 @@ export default class CommandCenter extends View {
         if (session) claims[session] = (claims[session] ?? 0) + 1;
       }
       this.sharedSessions = new Set(Object.keys(claims).filter((session) => claims[session] > 1));
+      await this.readStatuses(lanes, profiles);
       const signals = [];
       for (const lane of lanes) signals.push(await this.readLane(lane, places, moved[lane.key]));
       this.publish(signals);
@@ -675,6 +687,25 @@ export default class CommandCenter extends View {
       this.reading = false;
     }
     cx?.notify?.();
+  }
+
+  async readStatuses(lanes, profiles) {
+    const now = this.clock();
+    const repos = this.repos.filter((repo) => profileOf(profiles, repo.main) !== "off");
+    const trees = (repo) => repo.trees ?? [repo.main];
+    for (const cwd of this.settled.splice(0)) {
+      const repo = repos.find((item) => trees(item).some((tree) => inside(cwd, tree)));
+      if (repo && this.status[repo.main]) this.status[repo.main].at = 0;
+    }
+    const cwd = focused()?.cwd;
+    const focusedMain = repos.find((repo) => trees(repo).some((tree) => inside(cwd, tree)))?.main ?? null;
+    for (const repo of repos) await this.readStatus(repo, now, focusedMain);
+    for (const lane of lanes) {
+      const entry = this.status[lane.repo.main];
+      if (!entry?.report || entry.byPath.has(lane.path) || entry.alone.has(lane.path)) continue;
+      const alone = await this.readAlone(lane.path);
+      if (alone) entry.alone.set(lane.path, alone);
+    }
   }
 
   share(key, value) {
@@ -700,7 +731,7 @@ export default class CommandCenter extends View {
       notify({ title: alert.title, body: alert.body, level: alert.level, timeout: 8000, action: { name: `${SELF.name}.show` } });
     }
     this.before = after;
-    this.share("command-center.state", { lanes, repos: this.repos });
+    this.share("command-center.state", { lanes, repos: this.repos.map((repo) => ({ ...repo, error: this.status[repo.main]?.error ?? null })) });
     this.share("command-center.badge", badge(signals));
     this.share("command-center.lanes", Object.fromEntries(lanes.map((lane) => [lane.key, lane.chip])));
   }

@@ -20,7 +20,7 @@ import {
   prStep,
   pushLine,
   regenerateStep,
-  rollup,
+  prChecks,
   scopeLine,
   sendArgs,
   laneSummary,
@@ -124,8 +124,16 @@ const evidence = (files: Record<string, string> = {}) => {
   return { ready: FILES.every((file) => all[file] === "current"), files: all };
 };
 const current = () => evidence(Object.fromEntries(FILES.map((file) => [file, "current"])));
-const pr = (over: Record<string, unknown> = {}) => ({ number: 42, url: "https://github.com/acme/app/pull/42", state: "OPEN", isDraft: false, reviewDecision: "", statusCheckRollup: [], ...over });
-const check = (name: string, conclusion: string | null, status = "COMPLETED") => ({ __typename: "CheckRun", name, status, conclusion });
+const pr = (over: Record<string, unknown> = {}) => ({ number: 42, url: "https://github.com/acme/app/pull/42", state: "OPEN", isDraft: false, reviewDecision: "", checks: checks(), ...over });
+const check = (name: string, conclusion: string | null, status = "COMPLETED") => ({
+  name,
+  state: status !== "COMPLETED" ? "run" : ["SUCCESS", "SKIPPED", "NEUTRAL"].includes(conclusion ?? "") ? "ok" : conclusion === "FAILURE" ? "bad" : "idle",
+  detail: (conclusion ?? status).toLowerCase(),
+  link: null,
+});
+function checks(...items: ReturnType<typeof check>[]) {
+  return { passed: items.filter((item) => item.state === "ok").length, failed: items.filter((item) => item.state === "bad").map((item) => item.name), pending: items.filter((item) => item.state === "run").length, items };
+}
 
 function lane(over: Record<string, any> = {}): any {
   const { verified, base, ...rest } = over;
@@ -212,8 +220,8 @@ describe("next step", () => {
   });
 
   test("an open PR opens in the browser, a ready one to merge", () => {
-    expect(nextStep(lane({ evidence: current(), pr: pr({ statusCheckRollup: [check("test", null, "IN_PROGRESS")] }) }))).toMatchObject({ label: "Open PR #42", kind: "open", url: "https://github.com/acme/app/pull/42" });
-    expect(nextStep(lane({ evidence: current(), pr: pr({ reviewDecision: "APPROVED", statusCheckRollup: [check("test", "SUCCESS")] }) }))).toMatchObject({ label: "Open PR #42 to merge", kind: "open" });
+    expect(nextStep(lane({ evidence: current(), pr: pr({ checks: checks(check("test", null, "IN_PROGRESS")) }) }))).toMatchObject({ label: "Open PR #42", kind: "open", url: "https://github.com/acme/app/pull/42" });
+    expect(nextStep(lane({ evidence: current(), pr: pr({ reviewDecision: "APPROVED", checks: checks(check("test", "SUCCESS")) }) }))).toMatchObject({ label: "Open PR #42 to merge", kind: "open" });
   });
 
   test("a merged PR runs pp-clear in the main checkout, never in the worktree", () => {
@@ -248,19 +256,19 @@ describe("steps", () => {
 
 describe("pull request", () => {
   test("a failed check or requested changes is bad", () => {
-    expect(prStep(pr({ statusCheckRollup: [check("test", "FAILURE")] }))).toBe("bad");
-    expect(prStep(pr({ statusCheckRollup: [{ __typename: "StatusContext", context: "ci", state: "ERROR" }] }))).toBe("bad");
+    expect(prStep(pr({ checks: checks(check("test", "FAILURE")) }))).toBe("bad");
+    expect(prStep(pr({ checks: checks(check("ci", "FAILURE")) }))).toBe("bad");
     expect(prStep(pr({ reviewDecision: "CHANGES_REQUESTED" }))).toBe("bad");
     expect(prStep(pr({ state: "CLOSED" }))).toBe("bad");
   });
 
   test("skipped and neutral checks count as passed", () => {
-    expect(prStep(pr({ statusCheckRollup: [check("lint", "SKIPPED"), check("docs", "NEUTRAL")] }))).toBe("done");
+    expect(prStep(pr({ checks: checks(check("lint", "SKIPPED"), check("docs", "NEUTRAL")) }))).toBe("done");
   });
 
   test("a pending check, a draft or a required review keeps it running", () => {
-    expect(prStep(pr({ statusCheckRollup: [check("test", null, "IN_PROGRESS")] }))).toBe("run");
-    expect(prStep(pr({ statusCheckRollup: [{ __typename: "StatusContext", context: "ci", state: "PENDING" }] }))).toBe("run");
+    expect(prStep(pr({ checks: checks(check("test", null, "IN_PROGRESS")) }))).toBe("run");
+    expect(prStep(pr({ checks: checks(check("ci", null, "PENDING")) }))).toBe("run");
     expect(prStep(pr({ isDraft: true }))).toBe("run");
     expect(prStep(pr({ reviewDecision: "REVIEW_REQUIRED" }))).toBe("run");
   });
@@ -271,11 +279,16 @@ describe("pull request", () => {
     expect(prStep(pr({ state: "MERGED" }))).toBe("done");
   });
 
-  test("the rollup names what failed and counts what runs", () => {
-    const summary = rollup([check("build", "SUCCESS"), check("test", "FAILURE"), check("e2e", null, "QUEUED"), { __typename: "StatusContext", context: "PR Evidence", state: "SUCCESS" }]);
+  test("a PR's checks are the ones pp-lane-status reports", () => {
+    const summary = prChecks(pr({ checks: checks(check("build", "SUCCESS"), check("test", "FAILURE"), check("e2e", null, "QUEUED")) }));
     expect(summary.failed).toEqual(["test"]);
     expect(summary.pending).toBe(1);
-    expect(summary.items.map((item) => [item.name, item.state])).toEqual([["build", "ok"], ["test", "bad"], ["e2e", "run"], ["PR Evidence", "ok"]]);
+    expect(summary.items.map((item: { name: string; state: string }) => [item.name, item.state])).toEqual([["build", "ok"], ["test", "bad"], ["e2e", "run"]]);
+  });
+
+  test("a PR without checks, or no PR, has none", () => {
+    expect(prChecks(pr({ checks: undefined }))).toEqual({ items: [], failed: [], pending: 0 });
+    expect(prChecks(null)).toEqual({ items: [], failed: [], pending: 0 });
   });
 });
 
@@ -296,14 +309,14 @@ describe("alerts and badge", () => {
   });
 
   test("the alert state reads the PR of a lane", () => {
-    expect(alertState(lane({ evidence: current(), pr: pr({ statusCheckRollup: [check("test", "FAILURE")] }) }))).toEqual({ step: "bad", merged: false, number: 42, repo: "app", id: "CUP-1234", reason: "test failed" });
+    expect(alertState(lane({ evidence: current(), pr: pr({ checks: checks(check("test", "FAILURE")) }) }))).toEqual({ step: "bad", merged: false, number: 42, repo: "app", id: "CUP-1234", reason: "test failed" });
     expect(alertState(lane())).toBeNull();
   });
 
   test("the badge counts what waits on you and turns red on a failure", () => {
     expect(badge([lane()])).toEqual({ count: 0, level: null });
-    expect(badge([lane({ evidence: current(), pr: pr({ reviewDecision: "APPROVED", statusCheckRollup: [check("test", "SUCCESS")] }) })])).toEqual({ count: 1, level: "wait" });
-    expect(badge([lane({ evidence: current(), pr: pr({ statusCheckRollup: [check("test", "FAILURE")] }) }), lane()])).toEqual({ count: 1, level: "bad" });
+    expect(badge([lane({ evidence: current(), pr: pr({ reviewDecision: "APPROVED", checks: checks(check("test", "SUCCESS")) }) })])).toEqual({ count: 1, level: "wait" });
+    expect(badge([lane({ evidence: current(), pr: pr({ checks: checks(check("test", "FAILURE")) }) }), lane()])).toEqual({ count: 1, level: "bad" });
     expect(badge([lane({ evidence: current(), pr: pr({ state: "MERGED" }) })]).count).toBe(1);
   });
 });
@@ -316,9 +329,9 @@ describe("chips", () => {
     expect(chip(lane({ verified: "aaaaaaa", lastCode: "bbbbbbb" }))).toMatchObject({ chip: "AC stale", tone: "idle" });
     expect(chip(lane({ verified: "58197b4" }))).toMatchObject({ chip: "AC done", tone: "idle" });
     expect(chip(lane({ verified: "58197b4", skill: { family: "ship", skill: "ship", waiting: false, active: true } }))).toMatchObject({ chip: "Ship", tone: "working" });
-    expect(chip(lane({ evidence: current(), pr: pr({ statusCheckRollup: [check("test", null, "IN_PROGRESS")] }) }))).toMatchObject({ chip: "PR open", tone: "working" });
+    expect(chip(lane({ evidence: current(), pr: pr({ checks: checks(check("test", null, "IN_PROGRESS")) }) }))).toMatchObject({ chip: "PR open", tone: "working" });
     expect(chip(lane({ evidence: current(), pr: pr({ reviewDecision: "CHANGES_REQUESTED" }) }))).toMatchObject({ chip: "PR failed", tone: "blocked", why: "changes requested" });
-    expect(chip(lane({ evidence: current(), pr: pr({ reviewDecision: "APPROVED", statusCheckRollup: [check("test", "SUCCESS")] }) }))).toMatchObject({ chip: "Ready", tone: "done" });
+    expect(chip(lane({ evidence: current(), pr: pr({ reviewDecision: "APPROVED", checks: checks(check("test", "SUCCESS")) }) }))).toMatchObject({ chip: "Ready", tone: "done" });
     expect(chip(lane({ evidence: current(), pr: pr({ state: "MERGED" }) }))).toMatchObject({ chip: "Merged", tone: "done", why: "merged · clean up" });
   });
 
@@ -375,7 +388,7 @@ describe("review fixes", () => {
   test("an open PR with no checks yet is still running", () => {
     expect(prStep(pr())).toBe("run");
     expect(prStep(pr({ reviewDecision: "APPROVED" }))).toBe("run");
-    expect(prStep(pr({ statusCheckRollup: [check("test", "SUCCESS")] }))).toBe("done");
+    expect(prStep(pr({ checks: checks(check("test", "SUCCESS")) }))).toBe("done");
   });
 
   test("regenerating the links follows the next-step rules", () => {
@@ -576,7 +589,7 @@ describe("step notes", () => {
   });
 
   test("an open PR shows its number and checks, a merged one says so", () => {
-    const open = lane({ evidence: current(), pr: pr({ number: 482, isDraft: true, statusCheckRollup: [check("lint", "SUCCESS"), check("e2e", null, "IN_PROGRESS")] }) });
+    const open = lane({ evidence: current(), pr: pr({ number: 482, isDraft: true, checks: checks(check("lint", "SUCCESS"), check("e2e", null, "IN_PROGRESS")) }) });
     expect(stepNotes(open, stepsOf(open)).slice(2, 5)).toEqual(["shipped", "4 of 4 current", "#482 · 1/2 checks · draft"]);
     const done = lane({ evidence: current(), pr: pr({ number: 482, state: "MERGED" }) });
     expect(stepNotes(done, stepsOf(done)).slice(4)).toEqual(["#482 merged", "merged", "/pp-clear from main"]);
@@ -595,13 +608,13 @@ describe("repo rows", () => {
   });
 
   test("a running PR is working, a ready one offers the PR, a merged one the cleanup", () => {
-    expect(laneSummary(lane({ evidence: current(), pr: pr({ statusCheckRollup: [check("e2e", null, "IN_PROGRESS")] }) }))).toMatchObject({ stage: 4, tone: "working", action: null });
-    expect(laneSummary(lane({ evidence: current(), pr: pr({ reviewDecision: "APPROVED", statusCheckRollup: [check("e2e", "SUCCESS")] }) }))).toMatchObject({ stage: 5, tone: "done", action: "Open PR" });
+    expect(laneSummary(lane({ evidence: current(), pr: pr({ checks: checks(check("e2e", null, "IN_PROGRESS")) }) }))).toMatchObject({ stage: 4, tone: "working", action: null });
+    expect(laneSummary(lane({ evidence: current(), pr: pr({ reviewDecision: "APPROVED", checks: checks(check("e2e", "SUCCESS")) }) }))).toMatchObject({ stage: 5, tone: "done", action: "Open PR" });
     expect(laneSummary(lane({ evidence: current(), pr: pr({ state: "MERGED" }) }))).toMatchObject({ stage: 6, tone: "done", why: "merged · clean up", action: "Run /pp-clear" });
   });
 
   test("a failed PR is red", () => {
-    expect(laneSummary(lane({ evidence: current(), pr: pr({ statusCheckRollup: [check("e2e", "FAILURE")] }) }))).toMatchObject({ stage: 4, tone: "blocked", why: "e2e failed" });
+    expect(laneSummary(lane({ evidence: current(), pr: pr({ checks: checks(check("e2e", "FAILURE")) }) }))).toMatchObject({ stage: 4, tone: "blocked", why: "e2e failed" });
   });
 
   test("a task with nothing to do yet is idle and shows its next step", () => {
