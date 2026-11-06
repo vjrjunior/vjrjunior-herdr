@@ -38,6 +38,7 @@ function prOf(pr, branch) {
 export function factsOf(lane, report) {
   return {
     base: lane.base || "main",
+    baseSource: lane.baseSource ?? null,
     evidence: evidenceOf(lane.evidence),
     pr: prOf(lane.pr, lane.branch),
     preview: lane.pr?.preview ?? null,

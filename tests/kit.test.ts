@@ -132,6 +132,10 @@ test("a button's hint stays at the small text size whatever the height", () => {
   expect(hint()).toEqual([[11]]);
 });
 
+test("toneColor maps the accent tone to the accent color", () => {
+  expect(toneColor("accent", t)).toBe("t.accent");
+});
+
 test("toneColor maps a tone to its theme color", () => {
   expect(toneColor("blocked", t)).toBe("t.blocked");
   expect(toneColor("working", t)).toBe("t.working");

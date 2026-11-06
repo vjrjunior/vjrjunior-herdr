@@ -51,7 +51,7 @@ export function mark(kind, color, { size = ICON_SIZE.sm } = {}) {
   return icon(kind, { size, color });
 }
 
-export const toneColor = (tone, t) => ({ blocked: t.blocked, working: t.working, done: t.done }[tone] ?? t.unknown);
+export const toneColor = (tone, t) => ({ blocked: t.blocked, working: t.working, done: t.done, accent: t.accent }[tone] ?? t.unknown);
 
 export function stepNode(state, t) {
   const box = h_flex().size(18).flex_none().items_center().justify_center().rounded(RADIUS.round);

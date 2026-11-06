@@ -82,6 +82,12 @@ describe("Work - PP next step", () => {
     expect(ppNext(l).kind).toBe("tab");
   });
 
+  test("a first /pp-ship that stopped to ask sends you to its claude", () => {
+    const l = gabriel({ claudes: [{ terminal: "t7", status: "idle", tty: "ttys007" }] });
+    l.skill = { name: "pp-ship", running: false, endedAt: "2026-11-05T10:00:00Z", tty: "ttys007" };
+    expect(ppNext(l)).toEqual({ label: "Go to claude", kind: "focus", terminal: "t7", target: "pp-ship is waiting on you" });
+  });
+
   test("a skill whose step is done does not ask for you", () => {
     expect(ppNext(bruno(idle11)).kind).toBe("send");
   });
@@ -100,6 +106,7 @@ describe("Work - PP next step", () => {
 describe("Work - PP rows and chips", () => {
   test("chips name the first step not done", () => {
     expect([lincoln(), bruno(), gabriel(), merged()].map((l) => ppChip(l).chip)).toEqual(["Ship stale", "Evidence", "Build", "Merged"]);
+    expect(ppChip(lincoln()).tone).toBe("accent");
   });
 
   test("a failed PR, a ready one and a waiting claude have their own chips", () => {
@@ -117,7 +124,8 @@ describe("Work - PP rows and chips", () => {
   });
 
   test("a row says where the lane stands, why, and what to do", () => {
-    expect(ppSummary(lincoln())).toEqual({ stage: 1, tone: "idle", why: "3 commits since ship", action: null });
+    expect(ppSummary(lincoln())).toEqual({ stage: 1, tone: "accent", why: "3 commits since ship", action: null });
+    expect(ppSummary(bruno())).toMatchObject({ stage: 2, tone: "accent" });
     expect(ppSummary(gabriel())).toMatchObject({ stage: 0, tone: "idle" });
     expect(ppSummary(merged())).toEqual({ stage: 5, tone: "done", why: "/pp-clear 905 from main", action: "Run /pp-clear" });
     const failed = bruno();

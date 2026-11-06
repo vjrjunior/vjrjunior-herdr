@@ -606,6 +606,7 @@ export default class CommandCenter extends View {
     if (!json) return;
     const facts = factsOf(json, json === alone ? OFFLINE : entry.report);
     cache.base = facts.base;
+    cache.baseSource = facts.baseSource;
     cache.evidence = facts.evidence;
     if (facts.pr) {
       cache.pr = facts.pr;
@@ -683,7 +684,9 @@ export default class CommandCenter extends View {
     cache.evidence = facts.evidence;
     await this.readRelease(lane, cache);
     const claudes = Object.values(this.claudes).filter((claude) => inside(claude.cwd, lane.path));
-    const signals = ppSignals(json, facts, { repo: lane.repo, ...this.placeOf(lane, places), claudes });
+    const place = this.placeOf(lane, places);
+    Object.assign(cache, place);
+    const signals = ppSignals(json, facts, { repo: lane.repo, ...place, claudes });
     signals.release = cache.release ?? null;
     return signals;
   }
@@ -691,7 +694,8 @@ export default class CommandCenter extends View {
   async readLane(lane, places, headMoved) {
     const cache = (this.cache[lane.key] ??= {});
     this.applyFacts(lane, cache);
-    const base = cache.base || cache.task?.base || "main";
+    const reported = cache.baseSource && cache.baseSource !== "default" ? cache.base : null;
+    const base = reported || cache.task?.base || cache.base || "main";
     const found = skillRecord(this.records, { path: lane.path, task: cache.task }, this.sharedSessions);
     const record = found?.record ?? null;
     const treeRecord = skillRecord(this.records, { path: lane.path, task: null })?.record ?? null;
@@ -754,7 +758,7 @@ export default class CommandCenter extends View {
       const cache = this.cache[tree.key];
       const flow = cache.text != null ? "vjr" : "pp";
       if (flow === "pp" && !this.status[tree.repo.main]?.byPath.has(tree.path) && !inside(cwd, tree.path)) continue;
-      if (cache.flow && cache.flow !== flow) this.cache[tree.key] = { text: cache.text, task: null, taskAt: cache.taskAt, head: cache.head };
+      if (cache.flow && cache.flow !== flow) this.cache[tree.key] = { text: cache.text, task: cache.task, taskAt: cache.taskAt, head: cache.head };
       this.cache[tree.key].flow = flow;
       lanes.push({ ...tree, flow });
     }

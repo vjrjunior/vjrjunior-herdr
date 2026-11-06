@@ -44,7 +44,7 @@ function waitingSkill(lane) {
   if (!skill || skill.running || !skill.endedAt) return null;
   const step = SKILL_STEP[skill.name];
   if (step == null || lane.steps[step] === "done") return null;
-  if (!lane.steps.slice(0, step).every((state) => state === "done")) return null;
+  if (!lane.steps.slice(BUILD + 1, step).every((state) => state === "done")) return null;
   if (step === SHIP && (lane.ship?.commitsSince ?? 0) > 0) return null;
   return skill;
 }
@@ -73,6 +73,7 @@ function toneOf(lane, next, stage) {
   if (next.kind === "focus" || lane.steps[PR] === "bad") return "blocked";
   if (lane.steps[MERGE] === "next" || lane.steps[CLEAR] === "next") return "done";
   if (lane.steps[stage] === "run" && stage !== BUILD) return "working";
+  if (lane.steps[stage] === "next") return "accent";
   return "idle";
 }
 

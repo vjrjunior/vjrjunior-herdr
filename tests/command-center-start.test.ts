@@ -41,6 +41,14 @@ describe("Start a task", () => {
     });
   });
 
+  test("an id with punctuation after it is still an id", () => {
+    expect(["CUP-1234:", "CUP-1234,", "cup-77.", "86abc1234;"].map(taskIdOf)).toEqual(["CUP-1234", "CUP-1234", "CUP-77", "86abc1234"]);
+    expect(startPlan({ text: "CUP-1234: fix the export", route: "team", repo: REPO, lanes: [], space: "sp-main" })).toMatchObject({
+      name: "start · CUP-1234",
+      task: "/work start CUP-1234, then /pp-worktree-start for it. fix the export",
+    });
+  });
+
   test("words after the id follow the claim", () => {
     expect(startPlan({ text: "CUP-1234 only the export", route: "team", repo: REPO, lanes: [], space: "sp-main" }).task).toBe("/work start CUP-1234, then /pp-worktree-start for it. only the export");
   });

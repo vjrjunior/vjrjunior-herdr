@@ -12,7 +12,7 @@ export function oneLine(text) {
 }
 
 export function taskIdOf(word) {
-  const value = String(word ?? "").trim();
+  const value = String(word ?? "").trim().replace(/[.,;:!?)\]]+$/, "");
   const link = CLICKUP.exec(value);
   const id = link ? link[1] : value;
   const cup = CUP.exec(id);

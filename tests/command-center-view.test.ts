@@ -30,6 +30,8 @@ let statusError: string | null = null;
 let statusText: string | null = null;
 let leftOut = new Set<string>();
 let reportOther = false;
+let otherPr: Record<string, unknown> | null = null;
+let laneBase: { base: string; baseSource: string } = { base: "main", baseSource: "default" };
 let shellEditor = "";
 let binsMissing = false;
 let evidence: Record<string, unknown> = {};
@@ -62,8 +64,7 @@ function laneJson(path: string, branch: string, pr: Record<string, unknown> | nu
     path,
     branch,
     head: HEAD,
-    base: "main",
-    baseSource: "default",
+    ...laneBase,
     task: { id: null, name: branch, url: null, source: "branch-name" },
     commitsAhead: 1,
     skill: null,
@@ -84,7 +85,7 @@ function statusFor(args: string[]) {
     const path = args[at + 1];
     return { version: 1, repo: { main, name: "app" }, network: false, error: null, lanes: [laneJson(path, path === lane ? BRANCH : "chore/other", null)] };
   }
-  const lanes = [...(leftOut.has(lane) ? [] : [laneJson(lane, BRANCH, statusPr)]), ...(reportOther ? [laneJson(other, "chore/other", null)] : [])];
+  const lanes = [...(leftOut.has(lane) ? [] : [laneJson(lane, BRANCH, statusPr)]), ...(reportOther ? [laneJson(other, "chore/other", otherPr)] : [])];
   return { version: 1, repo: { main, name: "app" }, network: true, error: statusError, lanes };
 }
 
@@ -131,6 +132,8 @@ beforeEach(() => {
   statusText = null;
   leftOut = new Set();
   reportOther = false;
+  otherPr = null;
+  laneBase = { base: "main", baseSource: "default" };
   shellEditor = "";
   binsMissing = false;
   evidence = { ready: false, dir: join(lane, ".pp-stack/updates/fix-cup-1234-draft-reload"), files: {}, reasons: {} };
@@ -258,6 +261,53 @@ describe("watcher", () => {
     expect(published.task).toEqual({ id: null, title: BRANCH, url: null, source: "branch-name", base: "main", branch: BRANCH });
     expect(published.session).toBeUndefined();
     expect(published.steps).toHaveLength(6);
+  });
+
+  test("creating VJR-TASK.md makes a Work - PP lane Work - VJR at the next read, with its task", async () => {
+    let now = 1_000_000;
+    rmSync(join(lane, "VJR-TASK.md"));
+    const view = watcher();
+    view.clock = () => now;
+    await view.read(cx);
+    expect(state().lanes.find((item) => item.key === lane)?.flow).toBe("pp");
+    copyFileSync(join(FIXTURES, "vjr-task-verified.md"), join(lane, "VJR-TASK.md"));
+    now += 61_000;
+    await view.read(cx);
+    const published = state().lanes.find((item) => item.key === lane);
+    expect(published).toMatchObject({ flow: "vjr", task: { id: "CUP-1234" } });
+    expect(published.task.done.length).toBeGreaterThan(0);
+  });
+
+  test("a Work - VJR task measures its code commits from VJR-TASK.md's base unless the report found a better one", async () => {
+    writeFileSync(join(lane, "VJR-TASK.md"), readFileSync(join(FIXTURES, "vjr-task-verified.md"), "utf8").replace("**Base:** main", "**Base:** feat/umbrella"));
+    await watcher().read(cx);
+    const lastCode = () => app.execs.filter((call) => call.command.endsWith("/pp-pr-evidence") && call.args[0] === "last-code-sha").map((call) => call.args[2]);
+    expect(lastCode()).toEqual(["feat/umbrella"]);
+    app.execs = [];
+    app.shared["command-center.watch"] = null;
+    laneBase = { base: "feat/parent", baseSource: "worktree-parent" };
+    await watcher().read(cx);
+    expect(lastCode()).toEqual(["feat/parent"]);
+  });
+
+  test("an alert on a Work - PP lane opens the column on that lane's space", async () => {
+    reportOther = true;
+    herdr.spaces = () => [
+      { id: "sp-main", name: "app", folder: main, machine: null, active: false, tabs: [{ id: "tb-main" }] },
+      { id: "sp-1234", name: "cup-1234", folder: lane, machine: null, active: true, tabs: [{ id: "tb-1234" }] },
+      { id: "sp-other", name: "other", folder: other, machine: null, active: false, tabs: [{ id: "tb-other" }] },
+    ];
+    let now = 1_000_000;
+    const view = watcher();
+    view.clock = () => now;
+    otherPr = jsonPr({ number: 77, checks: runningCheck("test") });
+    await view.read(cx);
+    otherPr = jsonPr({ number: 77, checks: failedCheck("test") });
+    now += 61_000;
+    await view.read(cx);
+    expect(app.notes.map((note) => note.title)).toContain("PR #77 needs attention");
+    await view.command("show", cx);
+    expect(app.runs).toContainEqual(["space.select", { id: "sp-other" }]);
   });
 
   test("state says whether this machine has /vjr-task and which editor it uses", async () => {
