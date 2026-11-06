@@ -473,7 +473,7 @@ describe("command center", () => {
       expect(body?.children[2]).toEqual({ id: "command-center", type: "block", size: { px: 380 }, hidden: true, content: { mod: copy } });
       expect(layout.floating).toContainEqual({ id: "command-center-watch", content: { mod: copy, props: { role: "watch" } }, edge: "left", align: "end" });
       expect(layout.floating.at(-1).id).toBe("vjr-sync");
-      expect(Object.keys(generated.mods[copy] ?? {}).sort()).toEqual(["column.js", "kit.js", "lane-status.js", "logic.js", "main.js", "mod.json"]);
+      expect(Object.keys(generated.mods[copy] ?? {}).sort()).toEqual(["column.js", "flow-pp.js", "kit.js", "lane-status.js", "logic.js", "main.js", "mod.json", "route.js"]);
     }
   });
 

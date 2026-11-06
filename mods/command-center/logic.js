@@ -1,3 +1,7 @@
+import { inMain, inNewTab, NO_CLAUDE, pickClaude, sendArgs, sendTo } from "./route.js";
+
+export { pickClaude, sendArgs };
+
 const TITLE = /^# (?:(CUP-\d+) — )?(.+?)\s*$/;
 const FIELD = /^\*\*([^*]+):\*\*\s*(.*)$/;
 const URL = /^https?:\/\/\S+$/;
@@ -199,15 +203,6 @@ export function skillState(record, lane) {
   return { family, skill: record.skill, waiting: Boolean(record.ended_at), active };
 }
 
-export function pickClaude(claudes, record) {
-  const none = { terminal: null, status: null, count: claudes.length, ambiguous: false };
-  const pick = (claude) => ({ terminal: claude.terminal, status: claude.status, count: claudes.length, ambiguous: false });
-  const match = record?.tty ? claudes.find((claude) => claude.tty === record.tty) : null;
-  if (match) return pick(match);
-  if (claudes.length === 1) return pick(claudes[0]);
-  return claudes.length === 0 ? none : { ...none, ambiguous: true };
-}
-
 export function prChecks(pr) {
   const checks = pr?.checks ?? {};
   return { items: Array.isArray(checks.items) ? checks.items : [], failed: Array.isArray(checks.failed) ? checks.failed : [], pending: Number(checks.pending) || 0 };
@@ -297,27 +292,8 @@ export function pushLine(task) {
   return `!git push -u origin HEAD && gh pr create --draft --base ${shellWord(task.base || "main")} --title '${String(title).replaceAll("'", "'\\''")}' --body ''`;
 }
 
-const NO_CLAUDE = { terminal: null, status: null, count: 0, ambiguous: false };
-
 function skillClaude(lane) {
   return (lane.skill?.from === "session" ? lane.session : lane.claude) ?? NO_CLAUDE;
-}
-
-function sendTo(lane, label, text, session = false) {
-  const own = session && lane.session?.terminal ? lane.session : null;
-  const claude = own ?? lane.claude ?? NO_CLAUDE;
-  const fallback = { text, space: lane.space ?? null, folder: lane.path };
-  if (claude.ambiguous) return { label, kind: "wait", disabled: true, target: "More than one claude here", ...fallback };
-  if (claude.terminal && claude.status === "working") return { label, kind: "wait", disabled: true, target: "claude is working", ...fallback };
-  if (claude.terminal) return { label, kind: "send", terminal: claude.terminal, target: own ? `the task's claude · ${claude.terminal}` : `claude · ${claude.terminal} in this worktree`, ...fallback };
-  if (lane.space) return { label: `${label} in a new tab`, kind: "tab", target: `new tab in ${lane.repo?.name ?? "this repo"}`, ...fallback };
-  return { label: `${label} in a new space`, kind: "space", target: "new space in this worktree", ...fallback };
-}
-
-function inNewTab(lane, label, text) {
-  const name = `ship · ${lane.task?.id ?? lane.path.split("/").pop()}`;
-  if (lane.space) return { label: `${label} in a new tab`, kind: "tab", target: "new tab in this worktree", text, space: lane.space, folder: lane.path, name };
-  return { label: `${label} in a new space`, kind: "space", target: "new space in this worktree", text, space: null, folder: lane.path, name };
 }
 
 export function nextStep(lane) {
@@ -330,25 +306,16 @@ export function nextStep(lane) {
   if (skill) return { label: `Waiting for /${skill.skill}`, kind: "wait", disabled: true, target: "the skill is still working" };
   const steps = stepsOf(lane);
   const pr = hasPr(lane.pr) ? lane.pr : null;
-  if (steps[1] === "next" || steps[1] === "bad") return sendTo(lane, "Run /vjr-ac", "/vjr-ac", true);
+  if (steps[1] === "next" || steps[1] === "bad") return sendTo(lane, "Run /vjr-ac", "/vjr-ac", lane.session);
   if (steps[2] === "next" || steps[2] === "bad") {
     if ((lane.task.base || "main") !== "main" && !pr) return sendTo(lane, "Push and open draft PR", pushLine(lane.task));
-    return inNewTab(lane, "Run /pp-ship", scopeLine(lane.task));
+    return inNewTab(lane, "Run /pp-ship", scopeLine(lane.task), `ship · ${lane.task?.id ?? lane.path.split("/").pop()}`);
   }
-  if (steps[6] === "next" && pr) {
-    const text = `/pp-clear ${pr.number}`;
-    const where = { text, space: lane.mainSpace ?? null, folder: lane.repo?.main ?? null };
-    if (lane.mainSpace) return { label: "Run /pp-clear", kind: "tab", target: `new tab in ${lane.repo?.name ?? "the main checkout"}`, ...where };
-    return { label: "Run /pp-clear", kind: "space", target: "new space in the main checkout", ...where };
-  }
+  if (steps[6] === "next" && pr) return inMain(lane, "Run /pp-clear", `/pp-clear ${pr.number}`);
   if (steps[3] === "bad" || (steps[2] === "done" && steps[3] === "todo" && !pr)) return sendTo(lane, "Run /pp-pr-ready", "/pp-pr-ready");
   if (pr && steps[5] === "next") return { label: `Open PR #${pr.number} to merge`, kind: "open", url: pr.url, target: "you merge on GitHub" };
   if (pr) return { label: `Open PR #${pr.number}`, kind: "open", url: pr.url, target: "github.com" };
   return { label: "Waiting for the PR", kind: "wait", disabled: true, target: "nothing to run yet" };
-}
-
-export function sendArgs(claude, text) {
-  return claude.status === "idle" ? ["send", "--if", "idle", claude.terminal, text] : ["send", claude.terminal, text];
 }
 
 export function answerStep(lane, id, verdict, note) {
