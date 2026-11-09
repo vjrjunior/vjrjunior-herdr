@@ -57,7 +57,7 @@ export const square: Recipe = {
     );
 
     for (const [name, count] of Object.entries(POPUP_ROOTS)) exact(copy(name), POPOVER, `${POPOVER}${BORDER}`, count);
-    exact(copy("settings"), '.id("settings")', `.id("settings")${BORDER}`);
+    exact(copy("settings"), '.id("settings")', `.id("settings")${POPOVER}${BORDER}`);
 
     exact(copy("workspace-chrome"), 'run("app.settings")', 'run("mod.open", { name: "settings" })');
     exact(copy("palette"), '["app.settings", {}, "App", "Settings"', '["mod.open", { name: "settings" }, "App", "Settings"');

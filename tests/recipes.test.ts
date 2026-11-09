@@ -184,7 +184,13 @@ describe("square", () => {
     }
     expect(square.mods["vjr-square-git-graph"]?.["menu.js"]).toContain(".bg(t.popover).border_1().border_color(t.border)");
     expect(square.mods["vjr-square-git-graph"]?.["dialog.js"]).toContain(".bg(t.popover).border_1().border_color(t.border)");
-    expect(square.mods["vjr-square-settings"]?.["main.js"]).toContain('.id("settings").border_1().border_color(t.border)');
+    expect(square.mods["vjr-square-settings"]?.["main.js"]).toContain('.id("settings").bg(t.popover).border_1().border_color(t.border)');
+  });
+
+  test("the frameless settings paints its own background, which Herdr's frame drew", () => {
+    const settings = generateSquare().mods["vjr-square-settings"]?.["main.js"] ?? "";
+    expect(meta(generateSquare(), "settings").overlay.frame).toBe("none");
+    expect(settings).toMatch(/\.id\("settings"\)\.bg\(t\.popover\)/);
   });
 
   test("the square git-graph keeps its icons at the original path", () => {

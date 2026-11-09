@@ -74,7 +74,7 @@ Nothing here is a frozen copy of Herdr. `recipes/` holds small edits, and `scrip
 - `herdr-app status` is only a safety check: if it hangs or its output can't be read, the update goes on without it.
 - A block with `hidden: true` never starts its mod. `vjr-sync` floats and renders an empty `div()`, which shows nothing.
 - The app writes `gpui-kit.d.ts` and `jsconfig.json` into every mod folder. Comparing a generated mod with an installed one must ignore them.
-- `frame: "none"` removes the border with the corners, so a mod that uses it must draw its own. Don't set it on a popup with no copy: the palette opens Herdr's `prompt`, which has no border.
+- `frame: "none"` removes the border with the corners, so a mod that uses it must draw its own. It removes the background too: Settings draws none of its own (Herdr 0.1.14), so the square copy paints its root `popover`, the color Herdr's frame gives it. Don't set it on a popup with no copy: the palette opens Herdr's `prompt`, which has no border.
 - The app opens `prompt`, `confirm`, `toast` and `peek` itself, so renaming, close confirmations, notifications and peek stay rounded. So do Welcome, What's new, the feedback window and Add machine's terminal dialog.
 - The layouts redirect their own keys and buttons only. `app.palette`, `app.settings` and `app.help` still open Herdr's rounded originals, for example from `herdr-app do`.
 - The spinner is a round SVG and stays round.
