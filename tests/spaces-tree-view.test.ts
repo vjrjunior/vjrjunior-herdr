@@ -903,6 +903,25 @@ describe("folders", () => {
     expect(app.overlays.at(-1)).toMatchObject({ mod: "spaces-tree", kind: "popup", props: { role: "folder", folder: "f1" } });
   });
 
+  test("the folder button left of + opens the name dialog for an empty folder", () => {
+    const header = setup().render().kids[0] as Node;
+    expect(header.kids.at(-1)?.kids.map((kid) => kid.key)).toEqual(["space-style", "space-folder", "space-new"]);
+    click(setup(), "space-folder");
+    expect(app.overlays.at(-1)).toMatchObject({ mod: "spaces-tree", kind: "dialog", props: { role: "name" } });
+    expect(app.overlays.at(-1)?.props.unit).toBeUndefined();
+  });
+
+  test("a folder made with no space in it shows empty at the top", () => {
+    app.props = { role: "name", overlay: "o1" };
+    const dialog = new SpacesTree();
+    dialog.init({}, { ...cx, focus_handle: () => null, timer: { every() {}, after() {} } });
+    dialog.input.set_value("Later");
+    dialog.input.emit("submit", cx);
+    app.props = null;
+    expect((app.shared[FOLDERS] as ReturnType<typeof folders>).members).toEqual({});
+    expect(listKeys(setup())[0]).toMatch(/^folder-f/);
+  });
+
   test("the narrow rail draws a folder as its tile and folds it on a click", () => {
     app.shared[FOLDERS] = folders({ x: "f1" });
     app.sidebar = 100;

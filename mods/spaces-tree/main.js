@@ -24,7 +24,7 @@ import {
   rowsOf,
 } from "./tree.js";
 import { arrange, entryOfSpace, fileUnit, folderOf, folderTail, revealFor, toggleFolder } from "./folders.js";
-import { FOLDER_MENU, movePopupHeight, readState, renderPopup, saveState, startPopup } from "./popups.js";
+import { FOLDER_MENU, movePopupHeight, openNameDialog, readState, renderPopup, saveState, startPopup } from "./popups.js";
 import { CONTROL, ICON_SIZE, TEXT, icon, iconButton, statusDot, toneColor } from "../../kit/kit.js";
 
 const WAIT = 1500;
@@ -836,6 +836,7 @@ export default class SpacesTree extends View {
               ? this.iconButton("space-style", "git-branch", "Show as a graph", () => this.toggleStyle(), t)
               : this.iconButton("space-style", "layers", "Show as blocks", () => this.toggleStyle(), t),
           )
+          .child(this.iconButton("space-folder", "folder", "New folder", () => openNameDialog({}), t))
           .child(this.iconButton("space-new", "plus", "New space", () => run("space.new"), t)),
       );
   }

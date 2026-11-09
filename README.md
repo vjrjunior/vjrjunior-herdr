@@ -163,6 +163,7 @@ The transcript stays under the first folder's project in `~/.claude/projects/`, 
 Gather repositories, with their worktrees, and loose spaces into folders with a name and one of the six avatar colors. Folders sit at the top of the Spaces tree, in the order you made them; what isn't in a folder follows in Herdr's order.
 
 - **Filing:** drag a repository's row (or a loose space's) onto a folder, or right-click a space and pick `Move to folder…`: the popup lists the folders, checks the one it's in, makes a `New folder…` with it, and takes it out with `Remove from folder`. A worktree's menu files its whole repository. Dragging a row onto a row in another folder, or outside any, reorders it as before and moves it into that row's folder, or out.
+- **Making one:** the folder button left of `+` in the Spaces header opens `New folder` for an empty folder; `New folder…` in `Move to folder…` makes one with the row in it.
 - **Folding:** click a folder. A folded folder shows `N need you`, counting the agents in it that are blocked or done, and a dot in its most urgent status. When the space in front changes to one inside a folded folder, by a click, a key, `agent.next`, a toast or a script, the folder opens; folding it again while that space is in front keeps it folded.
 - **Editing:** right-click a folder for its colors (applied at once), `Rename…` and `Delete folder`. Deleting gives its repositories and spaces back to the list; no space closes.
 
