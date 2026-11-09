@@ -1,17 +1,19 @@
-# Mod pitfalls
+# Pitfalls
 
-Read before writing or changing a mod's code. Herdr's guide covers `cx`, timers, animation and the API; these are what it leaves out.
+Read before writing or changing a mod or a recipe. Herdr's guide covers `cx`, timers, animation and the API; these are what it leaves out.
 
 ## Already written in this repo
 
 Read the Watch out section of the one that matches the area you touch:
 
-- `RECIPE.md`: props in `herdr-app check`, `exec` and `bun`'s PATH, the 30 s `exec` limit, hidden blocks, `frame: "none"`, the kit's import path.
+- `RECIPE.md`: props in `herdr-app check`, `exec` and `bun`'s PATH, `exec`'s time limit, hidden blocks, `frame: "none"`, the kit's import path.
 - `mods/move-tab/RECIPE.md`: drags across blocks, `on_mouse_down_out`, one handler per event, `run()` returning nothing, `pane.split` without a folder, ending and resuming Claude.
 - `mods/comeback/RECIPE.md`: `fs/promises` without `stat`, `hc get`'s `turn`, `hc send`, Claude's folder-trust prompt.
 
-## Not written anywhere else yet
+## Mods
 
+- **`close` is Herdr's.** Herdr calls a View's `close(cx)` when its overlay, pane or block goes. Give your own method another name.
+- **Commands carry no arguments into a mod.** `nextCommand()` gives only the command's name, and Herdr's `prompt` overlay ends in `run(command.name, { ...command.args, name })`. To ask for text a mod keeps, draw the input in the mod's own popup.
 - **Text height.** `.line_height(14)` multiplies the font size, and the text vanishes under `truncate`. Pass `"14px"`.
 - **Shared state redraws every mod.** Never call `setShared` from `render` or a hover. Publish only real changes, from an event or a timer.
 - **Scrolling fakes hovers.** A list scrolling under a still pointer fires a hover per row. Count a hover as real only when the pointer moved in the last ~150 ms, and give the scroll area a stable `.id()`.
@@ -23,6 +25,14 @@ Read the Watch out section of the one that matches the area you touch:
 - **Prefilling Claude.** Its input line is `❯` followed by a non-breaking space, and the folder-trust prompt uses `❯` too. Match `^❯`, and wait until the trust prompt is gone.
 - **`hc wait` on your own terminal ignores `--timeout`.** Don't use it to sleep.
 - **Writing your own `mod.json` reloads the mod.**
-- **Long work runs in a terminal.** A clone or an install outlives `exec`'s limit. Open it with `terminal.open` so its progress shows.
+- **Work the person should watch runs in a terminal.** A clone or an install goes in `terminal.open`, where its progress shows, not in a long `exec`.
 - **The code view's colors.** `EditorState` tags `//`, `/*` and quotes as `punctuation`, which beats `comment`, and only the documented syntax names apply.
 - **The JS runtime.** There is no `TextEncoder` (`encodeURIComponent` gives UTF-8 bytes), and `toLocaleDateString` ignores its options.
+
+## Recipes that patch a Herdr copy
+
+Several recipes patch the same copies (`grep -n 'copies\.' recipes/*.ts`). Each gets the copy with the edits of the recipes before it in `VARIANTS`.
+
+- **Anchors.** `exact` fails when its text shows up a different number of times. Anchor on Herdr's own text that no earlier recipe rewrites.
+- **The test home.** A new anchor also goes in the fake copy in `tests/herdr-home.ts`.
+- **Change tests.** Each recipe's "a … that changed fails the recipe" test must still fail on that recipe's own anchor.
