@@ -64,7 +64,8 @@ In the worktree, with the plan approved:
 - Start from the closest recipe: `recipes/markdown.ts` (a pane mod), `recipes/comeback.ts` (an invisible floating worker), `recipes/move-tab.ts` (patches Herdr's `menu` and `tabs` and binds a key).
 - Wire both layouts as `AGENTS.md` › Both layouts says, and draw with the kit as `AGENTS.md` › UI says.
 - Before writing a mod or a recipe, read `references/pitfalls.md`.
-- Try it with `bun run apply-layout` from the worktree, then `herdr-app status`.
+- Try it with `bun run apply-layout` from the worktree, then `herdr-app status`. The window runs one build: the folder that ran it last.
+- A bug outside the feature gets its own branch and worktree. To try the fix live, apply from its worktree, then apply from the feature's again before going on; say which build is live. Or ask to land the fix first, then rebase the feature on `main`, so its build carries both.
 
 ## 6. Done
 
@@ -78,5 +79,7 @@ All of `AGENTS.md` › Done. The live checks go in one test-panel run, `~/orbita
 ## 7. Land
 
 - Commit each change a person would name on its own, as `AGENTS.md` › Commits says; a feature is usually one commit.
-- `/verify` selects tests against `origin/main`. Failures or `UNMAPPED` files that only local `main`'s unpushed commits touched are not this branch's: report them, and offer to push `main`.
+- Run `/verify` right before each commit.
+  - This repo's pregate map is `~/.gstack/projects/vjrjunior-herdr/pregate.json`, not `.gstack/pregate.json`. A file tests read at run time (a fixture) goes there, mapped to those tests.
+  - It selects against `origin/main`, so it also sees local `main`'s unpushed commits. A red or `UNMAPPED` file only those commits touched is not this branch's: report it, and offer to push `main`.
 - Ask whether to open a PR or merge into `main`. Once it lands or is dropped, update the main checkout and run `bun run apply-layout` there. Remove the worktree last, from the main checkout, because this session runs inside it.
