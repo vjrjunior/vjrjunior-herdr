@@ -134,13 +134,25 @@
 **Priority:** P3
 **Depends on:** Nothing
 
-### A kit row for popup lists
+### Move Move tab's and the Command Center's popups onto the kit's popupRow
 
-**What:** A row component in `kit/kit.js` (icon, label, optional detail, selected state), shown in the kit's gallery, and used by Move tab's popup and the Command Center's profile popup.
+**What:** Draw the rows of Move tab's popup and of the Command Center's profile popup with `popupRow` from `kit/kit.js`, and drop their own row code.
 
-**Why:** AGENTS.md puts a component in the kit as soon as a second mod would draw the same thing. Both rows are an `h_flex` with an icon, a label, 8px side padding, an 8px gap, rounded corners and a `hover` background.
+**Why:** AGENTS.md puts a component in the kit as soon as a second mod draws the same thing. The Spaces folders popups brought `popupRow` into the kit; the two older popups still draw the same row by hand.
 
-**Context:** `row` in `mods/move-tab/main.js` uses the kit's tokens (`CONTROL.large`, `RADIUS.control`, `TEXT.sm`) and marks the selected row with `selected`. `profileView` in `mods/command-center/column.js` (the row at line 437) uses fixed sizes (28px high, radius 4) and marks the chosen row with an `accent` check, so the component needs both kinds of selected state. Kept out of the move-tab branch so that branch stays on moving tabs.
+**Context:** `row` in `mods/move-tab/main.js` uses the kit's tokens (`CONTROL.large`, `RADIUS.control`, `TEXT.sm`) and marks the selected row with `selected`, which is `popupRow`'s `selected`. `profileView` in `mods/command-center/column.js` uses fixed sizes (28px high, radius 4) and marks the chosen row with an `accent` check, which is `popupRow`'s `check`, but it also has a second line of 10.5px text under the label that `popupRow` doesn't draw yet. Both popups have view tests that look the rows up by id.
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** Nothing
+
+### Reorder the Spaces folders by dragging
+
+**What:** Press a folder's row in the Spaces tree and let go on another folder's row to move it before or after that one, with the 2px `accent` line the tree's repository reorder already draws.
+
+**Why:** Folders stay in the order they were made. With more than a few, the only way to put one first is to delete and remake the others.
+
+**Context:** `spaces.folders` keeps the folders as an array, so the order is the array's. `folders.js` would need a `moveFolder(state, id, index)`; `main.js` already tracks a row drag in `dragUnit` and lights folder rows in `overFolder`, so a folder drag needs its own pressed id and a line instead of the outline. Release handlers must stay one per event on each row (see `mods/move-tab/RECIPE.md`).
 
 **Effort:** S
 **Priority:** P3

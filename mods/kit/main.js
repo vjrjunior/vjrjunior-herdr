@@ -1,7 +1,7 @@
 import { View, div } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
 import { theme } from "herdr";
-import { ICONS, TEXT, button, card, chip, heading, icon, iconButton, line, link, pill, stepNode, statusDot } from "../../kit/kit.js";
+import { ICONS, TEXT, button, card, chip, heading, icon, iconButton, line, link, pill, popupRow, stepNode, statusDot } from "../../kit/kit.js";
 
 const STATUSES = ["working", "blocked", "done", "idle", "unknown"];
 const STEPS = ["done", "current", "bad", "todo"];
@@ -48,6 +48,19 @@ export default class Kit extends View {
       .child(line("Dot", { detail: "dot", color: t.working, mark: "dot" }, t))
       .child(line("Ring", { detail: "ring", color: t.idle, mark: "ring" }, t))
       .child(line("No mark", { detail: "plain", color: t.muted }, t));
+    const popupRows = v_flex()
+      .w(240)
+      .p(4)
+      .gap(1)
+      .bg(t.popover)
+      .border_1()
+      .border_color(t.border)
+      .rounded(6)
+      .child(popupRow("kit-pr-icon", { icon: "plus", label: "New folder…", onClick: noop }, t))
+      .child(popupRow("kit-pr-dot", { dot: t.ansi4, label: "Clients", check: true, onClick: noop }, t))
+      .child(popupRow("kit-pr-detail", { icon: "folder", label: "Personal", detail: "3", onClick: noop }, t))
+      .child(popupRow("kit-pr-selected", { icon: "git-branch", label: "Selected", selected: true, onClick: noop }, t))
+      .child(popupRow("kit-pr-color", { icon: "x", label: "Remove from folder", color: t.blocked, onClick: noop }, t));
     const dots = v_flex()
       .gap(8)
       .child(row().children(STATUSES.map((name) => h_flex().gap(4).items_center().text_size(TEXT.sm).text_color(t.muted).child(statusDot(t[name])).child(name))))
@@ -82,6 +95,7 @@ export default class Kit extends View {
       .child(section("chips", "Chips", t).child(chips))
       .child(section("pill", "Pill", t).child(row().child(pill("Pill", t))))
       .child(section("lines", "Lines", t).child(lines))
+      .child(section("popup-rows", "Popup rows", t).child(popupRows))
       .child(section("dots", "Dots", t).child(dots))
       .child(section("steps", "Steps", t).child(steps))
       .child(section("icons", "Icons", t).child(icons));

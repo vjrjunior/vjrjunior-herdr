@@ -233,6 +233,9 @@ describe("square", () => {
       '    const icon = command === "worktree" ? "git-branch" : "terminal";',
       'function menuIcon(command) {',
       'function shortcut(name, args) {',
+      '        ["Close", "space.close", { id: tg.id }],',
+      "    closeOverlay(props()?.overlay);",
+      '  const name = command.endsWith(".close") ? "x" : "terminal";',
       '    if (it[1] === "worktree") tree();',
       '    return v_flex().bg(t.popover).rounded(7); } }',
     ].join("\n");
@@ -309,6 +312,39 @@ describe("spaces-tree", () => {
 
   test("the rounded copy keeps its corners", () => {
     expect(generateDesk().mods["vjr-spaces-tree"]?.["main.js"]).toMatch(/\.rounded\(8\)/);
+  });
+
+  test("both layouts put Move to folder… in the space menu, before Close", () => {
+    for (const [generated, copy] of [
+      [generateDesk(), "vjr-menu"],
+      [generateSquare(), "vjr-square-menu"],
+    ] as const) {
+      const menu = generated.mods[copy]?.["main.js"] ?? "";
+      expect(menu).toContain('        ...(p.folder ? [["Move to folder…", "spaces-folder", p.folder]] : []),\n        ["Close", "space.close", { id: tg.id }],');
+      expect(menu).toContain('  if (command === "spaces-folder") return "mods/workspace-chrome/folder.svg";\n  const name = command.endsWith(".close")');
+    }
+  });
+
+  test("the menu opens each layout's own folders popup, frameless in the square layout", () => {
+    expect(generateDesk().mods["vjr-menu"]?.["main.js"]).toContain(
+      '    closeOverlay(props()?.overlay);\n    if (it[1] === "spaces-folder") return openOverlay({ mod: "vjr-spaces-tree", kind: "popup", width: 240, height: it[2].height, props: { ...it[2], role: "folders" } });',
+    );
+    expect(generateSquare().mods["vjr-square-menu"]?.["main.js"]).toContain('openOverlay({ mod: "vjr-square-spaces-tree", kind: "popup", frame: "none", width: 240,');
+  });
+
+  test("the tree opens its own folder popups, frameless and bordered in the square layout", () => {
+    const desk = generateDesk().mods["vjr-spaces-tree"] ?? {};
+    expect(desk["main.js"]).toContain('openOverlay({ mod: "vjr-spaces-tree", kind: "popup", width: FOLDER_MENU.width');
+    expect(desk["popups.js"]).toContain('openOverlay({ mod: "vjr-spaces-tree", kind: "dialog", width: NAME_DIALOG.width');
+    const square = generateSquare().mods["vjr-square-spaces-tree"] ?? {};
+    expect(square["main.js"]).toContain('openOverlay({ mod: "vjr-square-spaces-tree", kind: "popup", frame: "none",');
+    expect(square["popups.js"]).toContain('openOverlay({ mod: "vjr-square-spaces-tree", kind: "dialog", frame: "none",');
+    expect(square["popups.js"]?.split(".bg(t.popover).border_1().border_color(t.border)")).toHaveLength(4);
+    expect(square["popups.js"]).not.toMatch(/\.rounded(_[a-z]+)?\((?!0\))/);
+  });
+
+  test("a menu without the space case fails the recipe", () => {
+    expect(() => generateDesk({ "mods/menu/main.js": "export default class Mod { render() { return div(); } }" })).toThrow(/recipe spaces-tree/);
   });
 });
 
@@ -397,7 +433,8 @@ describe("move-tab", () => {
   });
 
   test("a menu that changed fails the recipe", () => {
-    expect(() => generateDesk({ "mods/menu/main.js": "export default class Mod { render() { return div(); } }" })).toThrow(/recipe move-tab/);
+    const onlyFolders = ['        ["Close", "space.close", { id: tg.id }],', "    closeOverlay(props()?.overlay);", '  const name = command.endsWith(".close") ? "x" : "terminal";', ""].join("\n");
+    expect(() => generateDesk({ "mods/menu/main.js": onlyFolders })).toThrow(/recipe move-tab/);
   });
 
   test("the tab bar starts a drag in both layouts", () => {

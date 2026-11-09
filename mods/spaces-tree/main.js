@@ -1,6 +1,6 @@
 import { View, div } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
-import { spaces, panes, run, openOverlay, exec, theme, shared, setShared, watchFolder, window, nextCommand, layout } from "herdr";
+import { spaces, panes, agents, run, openOverlay, exec, theme, shared, setShared, watchFolder, window, nextCommand, layout, props } from "herdr";
 import {
   accepts,
   assignColors,
@@ -15,13 +15,17 @@ import {
   holdsActive,
   isFolded,
   liveFolds,
+  paint,
   parseRefs,
   parseWorktrees,
   place,
   readLook,
   repoName,
+  rowsOf,
 } from "./tree.js";
-import { CONTROL, ICON_SIZE, TEXT, iconButton, statusDot, toneColor } from "../../kit/kit.js";
+import { arrange, entryOfSpace, fileUnit, folderOf, folderTail, revealFor, toggleFolder } from "./folders.js";
+import { FOLDER_MENU, movePopupHeight, readState, renderPopup, saveState, startPopup } from "./popups.js";
+import { CONTROL, ICON_SIZE, TEXT, icon, iconButton, statusDot, toneColor } from "../../kit/kit.js";
 
 const WAIT = 1500;
 const RAIL = 18.25;
@@ -35,8 +39,11 @@ const LANE = 48;
 const TIE = 17;
 const NODE = 31;
 const BOX = 36;
-const MARK = { ansi6: "#22a99a", ansi3: "#e3814f", ansi4: "#5b8def", ansi5: "#8b7cf6", ansi2: "#3fae6a", ansi1: "#d9649a" };
 const NARROW = 160;
+const FOLDER = 34;
+const TILE = 22;
+const INDENT = 24;
+const COMPACT = 26;
 const DRAG = "move-tab.drag";
 const REQUEST = "move-tab.request";
 
@@ -54,7 +61,12 @@ const faded = (color) => alpha(color, "B3");
 const git = (args, cwd) => exec("git", ["--no-optional-locks", "-c", "core.fsmonitor=false", ...args], { cwd });
 
 export default class SpacesTree extends View {
-  init(_props, cx) {
+  init(given, cx) {
+    this.role = (given && typeof given === "object" ? given.role : null) ?? props()?.role ?? null;
+    if (this.role) {
+      startPopup(this, cx);
+      return;
+    }
     this.looks = {};
     this.unsure = new Set();
     this.checked = {};
@@ -72,6 +84,10 @@ export default class SpacesTree extends View {
     this.pressed = null;
     this.over = null;
     this.dropOver = null;
+    this.dragUnit = null;
+    this.overFolder = null;
+    this.revealed = spaces().find((space) => space.active)?.id ?? null;
+    this.revealing = null;
     cx.timer.every(250, (cx) => this.tick(cx));
     cx.spawn(async (cx) => {
       for (;;) {
@@ -135,12 +151,43 @@ export default class SpacesTree extends View {
       checked: this.checked,
       time,
       active: Boolean(window()?.active),
-      folded: liveFolds(this.folded(), this.repos),
+      folded: new Set([...liveFolds(this.folded(), this.repos), ...this.hiddenUnits()]),
     });
     this.lastPlaces = places;
     this.lastBusy = busy;
     if (due.size) this.refresh(due, cx);
     if (all.some((space) => !this.shown.has(space.id))) cx.notify();
+    const active = all.find((space) => space.active)?.id ?? null;
+    if (active !== this.revealed) {
+      this.revealed = active;
+      this.revealing = active;
+    }
+    if (this.revealing) this.reveal();
+  }
+
+  hiddenUnits() {
+    const state = readState();
+    const folded = new Set(state.folders.filter((folder) => folder.folded).map((folder) => folder.id));
+    return Object.keys(state.members).filter((unit) => folded.has(state.members[unit]));
+  }
+
+  reveal() {
+    const space = spaces().find((known) => known.id === this.revealing);
+    if (!space) {
+      this.revealing = null;
+      return;
+    }
+    if (!this.shown.has(space.id) || !this.settled(space)) return;
+    const entry = entryOfSpace(this.entries(), space.id);
+    if (!entry) return;
+    this.revealing = null;
+    const state = readState();
+    saveState(state, revealFor(state, entry.key));
+  }
+
+  settled(space) {
+    const look = this.looks[this.lastPlaces[space.id]];
+    return space.machine != null || look === null || Boolean(look && this.repos[look.common]);
   }
 
   refresh(paths, cx) {
@@ -221,12 +268,8 @@ export default class SpacesTree extends View {
     const time = Date.now();
     const all = spaces();
     const lookOf = (space) => this.looks[this.lastPlaces[space.id]];
-    const settled = (space) => {
-      const look = lookOf(space);
-      return space.machine != null || look === null || Boolean(look && this.repos[look.common]);
-    };
     for (const space of all) {
-      if (!this.shown.has(space.id) && (settled(space) || time - (this.born[space.id] ?? time) > WAIT)) this.shown.add(space.id);
+      if (!this.shown.has(space.id) && (this.settled(space) || time - (this.born[space.id] ?? time) > WAIT)) this.shown.add(space.id);
     }
     const visible = all.filter((space) => this.shown.has(space.id));
     const looks = Object.fromEntries(visible.map((space) => [space.id, lookOf(space)]));
@@ -311,8 +354,49 @@ export default class SpacesTree extends View {
       });
   }
 
-  menu(space) {
-    openOverlay({ mod: "menu", kind: "popup", width: 200, height: 260, props: { tab: "space", target: { id: space.id } } });
+  menu(space, entry) {
+    const state = readState();
+    const name = entry.kind === "repo" ? entry.main.name : entry.row.name;
+    const folder = { unit: entry.key, name, height: movePopupHeight(state.folders.length, folderOf(state, entry.key) != null) };
+    openOverlay({ mod: "menu", kind: "popup", width: 200, height: 260, props: { tab: "space", target: { id: space.id }, folder } });
+  }
+
+  folderMenu(folder) {
+    openOverlay({ mod: "spaces-tree", kind: "popup", width: FOLDER_MENU.width, height: FOLDER_MENU.height, props: { role: "folder", folder: folder.id } });
+  }
+
+  toggleFolder(id) {
+    const state = readState();
+    saveState(state, toggleFolder(state, id));
+  }
+
+  dropOnEntry(entry) {
+    const unit = this.dragUnit;
+    if (!unit || unit === entry.key) return;
+    const state = readState();
+    const into = folderOf(state, entry.key);
+    if (folderOf(state, unit) !== into) saveState(state, fileUnit(state, unit, into));
+  }
+
+  dropOnFolder(folder) {
+    const unit = this.dragUnit;
+    const lit = this.overFolder === folder.id;
+    this.dragUnit = null;
+    this.overFolder = null;
+    this.pressed = null;
+    this.over = null;
+    if (!unit || !lit) return false;
+    const state = readState();
+    if (folderOf(state, unit) !== folder.id) saveState(state, fileUnit(state, unit, folder.id));
+    return true;
+  }
+
+  overFolderRow(folder, on, cx) {
+    const over = on && this.dragUnit != null ? folder.id : this.overFolder === folder.id ? null : this.overFolder;
+    if (over === this.overFolder) return;
+    this.overFolder = over;
+    if (over) this.over = null;
+    cx.notify();
   }
 
   newWorktree(entry) {
@@ -340,8 +424,67 @@ export default class SpacesTree extends View {
 
   fill(space, t) {
     if (!space) return t.dim;
-    const color = (shared("space.colors") ?? {})[space.id] ?? "ansi6";
-    return color.startsWith("#") ? color : (MARK[color] ?? t[color] ?? t.dim);
+    return paint((shared("space.colors") ?? {})[space.id] ?? "ansi6", t);
+  }
+
+  tile(color, size, glyph) {
+    return h_flex()
+      .size(size)
+      .flex_none()
+      .rounded(6)
+      .bg(color)
+      .items_center()
+      .justify_center()
+      .child(icon("folder", { size: glyph, color: "#ffffff" }));
+  }
+
+  folderRow(folder, entries, t) {
+    const color = paint(folder.color, t);
+    const open = !folder.folded;
+    const tail = folder.folded ? folderTail(entries, agents()) : null;
+    const active = folder.folded && entries.some(holdsActive);
+    const dropping = this.overFolder === folder.id && this.dragUnit != null && folderOf(readState(), this.dragUnit) !== folder.id;
+    const bottom = (FOLDER - TILE) / 2 + TILE;
+    return h_flex()
+      .id(`folder-${folder.id}`)
+      .relative()
+      .h(FOLDER)
+      .flex_none()
+      .px(8)
+      .gap(8)
+      .items_center()
+      .rounded(8)
+      .when(active, (el) => el.bg(t.raised))
+      .when(dropping, (el) => el.bg(t.selected).border_1().border_color(t.accent))
+      .when(!active && !dropping, (el) => el.hover((s) => s.bg(t.hover)))
+      .child(this.tile(color, TILE, 13))
+      .child(div().flex_1().min_w(0).truncate().font_medium().text_color(t.foreground).child(folder.name))
+      .when(Boolean(tail?.needs), (el) => el.child(this.note(`${tail.needs} ${tail.needs === 1 ? "needs" : "need"} you`, t)))
+      .when(Boolean(tail?.status), (el) => el.child(this.statusDot(tail.status, t)))
+      .child(icon(open ? "chevron-down" : "chevron-right", { size: ICON_SIZE.md, color: t.unknown }))
+      .when(active, (el) => el.child(this.frame(t.dim)))
+      .when(open && entries.length > 0, (el) => el.child(div().absolute().left(RAIL).top(bottom).w(1.5).h(FOLDER - bottom).bg(faded(color))))
+      .on_hover((on, cx) => this.overFolderRow(folder, on, cx))
+      .on_mouse_move((_e, cx) => this.overFolderRow(folder, true, cx))
+      .on_mouse_up("left", (_e, cx) => {
+        if (this.dropOnFolder(folder)) cx.notify();
+      })
+      .on_click(() => this.toggleFolder(folder.id))
+      .on_mouse_down("right", () => this.folderMenu(folder));
+  }
+
+  folderSection({ folder, entries }, t, draw) {
+    const row = this.folderRow(folder, entries, t);
+    if (folder.folded || entries.length === 0) return [row];
+    const body = v_flex()
+      .id(`folder-body-${folder.id}`)
+      .relative()
+      .flex_none()
+      .pl(INDENT)
+      .pb(4)
+      .child(div().absolute().left(RAIL).top(0).bottom(10).w(1.5).bg(faded(paint(folder.color, t))))
+      .children(entries.map(draw));
+    return [row, body];
   }
 
   avatar(row, t) {
@@ -473,10 +616,22 @@ export default class SpacesTree extends View {
       .when(!selected, (el) => el.hover((s) => s.bg(t.hover)))
       .when(index < 0, (el) => el.on_click(() => this.open(row)))
       .when(index >= 0, (el) => this.draggable(el, index, t))
-      .when(Boolean(row.space), (el) => el.on_mouse_down("right", () => this.menu(row.space)))
+      .when(Boolean(row.space), (el) => el.on_mouse_down("right", () => this.menu(row.space, entry)))
       .when(Boolean(rail), (el) => el.child(div().absolute().left(RAIL).top(bottom).w(1.5).h(height - bottom).bg(rail)))
       .when(Boolean(status) && flat, (el) => el.child(this.bar(status, t, height)));
-    const events = { hover: (on, cx) => this.hover(entry.key, on, cx), ...(index >= 0 ? this.reorder(row, index, all) : {}) };
+    const reorder = index >= 0 ? this.reorder(row, index, all) : {};
+    const events = {
+      hover: (on, cx) => this.hover(entry.key, on, cx),
+      down: () => {
+        this.dragUnit = entry.key;
+        reorder.down?.();
+      },
+      move: reorder.move,
+      up: (cx) => {
+        this.dropOnEntry(entry);
+        reorder.up?.(cx);
+      },
+    };
     return this.pointer(el, row, this.dropFor(entry, row), t, events);
   }
 
@@ -523,9 +678,31 @@ export default class SpacesTree extends View {
     };
   }
 
-  compactRows(entries, t) {
+  compactFolder(folder, entries, t) {
+    const tail = folder.folded ? folderTail(entries, agents()) : null;
+    const needs = tail?.status === "blocked" || tail?.status === "done";
+    return h_flex()
+      .id(`compact-folder-${folder.id}`)
+      .h(COMPACT)
+      .flex_none()
+      .justify_center()
+      .items_center()
+      .gap(4)
+      .hover((s) => s.bg(t.hover))
+      .on_click(() => this.toggleFolder(folder.id))
+      .on_mouse_down("right", () => this.folderMenu(folder))
+      .child(this.tile(paint(folder.color, t), 16, 10))
+      .when(needs, (el) => el.child(statusDot(t[tail.status], { size: 5 })));
+  }
+
+  compactRows({ folders, loose }, t) {
+    const numbered = (entries) => this.compactSpaces(entries, t);
+    return [...folders.flatMap(({ folder, entries }) => [this.compactFolder(folder, entries, t), ...(folder.folded ? [] : numbered(entries))]), ...numbered(loose)];
+  }
+
+  compactSpaces(entries, t) {
     const all = spaces();
-    const rows = entries.flatMap((entry) => (entry.kind === "repo" ? [entry.main, ...entry.kids] : [entry.row])).filter((row) => row.space);
+    const rows = entries.flatMap(rowsOf).filter((row) => row.space);
     return rows.map((row) => {
       const active = Boolean(row.space.active);
       return h_flex()
@@ -566,7 +743,7 @@ export default class SpacesTree extends View {
       .rounded(8)
       .when(hovered, (el) => el.child(this.box(BOX, 0, t)))
       .on_click(() => this.open(row))
-      .when(Boolean(row.space), (el) => el.on_mouse_down("right", () => this.menu(row.space)))
+      .when(Boolean(row.space), (el) => el.on_mouse_down("right", () => this.menu(row.space, entry)))
       .when(!last, (el) => el.child(div().absolute().left(RAIL).top(above ? 0 : TIE).w(1.5).h(above ? height : height - TIE).bg(above ? color : rail)))
       .child(div().absolute().left(RAIL).top(0).h(TIE).w(13).border_l(1.5).border_b(1.5).border_color(selected ? color : rail).rounded_bl(9))
       .children(selected ? this.ring(row, color, t) : [this.node(row, rail, t)])
@@ -608,7 +785,7 @@ export default class SpacesTree extends View {
       .justify_center()
       .when(hovered, (el) => el.child(this.box(30, 6, t)))
       .on_click(() => this.open(row))
-      .when(Boolean(row.space), (el) => el.on_mouse_down("right", () => this.menu(row.space)))
+      .when(Boolean(row.space), (el) => el.on_mouse_down("right", () => this.menu(row.space, entry)))
       .when(row.open && Boolean(row.status), (el) => el.child(this.bar(row.status, t, height)))
       .children(this.kidLines(row, lane, t));
     return this.pointer(el, row, this.dropFor(entry, row), t, { hover: (on, cx) => this.hoverKid(row.key, on, cx) });
@@ -663,13 +840,15 @@ export default class SpacesTree extends View {
       );
   }
 
-  render() {
+  render(cx) {
+    if (this.role) return renderPopup(this, cx);
     const t = theme();
     const { colors, changed } = assignColors(spaces(), shared("space.colors") ?? {});
     if (changed) setShared("space.colors", colors);
     const narrow = this.narrow();
-    const entries = this.entries();
+    const groups = arrange(this.entries(), readState());
     const blocks = this.style() === "blocks";
+    const draw = (entry) => (blocks ? this.blockEntry(entry, t) : this.graphEntry(entry, t));
     return v_flex()
       .size_full()
       .min_h(0)
@@ -690,10 +869,18 @@ export default class SpacesTree extends View {
             this.pressed = null;
             this.over = null;
             this.dropOver = null;
+            this.dragUnit = null;
+            this.overFolder = null;
             this.endDrag();
             cx.notify();
           })
-          .children(narrow ? this.compactRows(entries, t) : entries.map((entry) => (blocks ? this.blockEntry(entry, t) : this.graphEntry(entry, t)))),
+          .on_mouse_down_out(() => {
+            this.pressed = null;
+            this.over = null;
+            this.dragUnit = null;
+            this.overFolder = null;
+          })
+          .children(narrow ? this.compactRows(groups, t) : [...groups.folders.flatMap((group) => this.folderSection(group, t, draw)), ...groups.loose.map(draw)]),
       );
   }
 }

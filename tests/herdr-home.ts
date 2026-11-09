@@ -99,8 +99,11 @@ export default class Tabs extends View {
   "mods/menu/main.js": script(`    const tree = () => openOverlay({ mod: "worktree", kind: "dialog", width: 440, height: 260, props: {} });
     const items = [
         ["Close", "tab.close", { id: tg.id }],
+        ["Close", "space.close", { id: tg.id }],
     ];
+  const name = command.endsWith(".close") ? "x" : "terminal";
     const icon = command === "worktree" ? "git-branch" : "terminal";
+    closeOverlay(props()?.overlay);
     function menuIcon(command) {
       return icon;
     }

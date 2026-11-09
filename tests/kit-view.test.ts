@@ -19,7 +19,7 @@ function render() {
 
 test("the gallery shows every section", () => {
   const root = render();
-  for (const id of ["buttons", "icon-buttons", "links", "chips", "pill", "lines", "dots", "steps", "icons"]) {
+  for (const id of ["buttons", "icon-buttons", "links", "chips", "pill", "lines", "popup-rows", "dots", "steps", "icons"]) {
     expect(find(root, `kit-${id}`)).toBeDefined();
   }
 });
@@ -53,4 +53,10 @@ test("the gallery shows the buttons and chips the mods use", () => {
   const chips = svgs(find(root, "kit-chips"));
   expect(chips).toContain("mods/kit/icons/exclamation.svg");
   expect(chips).not.toContain("mods/kit/icons/x.svg");
+});
+
+test("the gallery shows popup rows with an icon, a color dot, a check and a selected one", () => {
+  const section = find(render(), "kit-popup-rows");
+  expect(texts(section)).toEqual(expect.arrayContaining(["New folder…", "Clients", "Remove from folder", "Selected"]));
+  expect(svgs(section)).toEqual(expect.arrayContaining(["mods/kit/icons/plus.svg", "mods/kit/icons/check.svg"]));
 });

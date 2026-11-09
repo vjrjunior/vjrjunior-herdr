@@ -22,6 +22,22 @@ import {
   readLook,
   repoName,
 } from "../mods/spaces-tree/tree.js";
+import {
+  arrange,
+  createFolder,
+  deleteFolder,
+  entryOfSpace,
+  fileUnit,
+  folderOf,
+  folderTail,
+  newFolderId,
+  nextColor,
+  readFolders,
+  recolorFolder,
+  renameFolder,
+  revealFor,
+  toggleFolder,
+} from "../mods/spaces-tree/folders.js";
 
 const space = (id: string, over = {}) => ({ id, index: 1, name: id, named: false, folder: "", machine: null, branch: null, active: false, status: null, tabs: [], ...over });
 const common = "/r/app/.git";
@@ -401,5 +417,124 @@ describe("drops", () => {
     expect(accepts(drag, target, open, common, 1000 + 31000)).toBe(false);
     expect(accepts(null, target, open, common, 1000)).toBe(false);
     expect(accepts(drag, target, open, null, 1000)).toBe(false);
+  });
+});
+
+describe("folders", () => {
+  const tree = buildTree(
+    [space("m"), space("o", { status: "blocked" }), space("x", { status: "done" }), space("y", { status: "working" })],
+    { m: look("/r/app"), o: look("/w/app/one"), x: null, y: null },
+    repos,
+  );
+  const state = readFolders({
+    folders: [
+      { id: "f1", name: "Clients", color: "ansi4", folded: false },
+      { id: "f2", name: "Personal", color: "ansi2", folded: true },
+    ],
+    members: { [common]: "f2", y: "f1" },
+  });
+
+  test("folders come first in their order, their members in Herdr's order, then the loose ones", () => {
+    const { folders, loose } = arrange(tree, state);
+    expect(folders.map(({ folder, entries }) => [folder.name, entries.map((entry: { key: string }) => entry.key)])).toEqual([
+      ["Clients", ["y"]],
+      ["Personal", [common]],
+    ]);
+    expect(loose.map((entry: { key: string }) => entry.key)).toEqual(["x"]);
+  });
+
+  test("a repo in a folder brings its worktrees", () => {
+    const [, personal] = arrange(tree, state).folders;
+    expect(personal.entries[0].kids.map((kid: { name: string }) => kid.name)).toEqual(["one", "two", "three"]);
+  });
+
+  test("an empty folder still shows, with nothing in it", () => {
+    const empty = createFolder(state, { id: "f3", name: "Later", color: "ansi5" });
+    expect(arrange(tree, empty).folders.at(-1)).toEqual({ folder: { id: "f3", name: "Later", color: "ansi5", folded: false }, entries: [] });
+  });
+
+  test("reading ignores what isn't a folder and members of folders that are gone", () => {
+    expect(readFolders(undefined)).toEqual({ folders: [], members: {} });
+    expect(readFolders({ folders: "x", members: [] })).toEqual({ folders: [], members: {} });
+    const read = readFolders({
+      folders: [{ id: "a", name: "A", color: "teal" }, { id: "a", name: "Twice" }, { name: "No id" }, { id: "b", name: 3 }],
+      members: { one: "a", two: "gone", three: 4 },
+    });
+    expect(read).toEqual({ folders: [{ id: "a", name: "A", color: "ansi6", folded: false }], members: { one: "a" } });
+  });
+
+  test("filing moves a unit into a folder, and null or an unknown folder takes it out", () => {
+    expect(fileUnit(state, "x", "f1").members).toEqual({ [common]: "f2", y: "f1", x: "f1" });
+    expect(fileUnit(state, common, "f1").members[common]).toBe("f1");
+    expect(fileUnit(state, "y", null).members).toEqual({ [common]: "f2" });
+    expect(fileUnit(state, "y", "gone").members).toEqual({ [common]: "f2" });
+    expect(folderOf(state, common)).toBe("f2");
+    expect(folderOf(state, "x")).toBeNull();
+  });
+
+  test("a new folder goes last, open, with its trimmed name and the unit it was made for", () => {
+    const made = createFolder(state, { id: "f3", name: "  Side  ", color: "ansi1", unit: "x" });
+    expect(made.folders.at(-1)).toEqual({ id: "f3", name: "Side", color: "ansi1", folded: false });
+    expect(made.members.x).toBe("f3");
+  });
+
+  test("renaming keeps an empty name from replacing the old one", () => {
+    expect(renameFolder(state, "f1", " Work ").folders[0].name).toBe("Work");
+    expect(renameFolder(state, "f1", "   ")).toBe(state);
+  });
+
+  test("recoloring takes only the six colors", () => {
+    expect(recolorFolder(state, "f1", "ansi3").folders[0].color).toBe("ansi3");
+    expect(recolorFolder(state, "f1", "#ff0000")).toBe(state);
+  });
+
+  test("deleting a folder gives its members back to the list", () => {
+    const left = deleteFolder(state, "f2");
+    expect(left.folders.map((folder: { id: string }) => folder.id)).toEqual(["f1"]);
+    expect(left.members).toEqual({ y: "f1" });
+    expect(arrange(tree, left).loose.map((entry: { key: string }) => entry.key)).toEqual([common, "x"]);
+  });
+
+  test("toggling folds and unfolds one folder", () => {
+    const toggled = toggleFolder(state, "f1");
+    expect(toggled.folders.map((folder: { folded: boolean }) => folder.folded)).toEqual([true, true]);
+    expect(toggleFolder(toggled, "f1").folders[0].folded).toBe(false);
+  });
+
+  test("a new folder takes the color the fewest folders use", () => {
+    expect(nextColor(readFolders({}))).toBe("ansi6");
+    expect(nextColor(state)).toBe("ansi6");
+    expect(nextColor(createFolder(state, { id: "f3", name: "C", color: "ansi6" }))).toBe("ansi3");
+  });
+
+  test("folder ids are short and come from the time", () => {
+    expect(newFolderId(1_000_000)).toBe("flfls");
+  });
+
+  test("a folded folder shows how many agents need you and the most urgent status", () => {
+    const agents = [
+      { space: "o", status: "blocked" },
+      { space: "o", status: "done" },
+      { space: "m", status: "working" },
+      { space: "x", status: "blocked" },
+      { space: "y", status: "idle" },
+    ];
+    const [clients, personal] = arrange(tree, state).folders;
+    expect(folderTail(personal.entries, agents)).toEqual({ needs: 2, status: "blocked" });
+    expect(folderTail(clients.entries, agents)).toEqual({ needs: 0, status: "working" });
+    expect(folderTail([], agents)).toEqual({ needs: 0, status: null });
+  });
+
+  test("finds the entry that holds a space, worktree or not", () => {
+    expect(entryOfSpace(tree, "o")?.key).toBe(common);
+    expect(entryOfSpace(tree, "x")?.key).toBe("x");
+    expect(entryOfSpace(tree, "nope")).toBeNull();
+  });
+
+  test("revealing opens only the folded folder that holds the unit", () => {
+    const opened = revealFor(state, common);
+    expect(opened.folders.map((folder: { folded: boolean }) => folder.folded)).toEqual([false, false]);
+    expect(revealFor(state, "y")).toBe(state);
+    expect(revealFor(state, "x")).toBe(state);
   });
 });

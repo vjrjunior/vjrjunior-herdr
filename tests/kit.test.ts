@@ -4,7 +4,7 @@ import { join } from "node:path";
 import type { Node } from "./app-mocks";
 import "./app-mocks";
 
-const { ICONS, button, chip, iconButton, iconPath, stepNode, toneColor } = await import("../kit/kit.js");
+const { ICONS, button, chip, iconButton, iconPath, popupRow, stepNode, toneColor } = await import("../kit/kit.js");
 
 const repo = join(import.meta.dir, "..");
 const t = new Proxy({}, { get: (_x, p) => (typeof p === "string" ? `t.${p}` : undefined) }) as any;
@@ -170,4 +170,28 @@ test("a button without a label adds no text child", () => {
   const node = button("b", { icon: "plus", onClick() {} }, t);
   expect(node.texts).toEqual([]);
   expect(svgs(node)).toEqual(["mods/kit/icons/plus.svg"]);
+});
+
+test("a popup row has its icon, label and detail, and runs its click", () => {
+  let clicks = 0;
+  const node = popupRow("r", { icon: "plus", label: "New folder…", detail: "cmd-n", onClick: () => clicks++ }, t);
+  expect(svgs(node)).toEqual(["mods/kit/icons/plus.svg"]);
+  expect(walk(node).flatMap((n) => n.texts)).toEqual(["New folder…", "cmd-n"]);
+  expect(own(node, "bg")).toEqual([]);
+  node.handlers.click[0]({}, {});
+  expect(clicks).toBe(1);
+});
+
+test("a popup row shows its choice as a selected background or an accent check", () => {
+  expect(own(popupRow("s", { icon: "x", label: "Here", selected: true, onClick() {} }, t), "bg")).toContainEqual(["t.selected"]);
+  const checked = popupRow("c", { dot: "t.ansi4", label: "Clients", check: true, onClick() {} }, t);
+  expect(svgs(checked)).toEqual(["mods/kit/icons/check.svg"]);
+  expect(calls(checked, "text_color")).toContainEqual(["t.accent"]);
+  expect(calls(checked, "bg")).toContainEqual(["t.ansi4"]);
+});
+
+test("a popup row in a color tints its label and icon", () => {
+  const node = popupRow("d", { icon: "x", label: "Delete", color: "t.blocked", onClick() {} }, t);
+  expect(own(node, "text_color")).toContainEqual(["t.blocked"]);
+  expect(calls(node, "text_color").filter(([color]) => color === "t.muted")).toEqual([]);
 });

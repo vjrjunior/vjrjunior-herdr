@@ -116,7 +116,13 @@ export function buildTree(spaces, looks, repos) {
   return out;
 }
 
-const PALETTE = ["ansi6", "ansi3", "ansi4", "ansi5", "ansi2", "ansi1"];
+export const PALETTE = ["ansi6", "ansi3", "ansi4", "ansi5", "ansi2", "ansi1"];
+export const MARK = { ansi6: "#22a99a", ansi3: "#e3814f", ansi4: "#5b8def", ansi5: "#8b7cf6", ansi2: "#3fae6a", ansi1: "#d9649a" };
+
+export function paint(color, t) {
+  if (typeof color === "string" && color.startsWith("#")) return color;
+  return MARK[color] ?? t[color] ?? t.dim;
+}
 const FALLBACK = 60000;
 const OPENING = 3000;
 
@@ -169,7 +175,7 @@ export function canOpen(opening, path, time) {
   return !(path in opening) || time - opening[path] >= OPENING;
 }
 
-const rowsOf = (entry) => (entry.kind === "repo" ? [entry.main, ...entry.kids] : [entry.row]);
+export const rowsOf = (entry) => (entry.kind === "repo" ? [entry.main, ...entry.kids] : [entry.row]);
 
 export function holdsActive(entry) {
   return rowsOf(entry).some((row) => row.space?.active);

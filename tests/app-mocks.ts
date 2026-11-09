@@ -86,6 +86,7 @@ export class FakeInput {
   set_value(next: string) {
     this.text = next;
   }
+  set_selected_range(_range: { start: number; end: number }) {}
   on(event: string, handler: Handler) {
     this.handlers[event] = handler;
     return true;

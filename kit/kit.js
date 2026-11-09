@@ -17,6 +17,7 @@ export const ICONS = [
   "exclamation",
   "external-link",
   "eye",
+  "folder",
   "git-branch",
   "github",
   "layers",
@@ -142,6 +143,34 @@ export function chip(text, { mark: kind, color }, t) {
 
 export function pill(text, t) {
   return h_flex().flex_none().h(18).px(6).items_center().rounded(RADIUS.pill).text_size(TEXT.xs).font_bold().bg(t.accent).text_color(t.accent_foreground ?? t.chrome).child(text);
+}
+
+export function popupRow(id, { icon: iconName, dot, label, detail, selected = false, check = false, color, onClick }, t) {
+  return h_flex()
+    .id(id)
+    .h(CONTROL.row)
+    .flex_none()
+    .px(8)
+    .gap(8)
+    .items_center()
+    .rounded(RADIUS.control)
+    .text_size(TEXT.base)
+    .text_color(color ?? t.foreground)
+    .when(selected, (el) => el.bg(t.selected))
+    .hover((s) => s.bg(t.hover))
+    .on_click((_e, cx) => onClick?.(cx))
+    .child(
+      h_flex()
+        .w(ICON_SIZE.lg)
+        .flex_none()
+        .items_center()
+        .justify_center()
+        .when(dot != null, (el) => el.child(statusDot(dot, { size: 9 })))
+        .when(dot == null && iconName != null, (el) => el.child(icon(iconName, { size: ICON_SIZE.lg, color: color ?? t.muted }))),
+    )
+    .child(div().flex_1().min_w(0).truncate().child(label))
+    .when(detail != null, (el) => el.child(div().flex_none().text_size(TEXT.sm).text_color(t.unknown).child(detail)))
+    .when(check, (el) => el.child(icon("check", { size: ICON_SIZE.lg, color: t.accent })));
 }
 
 export function card(t) {

@@ -67,7 +67,7 @@ Two layouts for herdr-app, built from the version you have installed:
 
 | Layout | What it is |
 |---|---|
-| `vjr-desk` | Herdr's window with the VJR theme, `vjr` in the command palette, a **Graph** button that opens Git Graph in the side panel, and Spaces as a tree of each repository's worktrees, open or closed, drawn as a graph or as blocks, with the active space in its own color. |
+| `vjr-desk` | Herdr's window with the VJR theme, `vjr` in the command palette, a **Graph** button that opens Git Graph in the side panel, and Spaces as a tree of each repository's worktrees, open or closed, drawn as a graph or as blocks, with the active space in its own color and your own colored folders on top. |
 | `vjr-desk-square` | The same window with every corner a layout can reach squared, including menus, popups, the command palette, Settings, Git Graph and the Spaces tree. |
 
 ```sh
@@ -158,9 +158,19 @@ It refuses, with a toast that says why, when Claude is working or waiting for yo
 
 The transcript stays under the first folder's project in `~/.claude/projects/`, so `claude --resume <id>` works anywhere, but the worktree's own `/resume` picker may not list the conversation. A tab let go anywhere but the tab bar or the Spaces tree, over a terminal say, stays in the drag until the next press, for at most 30 s: until then, the tab stays faded, the rows that would take it stay dashed, and they light up under the pointer. Any press anywhere ends a drag older than 300 ms, so a later click on a row only opens that row, and a later drag never drops the old tab. A release drops only on a row that lit up under the pointer first, so a press the tree can't see, such as one on its scrollbar, can't drop it either. [`mods/move-tab/RECIPE.md`](mods/move-tab/RECIPE.md) describes it in full.
 
+### Spaces folders
+
+Gather repositories, with their worktrees, and loose spaces into folders with a name and one of the six avatar colors. Folders sit at the top of the Spaces tree, in the order you made them; what isn't in a folder follows in Herdr's order.
+
+- **Filing:** drag a repository's row (or a loose space's) onto a folder, or right-click a space and pick `Move to folder…`: the popup lists the folders, checks the one it's in, makes a `New folder…` with it, and takes it out with `Remove from folder`. A worktree's menu files its whole repository. Dragging a row onto a row in another folder, or outside any, reorders it as before and moves it into that row's folder, or out.
+- **Folding:** click a folder. A folded folder shows `N need you`, counting the agents in it that are blocked or done, and a dot in its most urgent status. When the space in front changes to one inside a folded folder, by a click, a key, `agent.next`, a toast or a script, the folder opens; folding it again while that space is in front keeps it folded.
+- **Editing:** right-click a folder for its colors (applied at once), `Rename…` and `Delete folder`. Deleting gives its repositories and spaces back to the list; no space closes.
+
+Both layouts show the same folders, kept with their fold in `spaces.folders` in Herdr's shared state, and so do restarts. Below 160px the rail shows each folder as its tile, followed by the numbers of its spaces while it's open. The space menu item is in the layouts' copy of Herdr's menu (`vjr-menu`, `vjr-square-menu`), and only shows when the Spaces tree opens that menu.
+
 ## Kit
 
-`kit/kit.js` is the UI kit of this repo's mods (the Command Center, the Spaces tree, the Markdown viewer and Move tab): tokens (sizes, text, radii), components (`button`, `iconButton`, `link`, `chip`, `pill`, `card`, `heading`, `line`, `mark`, `statusDot`, `stepNode`, `icon`) and the SVG icons in `kit/icons/`. A mod imports it as `../../kit/kit.js`, and `apply-layout` copies `kit.js` into each installed mod that imports it. The icons are installed once per layout, in the `kit` mod's `icons/` folder, where the kit reads them. A layout whose mods use the kit must include the `kit` recipe; the generator refuses otherwise.
+`kit/kit.js` is the UI kit of this repo's mods (the Command Center, the Spaces tree, the Markdown viewer and Move tab): tokens (sizes, text, radii), components (`button`, `iconButton`, `link`, `chip`, `pill`, `card`, `heading`, `line`, `popupRow`, `mark`, `statusDot`, `stepNode`, `icon`) and the SVG icons in `kit/icons/`. A mod imports it as `../../kit/kit.js`, and `apply-layout` copies `kit.js` into each installed mod that imports it. The icons are installed once per layout, in the `kit` mod's `icons/` folder, where the kit reads them. A layout whose mods use the kit must include the `kit` recipe; the generator refuses otherwise.
 
 `mods/kit/` is a gallery that shows every component and icon. Open it beside the focused terminal:
 
