@@ -741,14 +741,16 @@ describe("folders", () => {
 
   test("folders come first in their order, then the loose repos and spaces", () => {
     app.shared[FOLDERS] = folders({ x: "f1" });
-    expect(listKeys(setup())).toEqual(["folder-f1", "folder-body-f1", "folder-f2", `group-${common}`]);
+    const view = setup();
+    expect(listKeys(view)).toEqual(["folder-card-f1", "folder-card-f2", `group-${common}`]);
+    expect(pathTo(view.render(), "group-x")?.map((one) => one.key)).toEqual([undefined, undefined, "folder-card-f1", "folder-body-f1", "group-x"]);
   });
 
   test("blocks draw the same folders around their cards", () => {
     app.shared[FOLDERS] = folders({ [common]: "f1" });
     app.shared["spaces.style"] = "blocks";
     const keys = listKeys(setup());
-    expect(keys).toEqual(["folder-f1", "folder-body-f1", "folder-f2", "block-x"]);
+    expect(keys).toEqual(["folder-card-f1", "folder-card-f2", "block-x"]);
     expect(pathTo(setup().render(), `block-${common}`)?.map((one) => one.key)).toContain("folder-body-f1");
   });
 
@@ -757,7 +759,8 @@ describe("folders", () => {
     const view = setup();
     click(view, "folder-f1");
     expect(state().folders[0].folded).toBe(true);
-    expect(listKeys(view)).toEqual(["folder-f1", "folder-f2", "group-x"]);
+    expect(listKeys(view)).toEqual(["folder-card-f1", "folder-card-f2", "group-x"]);
+    expect(pathTo(view.render(), "folder-body-f1")).toBeNull();
     expect(app.runs.filter(([name]) => name === "space.select")).toEqual([]);
     click(view, "folder-f1");
     expect(state().folders[0].folded).toBe(false);
@@ -781,10 +784,18 @@ describe("folders", () => {
     expect(texts(node(view, "folder-f1").at(-1) as Node).join(" ")).not.toContain("need");
   });
 
-  test("an open folder shows no count", () => {
-    app.shared[FOLDERS] = folders({ x: "f1" });
+  test("an open folder shows how many repositories and spaces it holds", () => {
+    app.shared[FOLDERS] = folders({ x: "f1", [common]: "f1" });
     app.agents = [{ space: "x", status: "blocked" }];
-    expect(texts(node(setup(), "folder-f1").at(-1) as Node).join(" ")).not.toContain("need");
+    const view = setup();
+    expect(texts(node(view, "folder-f1").at(-1) as Node)).toEqual(["Clients", "2"]);
+    expect(texts(node(view, "folder-f2").at(-1) as Node)).toEqual(["Empty", "0"]);
+  });
+
+  test("a folded folder with nobody waiting shows how many it holds", () => {
+    app.shared[FOLDERS] = folders({ x: "f1" }, true);
+    app.agents = [{ space: "x", status: "working" }];
+    expect(texts(node(setup(), "folder-f1").at(-1) as Node)).toEqual(["Clients", "1"]);
   });
 
   test("dragging a repository's row onto a folder files it there", () => {
@@ -795,16 +806,86 @@ describe("folders", () => {
     expect(app.runs.filter(([name]) => name === "space.move")).toEqual([]);
   });
 
-  test("a folder lights up only while a row is held over it", () => {
-    app.shared[FOLDERS] = folders({});
-    const view = setup();
-    fire(node(view, "folder-f1"), "move");
-    expect(style(node(view, "folder-f1").at(-1) as Node, "border_1")).toBeUndefined();
-    fire(node(view, `head-${common}`), "down:left");
-    fire(node(view, "folder-f1"), "move");
-    expect(style(node(view, "folder-f1").at(-1) as Node, "border_1")).toEqual([]);
-    fire(node(view, "folder-f1"), "up:left");
-    expect(style(node(view, "folder-f1").at(-1) as Node, "border_1")).toBeUndefined();
+  describe("look", () => {
+    const shared = herdr.theme;
+    beforeEach(() => {
+      herdr.theme = () => new Proxy({}, { get: (_target, prop) => (typeof prop === "string" ? `#${prop}` : undefined) });
+    });
+    afterEach(() => {
+      herdr.theme = shared;
+    });
+    const border = (view: { render(): Node }, id: string) => style(node(view, `folder-card-${id}`).at(-1) as Node, "border_color")?.[0];
+
+    test("a folder is a card holding a gray band with its name, not a tile", () => {
+      app.shared[FOLDERS] = folders({ x: "f1" });
+      const view = setup();
+      const card = node(view, "folder-card-f1").at(-1) as Node;
+      expect([style(card, "bg"), style(card, "rounded"), style(card, "p"), style(card, "border_color")]).toEqual([["#surface"], [10], [4], ["#border"]]);
+      const band = node(view, "folder-f1").at(-1) as Node;
+      expect([style(band, "h"), style(band, "bg"), style(band, "rounded")]).toEqual([[26], ["#raised"], [6]]);
+      const [glyph, name] = band.kids;
+      expect(glyph?.calls[0]).toEqual(["svg", ["mods/kit/icons/folder.svg"]]);
+      expect(style(glyph as Node, "text_color")).toEqual(["#5b8def"]);
+      expect([style(name as Node, "text_color"), style(name as Node, "text_size")]).toEqual([["#foreground"], [11]]);
+      expect(band.kids.some((kid) => style(kid, "size")?.[0] === 22)).toBe(false);
+      const body = node(view, "folder-body-f1").at(-1) as Node;
+      expect([style(body, "px"), style(body, "pt")]).toEqual([[4], [2]]);
+    });
+
+    test("a card lights up only while a row is held over its band", () => {
+      app.shared[FOLDERS] = folders({});
+      const view = setup();
+      fire(node(view, "folder-f1"), "move");
+      expect(border(view, "f1")).toBe("#border");
+      fire(node(view, `head-${common}`), "down:left");
+      fire(node(view, "folder-f1"), "move");
+      expect(border(view, "f1")).toBe("#accent");
+      expect(border(view, "f2")).toBe("#border");
+      fire(node(view, "folder-f1"), "up:left");
+      expect(border(view, "f1")).toBe("#border");
+    });
+
+    test("a folded folder holding the active space gets a dim card border", () => {
+      app.shared[FOLDERS] = folders({ x: "f1" }, true);
+      const view = setup();
+      expect(border(view, "f1")).toBe("#dim");
+      expect(style(node(view, "folder-f1").at(-1) as Node, "bg")).toEqual(["#raised"]);
+      app.shared[FOLDERS] = folders({ x: "f1" });
+      expect(border(view, "f1")).toBe("#border");
+    });
+
+    test("the active group inside a card sits on selected, and outside on raised", () => {
+      app.shared[FOLDERS] = folders({ x: "f1" });
+      expect(style(node(setup(), "group-x").at(-1) as Node, "bg")).toEqual(["#selected"]);
+      app.shared[FOLDERS] = folders({});
+      expect(style(node(setup(), "group-x").at(-1) as Node, "bg")).toEqual(["#raised"]);
+    });
+
+    test("the active worktree's ring is filled with the card's ground inside a folder", () => {
+      app.shared[FOLDERS] = folders({ [common]: "f1" });
+      app.spaces = [space("m"), space("o", { active: true })];
+      const view = new SpacesTree();
+      view.init({}, cx);
+      view.lastPlaces = { m: "/r/app", o: "/w/app/one" };
+      view.looks = { "/r/app": { top: "/r/app", common }, "/w/app/one": { top: "/w/app/one", common } };
+      view.repos = { [common]: { common, name: "app", checkouts: onMain, refs: {} } };
+      const kid = node(view, "kid-o").at(-1) as Node;
+      expect(kid.kids.some((one) => style(one, "size")?.[0] === 14 && style(one, "bg")?.[0] === "#selected")).toBe(true);
+    });
+
+    test("blocks inside a card sit on chrome, and the last one keeps 2px under it", () => {
+      app.shared[FOLDERS] = folders({ x: "f1", [common]: "f1" });
+      app.shared["spaces.style"] = "blocks";
+      const view = setup();
+      app.spaces = [space("m"), space("x")];
+      const first = node(view, `block-${common}`).at(-1) as Node;
+      const last = node(view, "block-x").at(-1) as Node;
+      expect([style(first, "bg"), style(first, "mb")]).toEqual([["#chrome"], [6]]);
+      expect([style(last, "bg"), style(last, "mb")]).toEqual([["#chrome"], [2]]);
+      expect(style(node(view, "folder-body-f1").at(-1) as Node, "pt")).toEqual([6]);
+      app.shared[FOLDERS] = folders({});
+      expect(style(node(view, "block-x").at(-1) as Node, "bg")).toEqual(["#surface"]);
+    });
   });
 
   test("a click on a row, then hovering a folder, files nothing", () => {
@@ -872,13 +953,6 @@ describe("folders", () => {
     expect(app.shared[FOLDERS]).toBe(before);
   });
 
-  test("a folded folder holding the active space is drawn as the active group", () => {
-    app.shared[FOLDERS] = folders({ x: "f1" }, true);
-    const row = node(setup(), "folder-f1").at(-1) as Node;
-    expect(style(row, "bg")).toEqual(["#505050"]);
-    expect(row.kids.some((kid) => kid.calls.some(([name]) => name === "border_1"))).toBe(true);
-  });
-
   test("the space menu learns the row's repository and its name", () => {
     app.shared[FOLDERS] = folders({ [common]: "f1" });
     fire(node(setup(), `head-${common}`), "down:right");
@@ -919,7 +993,7 @@ describe("folders", () => {
     dialog.input.emit("submit", cx);
     app.props = null;
     expect((app.shared[FOLDERS] as ReturnType<typeof folders>).members).toEqual({});
-    expect(listKeys(setup())[0]).toMatch(/^folder-f/);
+    expect(listKeys(setup())[0]).toMatch(/^folder-card-f/);
   });
 
   test("the narrow rail draws a folder as its tile and folds it on a click", () => {

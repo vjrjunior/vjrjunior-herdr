@@ -40,9 +40,8 @@ const TIE = 17;
 const NODE = 31;
 const BOX = 36;
 const NARROW = 160;
-const FOLDER = 34;
-const TILE = 22;
-const INDENT = 24;
+const BAND = 26;
+const CARD = 4;
 const COMPACT = 26;
 const DRAG = "move-tab.drag";
 const REQUEST = "move-tab.request";
@@ -438,32 +437,24 @@ export default class SpacesTree extends View {
       .child(icon("folder", { size: glyph, color: "#ffffff" }));
   }
 
-  folderRow(folder, entries, t) {
-    const color = paint(folder.color, t);
-    const open = !folder.folded;
+  band(folder, entries, t) {
     const tail = folder.folded ? folderTail(entries, agents()) : null;
-    const active = folder.folded && entries.some(holdsActive);
-    const dropping = this.overFolder === folder.id && this.dragUnit != null && folderOf(readState(), this.dragUnit) !== folder.id;
-    const bottom = (FOLDER - TILE) / 2 + TILE;
+    const count = tail?.needs ? `${tail.needs} ${tail.needs === 1 ? "needs" : "need"} you` : String(entries.length);
     return h_flex()
       .id(`folder-${folder.id}`)
-      .relative()
-      .h(FOLDER)
+      .h(BAND)
       .flex_none()
       .px(8)
-      .gap(8)
+      .gap(7)
       .items_center()
-      .rounded(8)
-      .when(active, (el) => el.bg(t.raised))
-      .when(dropping, (el) => el.bg(t.selected).border_1().border_color(t.accent))
-      .when(!active && !dropping, (el) => el.hover((s) => s.bg(t.hover)))
-      .child(this.tile(color, TILE, 13))
-      .child(div().flex_1().min_w(0).truncate().font_medium().text_color(t.foreground).child(folder.name))
-      .when(Boolean(tail?.needs), (el) => el.child(this.note(`${tail.needs} ${tail.needs === 1 ? "needs" : "need"} you`, t)))
+      .rounded(6)
+      .bg(t.raised)
+      .hover((s) => s.bg(t.selected))
+      .child(icon("folder", { size: ICON_SIZE.md, color: paint(folder.color, t) }))
+      .child(div().flex_1().min_w(0).truncate().text_size(TEXT.sm).font_bold().text_color(t.foreground).child(folder.name))
+      .child(this.note(count, t))
       .when(Boolean(tail?.status), (el) => el.child(this.statusDot(tail.status, t)))
-      .child(icon(open ? "chevron-down" : "chevron-right", { size: ICON_SIZE.md, color: t.unknown }))
-      .when(active, (el) => el.child(this.frame(t.dim)))
-      .when(open && entries.length > 0, (el) => el.child(div().absolute().left(RAIL).top(bottom).w(1.5).h(FOLDER - bottom).bg(faded(color))))
+      .child(icon(folder.folded ? "chevron-right" : "chevron-down", { size: ICON_SIZE.md, color: t.unknown }))
       .on_hover((on, cx) => this.overFolderRow(folder, on, cx))
       .on_mouse_move((_e, cx) => this.overFolderRow(folder, true, cx))
       .on_mouse_up("left", (_e, cx) => {
@@ -473,18 +464,29 @@ export default class SpacesTree extends View {
       .on_mouse_down("right", () => this.folderMenu(folder));
   }
 
-  folderSection({ folder, entries }, t, draw) {
-    const row = this.folderRow(folder, entries, t);
-    if (folder.folded || entries.length === 0) return [row];
-    const body = v_flex()
-      .id(`folder-body-${folder.id}`)
-      .relative()
+  folderSection({ folder, entries }, t, draw, blocks) {
+    const dropping = this.overFolder === folder.id && this.dragUnit != null && folderOf(readState(), this.dragUnit) !== folder.id;
+    const active = folder.folded && entries.some(holdsActive);
+    return v_flex()
+      .id(`folder-card-${folder.id}`)
       .flex_none()
-      .pl(INDENT)
-      .pb(4)
-      .child(div().absolute().left(RAIL).top(0).bottom(10).w(1.5).bg(faded(paint(folder.color, t))))
-      .children(entries.map(draw));
-    return [row, body];
+      .mb(6)
+      .p(CARD)
+      .rounded(10)
+      .bg(t.surface)
+      .border_1()
+      .border_color(dropping ? t.accent : active ? t.dim : t.border)
+      .child(this.band(folder, entries, t))
+      .when(!folder.folded && entries.length > 0, (el) =>
+        el.child(
+          v_flex()
+            .id(`folder-body-${folder.id}`)
+            .flex_none()
+            .px(CARD)
+            .pt(blocks ? 6 : 2)
+            .children(entries.map((entry, index) => draw(entry, true, index === entries.length - 1))),
+        ),
+      );
   }
 
   avatar(row, t) {
@@ -569,9 +571,9 @@ export default class SpacesTree extends View {
       .when(!row.open, (el) => el.border(1.5).border_color(rail));
   }
 
-  ring(row, color, t) {
+  ring(row, color, ground, t) {
     return [
-      div().absolute().left(NODE - 2).top(TIE - 7).size(14).rounded(7).border(1.5).border_color(color).bg(t.raised),
+      div().absolute().left(NODE - 2).top(TIE - 7).size(14).rounded(7).border(1.5).border_color(color).bg(ground),
       div()
         .absolute()
         .left(NODE + 2)
@@ -726,7 +728,7 @@ export default class SpacesTree extends View {
     return lane ? [line, lane.sub] : [line];
   }
 
-  graphKid(entry, row, t, color, last, above) {
+  graphKid(entry, row, t, color, last, above, ground) {
     const selected = Boolean(row.space?.active);
     const hovered = !selected && this.kidHover === row.key;
     const lane = this.laneLine(row, t);
@@ -746,28 +748,29 @@ export default class SpacesTree extends View {
       .when(Boolean(row.space), (el) => el.on_mouse_down("right", () => this.menu(row.space, entry)))
       .when(!last, (el) => el.child(div().absolute().left(RAIL).top(above ? 0 : TIE).w(1.5).h(above ? height : height - TIE).bg(above ? color : rail)))
       .child(div().absolute().left(RAIL).top(0).h(TIE).w(13).border_l(1.5).border_b(1.5).border_color(selected ? color : rail).rounded_bl(9))
-      .children(selected ? this.ring(row, color, t) : [this.node(row, rail, t)])
+      .children(selected ? this.ring(row, color, ground, t) : [this.node(row, rail, t)])
       .children(this.kidLines(row, lane, t));
     return this.pointer(el, row, this.dropFor(entry, row), t, { hover: (on, cx) => this.hoverKid(row.key, on, cx) });
   }
 
-  graphEntry(entry, t) {
+  graphEntry(entry, t, inFolder = false) {
     const kids = entry.kind === "repo" && !isFolded(this.folded(), entry) ? entry.kids : [];
-    const rows = entry.kind === "plain" ? [this.headRow(entry, entry.row, t, null)] : this.repoRows(entry, kids, t);
+    const ground = inFolder ? t.selected : t.raised;
+    const rows = entry.kind === "plain" ? [this.headRow(entry, entry.row, t, null)] : this.repoRows(entry, kids, t, ground);
     return v_flex()
       .id(`group-${entry.key}`)
       .relative()
       .flex_none()
-      .when(holdsActive(entry), (el) => el.bg(t.raised).rounded(8).when(kids.length > 0, (el) => el.pb(6)))
+      .when(holdsActive(entry), (el) => el.bg(ground).rounded(8).when(kids.length > 0, (el) => el.pb(6)))
       .children(rows)
       .when(holdsActive(entry), (el) => el.child(this.frame(t.dim)));
   }
 
-  repoRows(entry, kids, t) {
+  repoRows(entry, kids, t, ground) {
     const color = this.fill(entry.main.space, t);
     const active = kids.findIndex((row) => row.space?.active);
     const rail = active >= 0 ? color : faded(color);
-    return [this.headRow(entry, entry.main, t, kids.length ? rail : null), ...kids.map((row, index) => this.graphKid(entry, row, t, color, index === kids.length - 1, index < active))];
+    return [this.headRow(entry, entry.main, t, kids.length ? rail : null), ...kids.map((row, index) => this.graphKid(entry, row, t, color, index === kids.length - 1, index < active, ground))];
   }
 
   blockKid(entry, row, t) {
@@ -791,15 +794,15 @@ export default class SpacesTree extends View {
     return this.pointer(el, row, this.dropFor(entry, row), t, { hover: (on, cx) => this.hoverKid(row.key, on, cx) });
   }
 
-  blockEntry(entry, t) {
+  blockEntry(entry, t, inFolder = false, last = false) {
     const row = entry.kind === "repo" ? entry.main : entry.row;
     const kids = entry.kind === "repo" && !isFolded(this.folded(), entry) ? entry.kids : [];
     return v_flex()
       .id(`block-${entry.key}`)
       .flex_none()
-      .mb(6)
+      .mb(inFolder && last ? 2 : 6)
       .overflow_hidden()
-      .bg(holdsActive(entry) ? t.raised : t.surface)
+      .bg(holdsActive(entry) ? t.raised : inFolder ? t.chrome : t.surface)
       .border_1()
       .border_color(holdsActive(entry) ? t.dim : t.border)
       .rounded(10)
@@ -849,7 +852,7 @@ export default class SpacesTree extends View {
     const narrow = this.narrow();
     const groups = arrange(this.entries(), readState());
     const blocks = this.style() === "blocks";
-    const draw = (entry) => (blocks ? this.blockEntry(entry, t) : this.graphEntry(entry, t));
+    const draw = (entry, inFolder = false, last = false) => (blocks ? this.blockEntry(entry, t, inFolder, last) : this.graphEntry(entry, t, inFolder));
     return v_flex()
       .size_full()
       .min_h(0)
@@ -881,7 +884,7 @@ export default class SpacesTree extends View {
             this.dragUnit = null;
             this.overFolder = null;
           })
-          .children(narrow ? this.compactRows(groups, t) : [...groups.folders.flatMap((group) => this.folderSection(group, t, draw)), ...groups.loose.map(draw)]),
+          .children(narrow ? this.compactRows(groups, t) : [...groups.folders.map((group) => this.folderSection(group, t, draw, blocks)), ...groups.loose.map((entry) => draw(entry))]),
       );
   }
 }
