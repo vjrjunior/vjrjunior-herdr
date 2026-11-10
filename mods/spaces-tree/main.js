@@ -451,7 +451,7 @@ export default class SpacesTree extends View {
       .bg(t.raised)
       .hover((s) => s.bg(t.selected))
       .child(icon("folder", { size: ICON_SIZE.md, color: paint(folder.color, t) }))
-      .child(div().flex_1().min_w(0).truncate().text_size(TEXT.sm).font_bold().text_color(t.foreground).child(folder.name))
+      .child(div().flex_1().min_w(0).truncate().text_size(TEXT.xl).font_bold().text_color(t.foreground).child(folder.name))
       .child(this.note(count, t))
       .when(Boolean(tail?.status), (el) => el.child(this.statusDot(tail.status, t)))
       .child(icon(folder.folded ? "chevron-right" : "chevron-down", { size: ICON_SIZE.md, color: t.unknown }))
