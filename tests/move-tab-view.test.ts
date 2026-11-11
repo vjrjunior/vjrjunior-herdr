@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, setSystemTime, test } from "bun:test";
 import { herdr, type Node } from "./app-mocks";
 
 const { default: MoveTab } = await import("../mods/move-tab/main.js");
@@ -341,6 +341,141 @@ describe("move-tab worker", () => {
   });
 });
 
+describe("move-tab scheduled moves", () => {
+  const T = 1_800_000_000_000;
+  const LABEL = "vjr.move-to";
+  const label = (fields: Record<string, unknown> = {}) => JSON.stringify({ v: 1, to: "/r/wt/live", session: "sess-1", at: T, prompt: "Implement the plan", ...fields });
+  const tree = { type: "row", children: [{ type: "block", id: "p1", content: { terminal: "t1" } }] };
+  const docReply = JSON.stringify({ result: { value: { spaces: [{ id: "s1", tabs: [{ id: "tb1", root: tree }] }] } } });
+  const claude = JSON.stringify({ address: "t1", pid: 10, cwd: "/r/main", foreground: { pid: 11, argv: ["claude"], cwd: "/r/main" }, status: { app: "claude-code", state: "idle" } });
+  let status: string;
+  let labelled: string | null;
+  let since: number;
+
+  const doArgs = () => app.execs.filter((call) => call.command === "herdr-app").map((call) => [call.args[1], JSON.parse(call.args[2] as string)]);
+  const labelCalls = () => app.execs.filter((call) => call.command === "hc" && call.args[0] === "label").map((call) => call.args);
+
+  beforeEach(() => {
+    setSystemTime(new Date(T));
+    status = "working";
+    labelled = label();
+    since = T;
+    herdr.terminals = (() => [{ address: "t1", state: "live", labels: labelled === null ? {} : { [LABEL]: labelled } }]) as never;
+    herdr.agents = (() => [{ address: "t1", status }]) as never;
+    herdr.focused = (() => ({ space: "s1", tab: "tb1" })) as never;
+    herdr.readTextFile = (async (path: string) => (path === "/Users/me/.claude/sessions/11.json" ? '{"sessionId":"sess-1","cwd":"/r/main"}' : null)) as never;
+    answer = (call) => {
+      if (call.command === "hc" && call.args[0] === "label") {
+        labelled = null;
+        return ok("");
+      }
+      if (call.command === "hc") return ok(claude);
+      if (call.command === "sh") return ok(docReply);
+      if (call.command === "git") return ok(PORCELAIN);
+      if (call.command === "herdr-app") return ok(call.args[1] === "tab.new" ? '{"tab":"tb9","terminal":"t9"}' : "{}");
+      if (call.command === "kill") return ok("");
+      return { code: 1, stdout: "", stderr: "" };
+    };
+  });
+
+  afterEach(() => {
+    setSystemTime();
+  });
+
+  const tick = async (view: any, cx: any, ms = 0) => {
+    since += ms;
+    setSystemTime(new Date(since));
+    view.render(cx);
+    await flush();
+  };
+
+  test("waits while Claude works and for two quiet seconds, then moves only its pane with the prompt", async () => {
+    const { view, cx } = worker();
+    await tick(view, cx);
+    expect(labelCalls()).toEqual([]);
+    status = "idle";
+    await tick(view, cx, 500);
+    await tick(view, cx, 1000);
+    expect(labelCalls()).toEqual([]);
+    status = "working";
+    await tick(view, cx, 400);
+    status = "idle";
+    await tick(view, cx, 100);
+    await tick(view, cx, 1900);
+    expect(labelCalls()).toEqual([]);
+    await tick(view, cx, 100);
+    expect(labelCalls()).toEqual([["label", "t1", `${LABEL}=`]]);
+    const acts = doArgs();
+    expect(acts[0]).toEqual(["tab.new", { space: "s2", folder: "/r/wt/live", argv: ["claude", "--resume", "sess-1", "--append-system-prompt", expect.stringContaining("moved from /r/main"), "Implement the plan"] }]);
+    expect(acts.map(([name]) => name)).toEqual(["tab.new", "tab.new", "tab.close", "space.select", "tab.select"]);
+    expect(app.notes.map((note) => note.title)).toEqual(["Moved to feat/live"]);
+    await tick(view, cx, 5000);
+    expect(labelCalls()).toHaveLength(1);
+  });
+
+  test("gives the view back when another tab was on screen", async () => {
+    herdr.focused = (() => ({ space: "s2", tab: "tb2" })) as never;
+    status = "done";
+    const { view, cx } = worker();
+    await tick(view, cx);
+    await tick(view, cx, 2000);
+    expect(doArgs().slice(-2)).toEqual([["space.select", { id: "s2" }], ["tab.select", { id: "tb2" }]]);
+  });
+
+  test("drops a label it can't read or that waited too long, once, with a toast", async () => {
+    labelled = "{";
+    const { view, cx } = worker();
+    await tick(view, cx);
+    expect(labelCalls()).toEqual([["label", "t1", `${LABEL}=`]]);
+    expect(app.notes.map((note) => note.body)).toEqual(["The scheduled move couldn't be read."]);
+    labelled = label({ at: T - 4 * 60 * 60 * 1000 - 1 });
+    await tick(view, cx);
+    await tick(view, cx);
+    expect(app.notes.map((note) => note.body)).toEqual(["The scheduled move couldn't be read.", "The scheduled move waited 4 hours, so it was dropped."]);
+    expect(app.execs.some((call) => call.command === "sh")).toBe(false);
+  });
+
+  test("moves nothing when the label can't be cleared", async () => {
+    const real = answer;
+    answer = (call) => (call.command === "hc" && call.args[0] === "label" ? { code: 1, stdout: "", stderr: "no" } : real(call));
+    status = "idle";
+    const { view, cx } = worker();
+    await tick(view, cx);
+    await tick(view, cx, 2000);
+    expect(app.notes.map((note) => note.body)).toEqual(["The scheduled move couldn't be cleared, so nothing moved."]);
+    expect(app.execs.some((call) => call.command === "sh" || call.command === "kill")).toBe(false);
+  });
+
+  test("waits for a running move and ignores other machines' terminals", async () => {
+    herdr.terminals = (() => [{ address: "vps/t1", state: "live", labels: { [LABEL]: label() } }]) as never;
+    herdr.agents = (() => [{ address: "vps/t1", status: "idle" }]) as never;
+    const remote = worker();
+    await tick(remote.view, remote.cx);
+    await tick(remote.view, remote.cx, 3000);
+    expect(app.execs).toEqual([]);
+    herdr.terminals = (() => [{ address: "t1", state: "live", labels: { [LABEL]: label() } }]) as never;
+    herdr.agents = (() => [{ address: "t1", status: "idle" }]) as never;
+    const { view, cx } = worker();
+    view.running = true;
+    await tick(view, cx);
+    await tick(view, cx, 3000);
+    expect(labelCalls()).toEqual([]);
+    view.running = false;
+    await tick(view, cx);
+    expect(labelCalls()).toEqual([["label", "t1", `${LABEL}=`]]);
+  });
+
+  test("the popup copy never watches labels", async () => {
+    status = "idle";
+    const { view, cx } = await popup();
+    view.render(cx);
+    setSystemTime(new Date(T + 5000));
+    view.render(cx);
+    await flush();
+    expect(labelCalls()).toEqual([]);
+  });
+});
+
 describe("move-tab io", () => {
   test("act runs herdr-app do and throws its error", async () => {
     answer = () => ({ code: 1, stdout: '{"error":"no such tab"}' }) as Exec;
@@ -376,6 +511,7 @@ describe("move-tab io", () => {
     expect(await io.alive(42)).toBe(true);
     expect(await io.alive(43)).toBe(false);
     await io.signal(43);
+    expect(await io.unlabel("t1")).toBe(true);
     expect(app.execs.map((call) => [call.command, ...call.args])).toEqual([
       ["hc", "get", "t1", "--json"],
       ["git", "worktree", "list", "--porcelain"],
@@ -384,6 +520,7 @@ describe("move-tab io", () => {
       ["ps", "-p", "42"],
       ["ps", "-p", "43"],
       ["kill", "-TERM", "43"],
+      ["hc", "label", "t1", "vjr.move-to="],
     ]);
     answer = () => ({ code: 1, stdout: "", stderr: "" });
     expect(await io.get("t9")).toBeNull();

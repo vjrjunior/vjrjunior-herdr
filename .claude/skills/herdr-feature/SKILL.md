@@ -43,15 +43,14 @@ With the plan written, and before asking for approval:
 
 1. Reuse what exists: check `git -C ~/orbita/vjrjunior-herdr worktree list` and `git branch --list '<branch>'` first.
 2. Create it as `AGENTS.md` › Worktrees shows.
-3. Schedule the move. When this turn ends, the conversation resumes with `claude --resume` in a space of the worktree, or a new one named after the branch:
+3. Schedule the move. When this turn ends, Move tab resumes the conversation with `claude --resume` in a space of the worktree, or a new one named after the branch:
 
    ```bash
    WT=~/.herdr/worktrees/vjrjunior-herdr/<branch, / as ->
-   MTW="$(herdr plugin list --plugin vjr.move-to-worktree --json 2>/dev/null | jq -r '.result.plugins[0].plugin_root // empty')"
-   if { [ "${HERDR_ENV:-}" = 1 ] || [ -n "${HC_TERMINAL_ID:-}" ]; } && [ -n "$MTW" ]; then "$MTW/bin/mtw" schedule --to "$WT"; fi
+   sh ~/.config/herdr-app/mods/vjr-move-tab/schedule.sh --to "$WT"
    ```
 
-   Without the plugin, or outside Herdr, enter it with `EnterWorktree` (`path: $WT`), or keep to absolute paths, and say which.
+   When it exits non-zero, its line says why the session stays: enter the worktree with `EnterWorktree` (`path: $WT`), or keep to absolute paths, and say which.
 4. End the turn with the plan's summary, its path and the request to approve, as plain text. `AskUserQuestion` keeps the session busy, so the move would wait and the answer would land in the old pane.
 
 The user answers in the worktree's space, from a new pane: read `$HC_TERMINAL_ID` again before using it. If they reject the plan, offer to remove the worktree and its branch.

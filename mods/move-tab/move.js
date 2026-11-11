@@ -1,4 +1,4 @@
-import { REASONS, atShell, base, checkoutOf, isClaude, keepArgs, leaves, matchingFolder, movedNote, parseWorktrees, placeOf, resumeArgv, resumeCommand, runsSession, splitSteps } from "./logic.js";
+import { REASONS, atShell, base, checkoutOf, isClaude, keepArgs, leaves, matchingFolder, movedNote, parseWorktrees, placeOf, resumeArgv, resumeCommand, runsSession, spaceName, splitSteps } from "./logic.js";
 
 export const END_WAIT = 10000;
 export const POLL = 250;
@@ -26,13 +26,18 @@ async function move(request, io, run) {
   run.home = space.id;
   const tab = space.tabs.find((candidate) => candidate.id === request.tab);
   const root = await io.tree(tab.id);
-  const blocks = leaves(root);
+  const all = leaves(root);
+  const blocks = request.only ? all.filter((block) => block.content?.terminal === request.only) : all;
   if (blocks.length === 0) return refused(REASONS.gone());
+  const alone = blocks.length === all.length;
 
   const parts = [];
   for (const [index, block] of blocks.entries()) {
-    const part = await readPane(block, blocks.length === 1 ? "this tab" : `pane ${index + 1}`, io);
+    const where = all.length === 1 ? "this tab" : request.only ? "this pane" : `pane ${index + 1}`;
+    const part = await readPane(block, where, io);
     if (part.reason) return refused(part.reason);
+    if (request.only && part.kind !== "claude") return refused(REASONS.ended(where));
+    if (request.session && part.session !== request.session) return refused(REASONS.changed(where));
     parts.push(part);
   }
 
@@ -52,7 +57,7 @@ async function move(request, io, run) {
     const folder = matchingFolder(part.cwd, source.path, target.path);
     part.launch = { folder: (await io.exists(folder)) ? folder : target.path };
     if (part.kind !== "claude") continue;
-    part.launch.argv = resumeArgv({ session: part.session, args: part.args, note });
+    part.launch.argv = resumeArgv({ session: part.session, args: part.args, note, prompt: request.prompt });
     if (!part.launch.argv) return refused(REASONS.session(part.where));
   }
 
@@ -61,7 +66,7 @@ async function move(request, io, run) {
     const now = await readPane(claude.block, claude.where, io);
     const reason = now.reason ?? (now.pid === claude.pid && now.session === claude.session ? null : REASONS.session(claude.where));
     if (reason) return run.ended.length > 0 ? failed(reason, run) : refused(reason);
-    if (claude.own && !sheltered && io.spaces().find((candidate) => candidate.id === space.id)?.tabs.length === 1) {
+    if (alone && claude.own && !sheltered && io.spaces().find((candidate) => candidate.id === space.id)?.tabs.length === 1) {
       await io.act("tab.new", { space: space.id, folder: source.path });
       sheltered = true;
     }
@@ -74,14 +79,15 @@ async function move(request, io, run) {
   into ??= live.find((candidate) => candidate.id !== space.id && within(candidate, io.panes(), checkouts, target))?.id;
   let extra = null;
   if (!into) {
-    const made = await io.act("space.new", { folder: target.path });
+    const label = target.main ? null : spaceName(target.branch);
+    const made = await io.act("space.new", label ? { folder: target.path, name: label } : { folder: target.path });
     into = made.space;
     extra = made.tab;
   }
 
-  const name = tab.named ? tab.name : null;
+  const name = alone && tab.named ? tab.name : null;
   const made = [];
-  for (const step of splitSteps(root)) {
+  for (const step of alone ? splitSteps(root) : [{ leaf: 0, from: null, direction: null }]) {
     const part = parts[step.leaf];
     if (step.from === null) {
       const args = { space: into, ...part.launch };
@@ -98,14 +104,27 @@ async function move(request, io, run) {
   run.moved = `${name ?? "The tab"} is now in ${run.place}`;
   if (extra) await io.act("tab.close", { id: extra, confirmed: true });
   const old = io.spaces().find((candidate) => candidate.id === space.id);
-  if (old?.tabs.some((candidate) => candidate.id === tab.id)) {
+  if (!alone) {
+    const left = io.panes().find((candidate) => candidate.terminal === request.only);
+    if (left) await io.act("pane.close", { pane: left.pane });
+  } else if (old?.tabs.some((candidate) => candidate.id === tab.id)) {
     if (old.tabs.length === 1 && !sheltered) await io.act("tab.new", { space: space.id, folder: source.path });
     await io.act("tab.close", { id: tab.id, confirmed: true });
   }
-  await io.act("space.select", { id: into });
-  await io.act("tab.select", { id: made[0].tab });
+  if (request.follow === false) await restore(request.back, io);
+  else {
+    await io.act("space.select", { id: into });
+    await io.act("tab.select", { id: made[0].tab });
+  }
   const notice = { title: `Moved to ${run.place}`, level: "success", timeout: 4000 };
   return run.ended.length > 0 ? { ...notice, body: "Claude's background jobs ended." } : notice;
+}
+
+async function restore(view, io) {
+  const space = io.spaces().find((candidate) => candidate.id === view?.space);
+  if (!space) return;
+  await io.act("space.select", { id: space.id });
+  if (space.tabs.some((candidate) => candidate.id === view.tab)) await io.act("tab.select", { id: view.tab });
 }
 
 async function readPane(block, where, io) {

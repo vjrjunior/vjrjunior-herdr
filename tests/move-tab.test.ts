@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { atShell, checkoutOf, isClaude, keepArgs, leaves, matchingFolder, movedNote, parseWorktrees, resumeArgv, runsSession, splitSteps, tabTree, targetsFor } from "../mods/move-tab/logic.js";
+import { REASONS, SCHEDULE_TTL, SETTLE, atShell, checkoutOf, isClaude, keepArgs, leaves, matchingFolder, movedNote, parseSchedule, parseWorktrees, resumeArgv, runsSession, scheduleStep, spaceName, splitSteps, tabTree, targetsFor } from "../mods/move-tab/logic.js";
 
 describe("move-tab logic", () => {
   test("keeps the allowed flags and their values", () => {
@@ -102,5 +102,51 @@ describe("move-tab logic", () => {
     const checkouts = parseWorktrees("worktree /r/main\nbranch refs/heads/main\n\nworktree /r/wt/x\nbranch refs/heads/x\n");
     const spaces = [{ id: "s2", name: "x", folder: "/r/wt/x", tabs: [{ id: "tb2" }] }];
     expect(targetsFor({ checkouts, spaces, panes: [], from: { space: "s2" } }).map((t) => [t.label, t.detail, t.path])).toEqual([["main", "main checkout", "/r/main"]]);
+  });
+
+  test("names a space after its branch", () => {
+    expect(spaceName("feat/CUP-4825--cup-5365-bulk-orders-cron")).toBe("CUP-5365 · bulk orders cron");
+    expect(spaceName("feat/CUP-4825")).toBe("CUP-4825");
+    expect(spaceName("feat/move-to-worktree")).toBe("move to worktree");
+    expect(spaceName("fix/cup-6278-inbox-rail-item")).toBe("CUP-6278 · inbox rail item");
+    expect(spaceName("main")).toBe("main");
+    expect(spaceName("")).toBeNull();
+    expect(spaceName(null)).toBeNull();
+  });
+
+  test("puts a prompt last, after the moved note", () => {
+    expect(resumeArgv({ session: "s-1", args: ["--model", "opus"], note: "moved", prompt: "go on" })).toEqual(["claude", "--resume", "s-1", "--model", "opus", "--append-system-prompt", "moved", "go on"]);
+    expect(resumeArgv({ session: "s-1", args: [], note: null, prompt: "go on" })).toEqual(["claude", "--resume", "s-1", "go on"]);
+    expect(resumeArgv({ session: "s-1", args: [], note: null, prompt: "" })).toEqual(["claude", "--resume", "s-1"]);
+    expect(resumeArgv({ session: "s-1", args: [], note: null })).toEqual(["claude", "--resume", "s-1"]);
+  });
+
+  test("reads a scheduled move from its label", () => {
+    const label = (fields: Record<string, unknown>) => JSON.stringify({ v: 1, to: "/r/wt/", session: "abc-1", at: 5, ...fields });
+    expect(parseSchedule(label({}))).toEqual({ to: "/r/wt", session: "abc-1", prompt: null, at: 5 });
+    expect(parseSchedule(label({ prompt: "Implement the plan" }))).toEqual({ to: "/r/wt", session: "abc-1", prompt: "Implement the plan", at: 5 });
+    expect(parseSchedule(label({ prompt: "" }))?.prompt).toBeNull();
+    for (const bad of [label({ v: 2 }), label({ to: "r/wt" }), label({ session: "a b" }), label({ at: "5" }), label({ prompt: "--help" }), label({ prompt: 3 }), "{", "", null]) {
+      expect(parseSchedule(bad)).toBeNull();
+    }
+  });
+
+  test("a scheduled move waits for the turn to settle, then goes", () => {
+    const schedule = { to: "/r/wt", session: "abc-1", prompt: null, at: 1000 };
+    const at = (now: number, status: string | undefined, since: number | null) => scheduleStep({ schedule, status, since, now });
+    expect(at(1000, "working", null)).toEqual({ wait: null });
+    expect(at(1000, "blocked", null)).toEqual({ wait: null });
+    expect(at(1000, undefined, null)).toEqual({ wait: null });
+    expect(at(1000, "idle", null)).toEqual({ wait: SETTLE });
+    expect(at(2000, "idle", 1000)).toEqual({ wait: SETTLE - 1000 });
+    expect(at(3000, "idle", 1000)).toEqual({ go: true });
+    expect(at(3000, "done", 1000)).toEqual({ go: true });
+  });
+
+  test("a scheduled move that can't be read or waited too long is dropped", () => {
+    expect(scheduleStep({ schedule: null, status: "idle", since: 0, now: 0 })).toEqual({ drop: REASONS.unreadable() });
+    const schedule = { to: "/r/wt", session: "abc-1", prompt: null, at: 0 };
+    expect(scheduleStep({ schedule, status: "working", since: null, now: SCHEDULE_TTL + 1 })).toEqual({ drop: REASONS.stale() });
+    expect(scheduleStep({ schedule, status: "working", since: null, now: SCHEDULE_TTL })).toEqual({ wait: null });
   });
 });

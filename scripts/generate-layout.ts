@@ -46,7 +46,7 @@ function readCopy(source: ModSource, options: GenerateOptions): Copy {
   if (!existsSync(join(folder, "main.js"))) throw new RecipeError(`mod ${source.name} not found in ${folder}`);
   const files: Record<string, string> = {};
   for (const name of readdirSync(folder)) {
-    if (name.endsWith(".js")) files[name] = readFileSync(join(folder, name), "utf8");
+    if (name.endsWith(".js") || name.endsWith(".sh")) files[name] = readFileSync(join(folder, name), "utf8");
   }
   if (source.from === "repo") installKit(source, options, files);
   return { name: source.name, files, meta: JSON.parse(readFileSync(join(folder, "mod.json"), "utf8")) };

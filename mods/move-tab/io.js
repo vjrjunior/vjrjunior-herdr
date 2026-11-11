@@ -1,5 +1,5 @@
 import { exec, home, notify, panes, readTextFile, spaces, terminals } from "herdr";
-import { parseSession, tabTree } from "./logic.js";
+import { LABEL, parseSession, tabTree } from "./logic.js";
 
 const DOC_GET = JSON.stringify({ jsonrpc: "2.0", id: 1, method: "doc.get", params: { name: "herdr-app" } });
 
@@ -55,6 +55,9 @@ export function appIo(cx) {
     },
     async signal(pid) {
       await exec("kill", ["-TERM", String(pid)]);
+    },
+    async unlabel(address) {
+      return (await output("hc", ["label", address, `${LABEL}=`])) !== null;
     },
     async act(name, args) {
       const result = await exec("herdr-app", ["do", name, JSON.stringify(args)]);

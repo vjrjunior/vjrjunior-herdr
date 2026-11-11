@@ -288,7 +288,7 @@ describe("moveTab", () => {
     w.panes = w.panes.slice(0, 1);
     const { acts } = await move(w, { toSpace: null });
     expect(acts.slice(0, 3)).toEqual([
-      { name: "space.new", args: { folder: "/r/wt" } },
+      { name: "space.new", args: { folder: "/r/wt", name: "x" } },
       { name: "tab.new", args: { space: "s10", folder: "/r/wt", argv: ARGV } },
       { name: "tab.close", args: { id: "tb10", confirmed: true } },
     ]);
@@ -304,7 +304,7 @@ describe("moveTab", () => {
     const w = world();
     w.spaces[1].machine = "vps";
     const { acts } = await move(w);
-    expect(acts[0]).toEqual({ name: "space.new", args: { folder: "/r/wt" } });
+    expect(acts[0]).toEqual({ name: "space.new", args: { folder: "/r/wt", name: "x" } });
   });
 
   test("a move inside one checkout resumes Claude without a moved note", async () => {
@@ -478,5 +478,83 @@ describe("moveTab", () => {
     const io = fakeIo(world({ notifyThrows: true }));
     expect(await moveTab(REQUEST, io)).toEqual({ moved: true });
     expect(io.notices).toHaveLength(1);
+  });
+});
+
+describe("moveTab for a scheduled move", () => {
+  const SCHEDULED = { only: "t1", session: "new-id", toSpace: null };
+  const withVite = () => {
+    const w = world({
+      infos: { t1: claudeInfo(), t2: { pid: 20, cwd: "/r/main", foreground: { pid: 21, argv: ["node", "vite"], cwd: "/r/main", name: "node" } } },
+      trees: { tb1: { type: "row", children: [block("p1", "t1"), block("p2", "t2")] } },
+    });
+    w.panes.push(pane("p2", "t2", "tb1", "/r/main", "Vite"));
+    return w;
+  };
+
+  test("moves only Claude's pane and leaves the dev server beside it", async () => {
+    const { acts, notice, result } = await move(withVite(), SCHEDULED);
+    expect(acts).toEqual([
+      { name: "tab.new", args: { space: "s2", folder: "/r/wt", argv: ARGV } },
+      { name: "pane.close", args: { pane: "p1" } },
+      { name: "space.select", args: { id: "s2" } },
+      { name: "tab.select", args: { id: "tb10" } },
+    ]);
+    expect(notice).toEqual({ title: "Moved to feat/x", body: "Claude's background jobs ended.", level: "success", timeout: 4000 });
+    expect(result).toEqual({ moved: true });
+  });
+
+  test("a Claude that left with its own pane leaves nothing to close", async () => {
+    const w = withVite();
+    w.infos.t1 = ownInfo();
+    w.onSignal = (current: any) => (current.panes = current.panes.filter((p: any) => p.terminal !== "t1"));
+    const { acts } = await move(w, SCHEDULED);
+    expect(acts.map((act) => act.name)).toEqual(["tab.new", "space.select", "tab.select"]);
+  });
+
+  test("a Claude alone in its tab moves the whole tab", async () => {
+    const { acts } = await move(world(), SCHEDULED);
+    expect(acts.map((act) => act.name)).toEqual(["tab.new", "tab.close", "space.select", "tab.select"]);
+    expect(acts[1].args).toEqual({ id: "tb1", confirmed: true });
+  });
+
+  test("hands the resumed Claude its next turn", async () => {
+    const { acts } = await move(world(), { ...SCHEDULED, prompt: "Implement the approved plan" });
+    expect(acts[0].args.argv).toEqual([...ARGV, "Implement the approved plan"]);
+  });
+
+  test("refuses when the conversation changed or Claude is gone", async () => {
+    const changed = await move(withVite(), { ...SCHEDULED, session: "other-id" });
+    expect([changed.io.log, changed.notice.body]).toEqual([[], "The conversation in this pane changed after the move was scheduled."]);
+    const shell = await move(world({ infos: { t1: shellInfo(10, "/r/main") } }), SCHEDULED);
+    expect([shell.io.log, shell.notice.body]).toEqual([[], "Claude isn't running in this tab anymore."]);
+    const gone = await move(world(), { ...SCHEDULED, only: "t9" });
+    expect([gone.io.log, gone.notice.body]).toEqual([[], "The tab is gone."]);
+  });
+
+  test("still refuses a working Claude", async () => {
+    const { io, notice } = await move(world({ infos: { t1: claudeInfo("working") } }), SCHEDULED);
+    expect(io.log).toEqual([]);
+    expect(notice.body).toBe("Claude is working in this tab. Move it when the turn ends.");
+  });
+
+  test("gives the view back when the person was looking elsewhere", async () => {
+    const { acts } = await move(withVite(), { ...SCHEDULED, follow: false, back: { space: "s1", tab: "tb2" } });
+    expect(acts.slice(-2)).toEqual([
+      { name: "space.select", args: { id: "s1" } },
+      { name: "tab.select", args: { id: "tb2" } },
+    ]);
+    const gone = await move(withVite(), { ...SCHEDULED, follow: false, back: { space: "s7", tab: "tb7" } });
+    expect(gone.acts.map((act) => act.name)).toEqual(["tab.new", "pane.close"]);
+  });
+
+  test("a space opened for the main checkout keeps Herdr's own name", async () => {
+    const info = { ...claudeInfo(), cwd: "/r/wt", foreground: { ...claudeInfo().foreground, cwd: "/r/wt" } };
+    const w = world({ infos: { t3: info }, trees: { tb3: { type: "row", children: [block("p3", "t3")] } } });
+    w.spaces = [w.spaces[1]];
+    w.panes = [pane("p3", "t3", "tb3", "/r/wt", "Claude Code")];
+    w.sessions[11] = { session: "new-id", cwd: "/r/wt" };
+    const { acts } = await move(w, { tab: "tb3", space: "s2", to: "/r/main", toSpace: null, only: "t3" });
+    expect(acts[0]).toEqual({ name: "space.new", args: { folder: "/r/main" } });
   });
 });

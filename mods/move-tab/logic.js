@@ -31,7 +31,17 @@ export const REASONS = {
   same: () => "The tab is already there.",
   gone: () => "The tab is gone.",
   running: () => "Another move is running.",
+  ended: (where) => `Claude isn't running in ${where} anymore.`,
+  changed: (where) => `The conversation in ${where} changed after the move was scheduled.`,
+  unreadable: () => "The scheduled move couldn't be read.",
+  stale: () => "The scheduled move waited 4 hours, so it was dropped.",
+  unlabeled: () => "The scheduled move couldn't be cleared, so nothing moved.",
 };
+
+export const LABEL = "vjr.move-to";
+export const SCHEDULE_TTL = 4 * 60 * 60 * 1000;
+export const SETTLE = 2000;
+const READY = ["idle", "done"];
 
 export function base(path) {
   return path.replace(/\/+$/, "").split("/").pop() ?? "";
@@ -153,10 +163,44 @@ export function movedNote({ from, fromBranch, to, toBranch }) {
   return `This session moved from ${from} (${branch(fromBranch)}) to ${to} (${branch(toBranch)}). Work in ${to} from now on; files under ${from} belong to another checkout.`;
 }
 
-export function resumeArgv({ session, args, note }) {
+export function resumeArgv({ session, args, note, prompt }) {
   if (typeof session !== "string" || !SESSION.test(session)) return null;
-  const argv = ["claude", "--resume", session, ...args];
-  return note ? [...argv, "--append-system-prompt", note] : argv;
+  const argv = ["claude", "--resume", session, ...args, ...(note ? ["--append-system-prompt", note] : [])];
+  return typeof prompt === "string" && prompt !== "" ? [...argv, prompt] : argv;
+}
+
+export function spaceName(branch) {
+  if (typeof branch !== "string" || branch === "") return null;
+  const tail = branch.includes("--") ? branch.slice(branch.lastIndexOf("--") + 2) : branch.slice(branch.lastIndexOf("/") + 1);
+  const words = (text) => text.replace(/[-_]+/g, " ").trim();
+  const ticket = /^([a-z]+-\d+)(?:[-_](.+))?$/i.exec(tail);
+  if (!ticket) return words(tail) || branch;
+  const id = ticket[1].toUpperCase();
+  return ticket[2] ? `${id} · ${words(ticket[2])}` : id;
+}
+
+export function parseSchedule(text) {
+  if (typeof text !== "string" || text === "") return null;
+  let data;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    return null;
+  }
+  if (data?.v !== 1 || typeof data.to !== "string" || !data.to.startsWith("/")) return null;
+  if (typeof data.session !== "string" || !SESSION.test(data.session) || !Number.isFinite(data.at)) return null;
+  const prompt = data.prompt ?? null;
+  if (prompt !== null && (typeof prompt !== "string" || prompt.startsWith("-"))) return null;
+  const to = data.to.length > 1 ? data.to.replace(/\/+$/, "") : data.to;
+  return { to, session: data.session, prompt: prompt === "" ? null : prompt, at: data.at };
+}
+
+export function scheduleStep({ schedule, status, since, now }) {
+  if (!schedule) return { drop: REASONS.unreadable() };
+  if (now - schedule.at > SCHEDULE_TTL) return { drop: REASONS.stale() };
+  if (!READY.includes(status)) return { wait: null };
+  if (since === null || since === undefined) return { wait: SETTLE };
+  return now - since >= SETTLE ? { go: true } : { wait: SETTLE - (now - since) };
 }
 
 export function runsSession(terminal, session) {

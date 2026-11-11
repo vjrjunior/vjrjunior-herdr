@@ -1,9 +1,9 @@
 import { View, div } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
-import { closeOverlay, focused, notify, panes, props, setShared, shared, spaces, theme } from "herdr";
+import { agents, closeOverlay, focused, notify, panes, props, setShared, shared, spaces, terminals, theme } from "herdr";
 import { CONTROL, RADIUS, TEXT, heading, icon } from "../../kit/kit.js";
 import { appIo } from "./io.js";
-import { REASONS, parseWorktrees, placeOf, targetsFor } from "./logic.js";
+import { LABEL, REASONS, parseSchedule, parseWorktrees, placeOf, scheduleStep, targetsFor } from "./logic.js";
 import { moveTab } from "./move.js";
 
 const KEY = "move-tab.request";
@@ -20,6 +20,9 @@ export default class MoveTab extends View {
     this.role = own.role === "worker" ? "worker" : "popup";
     this.seen = null;
     this.running = false;
+    this.since = new Map();
+    this.handled = new Map();
+    this.waking = false;
     const from = typeof own.tab === "string" ? own : (focused() ?? {});
     this.tab = typeof from.tab === "string" ? from.tab : null;
     this.space = typeof from.space === "string" ? from.space : null;
@@ -93,6 +96,86 @@ export default class MoveTab extends View {
     });
   }
 
+  watch(cx) {
+    const now = Date.now();
+    const status = new Map((agents() ?? []).map((agent) => [agent.address, agent.status]));
+    for (const terminal of terminals() ?? []) {
+      const address = terminal?.address;
+      const text = terminal?.labels?.[LABEL];
+      if (typeof address !== "string" || address.includes("/") || typeof text !== "string" || text === "") continue;
+      if (this.handled.get(address) === text) continue;
+      const state = status.get(address);
+      if (state !== "idle" && state !== "done") this.since.delete(address);
+      else if (!this.since.has(address)) this.since.set(address, now);
+      const step = scheduleStep({ schedule: parseSchedule(text), status: state, since: this.since.get(address) ?? null, now });
+      if (step.drop) this.drop(address, text, step.drop, cx);
+      else if (step.go && !this.running) this.scheduled(address, text, cx);
+      else if (step.go || step.wait) this.later(step.wait ?? 1000, cx);
+    }
+  }
+
+  later(ms, cx) {
+    if (this.waking) return;
+    this.waking = true;
+    cx.spawn(async (cx) => {
+      await cx.sleep(ms);
+      this.waking = false;
+      cx.notify();
+    });
+  }
+
+  drop(address, text, reason, cx) {
+    this.handled.set(address, text);
+    this.since.delete(address);
+    cx.spawn(async (cx) => {
+      await appIo(cx).unlabel(address);
+      notify({ title: "Can't move this tab", body: reason, level: "warning" });
+    });
+  }
+
+  scheduled(address, text, cx) {
+    const schedule = parseSchedule(text);
+    this.handled.set(address, text);
+    this.since.delete(address);
+    this.running = true;
+    cx.spawn(async (cx) => {
+      try {
+        const io = appIo(cx);
+        if (!(await io.unlabel(address))) {
+          notify({ title: "Can't move this tab", body: REASONS.unlabeled(), level: "warning" });
+          return;
+        }
+        const pane = panes().find((candidate) => candidate.terminal === address);
+        const space = pane ? spaces().find((candidate) => candidate.tabs.some((tab) => tab.id === pane.tab)) : null;
+        if (!space) {
+          notify({ title: "Can't move this tab", body: REASONS.gone(), level: "warning" });
+          return;
+        }
+        const seen = focused();
+        const follow = seen?.tab === pane.tab;
+        await moveTab(
+          {
+            id: `${address}-${schedule.at}`,
+            tab: pane.tab,
+            space: space.id,
+            to: schedule.to,
+            toSpace: null,
+            at: Date.now(),
+            only: address,
+            session: schedule.session,
+            prompt: schedule.prompt,
+            follow,
+            back: follow ? null : { space: seen?.space ?? null, tab: seen?.tab ?? null },
+          },
+          io,
+        );
+      } finally {
+        this.running = false;
+        cx.notify();
+      }
+    });
+  }
+
   row(target, index, t) {
     return h_flex()
       .id(`target-${index}`)
@@ -119,6 +202,7 @@ export default class MoveTab extends View {
   render(cx) {
     if (this.role === "worker") {
       this.take(cx);
+      this.watch(cx);
       return div();
     }
     if (!this.tab) return div();

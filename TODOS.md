@@ -158,6 +158,18 @@
 **Priority:** P3
 **Depends on:** Nothing
 
+### Copy a step's text from the test panel
+
+**What:** Give each line of a test panel step a way to copy it, so a command or a message the step asks to paste into a terminal can be taken from the panel itself.
+
+**Why:** The panel's text can't be selected. The scheduled-move run asked the person to paste three messages into a Claude, and they had to come through the chat instead, which is what the panel exists to avoid.
+
+**Context:** `tools/test-panel/main.js` draws each `step.do` line as plain text in an `h_flex`. A small copy icon button at the end of each line (the kit's `iconButton` with a copy icon in `kit/icons/`) could write it to the clipboard; check `gpui-kit.d.ts` for a clipboard call, or fall back to `exec("pbcopy")` with the text on stdin. A run could also mark only the lines meant to be pasted, for example with a `"paste"` field next to `"do"`.
+
+**Effort:** S
+**Priority:** P2
+**Depends on:** Nothing
+
 ## Completed
 
 ### Confirm the first real Herdr update

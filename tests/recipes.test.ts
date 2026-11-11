@@ -413,6 +413,12 @@ describe("move-tab", () => {
     }
   });
 
+  test("both layouts install the script that schedules a move", () => {
+    const script = readFileSync(join(import.meta.dir, "../mods/move-tab/schedule.sh"), "utf8");
+    expect(generateDesk().mods["vjr-move-tab"]?.["schedule.sh"]).toBe(script);
+    expect(generateSquare().mods["vjr-square-move-tab"]?.["schedule.sh"]).toBe(script);
+  });
+
   test("the square popup has a border", () => {
     expect(generateSquare().mods["vjr-square-move-tab"]?.["main.js"]).toContain(".bg(t.popover).border_1().border_color(t.border)");
   });
