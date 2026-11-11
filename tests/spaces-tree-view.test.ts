@@ -826,7 +826,7 @@ describe("folders", () => {
       const [glyph, name] = band.kids;
       expect(glyph?.calls[0]).toEqual(["svg", ["mods/kit/icons/folder.svg"]]);
       expect(style(glyph as Node, "text_color")).toEqual(["#5b8def"]);
-      expect([style(name as Node, "text_color"), style(name as Node, "text_size")]).toEqual([["#foreground"], [11]]);
+      expect([style(name as Node, "text_color"), style(name as Node, "text_size")]).toEqual([["#foreground"], [13]]);
       expect(band.kids.some((kid) => style(kid, "size")?.[0] === 22)).toBe(false);
       const body = node(view, "folder-body-f1").at(-1) as Node;
       expect([style(body, "px"), style(body, "pt")]).toEqual([[4], [2]]);
